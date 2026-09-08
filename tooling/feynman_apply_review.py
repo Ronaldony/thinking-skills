@@ -58,6 +58,7 @@ def apply(review_bundle: Path, review_path: Path, output_path: Path) -> dict[str
         "verdict": result["verdict"],
         "reasons": result["reasons"],
         "unverified": result["unverified"],
+        "hard_failure_ids": result.get("hard_failure_ids", []),
         "semantic_review_sha256": hashlib.sha256(review_path.resolve().read_bytes()).hexdigest(),
         "review_input_sha256": actual_input_sha,
         "trusted_execution_ids": trusted_ids,
