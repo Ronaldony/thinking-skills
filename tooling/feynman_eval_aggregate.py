@@ -52,6 +52,10 @@ def _result_key(record: dict[str, Any]) -> tuple[str, str, int, str]:
     return case_id, condition, repeat, phase
 
 
+def _valid_sha(value: Any) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+
 def _validate_result(record: dict[str, Any]) -> None:
     if record.get("schema_version") != 2 or record.get("valid_for_analysis") is not True:
         raise ValueError("result is not analysis-ready schema v2")
@@ -83,9 +87,11 @@ def _validate_result(record: dict[str, Any]) -> None:
     digests = record.get("digests")
     if not isinstance(digests, dict):
         raise ValueError("result has no digests object")
+    if not _valid_sha(digests.get("probe_report_sha256")):
+        raise ValueError("analysis result requires a SHA-256 boundary probe report digest")
     runtime_sha = digests.get("runtime_sha256")
     if condition in SKILL_CONDITIONS:
-        if not isinstance(runtime_sha, str) or re.fullmatch(r"[0-9a-f]{64}", runtime_sha) is None:
+        if not _valid_sha(runtime_sha):
             raise ValueError("skill-condition result requires a SHA-256 runtime digest")
     elif runtime_sha is not None:
         raise ValueError("no-skill result must use runtime_sha256=null")
@@ -295,7 +301,7 @@ def aggregate(plan: dict[str, Any], records: Iterable[dict[str, Any]]) -> dict[s
             "legacy_clean_vs_feynman_v05": _paired(observed, "legacy-clean", "feynman-v05"),
             "baseline_vs_feynman_v05": _paired(observed, "baseline", "feynman-v05"),
         },
-        "scope": "descriptive preregistered metrics; only status=analysis-ready may be used for the primary comparison, and even then no significance or causal claim is implied",
+        "scope": "descriptive preregistered metrics over results that already bind verified boundary-probe reports; only status=analysis-ready may be used for the primary comparison, and even then no significance or causal claim is implied",
     }
 
 
