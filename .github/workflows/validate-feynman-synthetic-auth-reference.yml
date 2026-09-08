@@ -1,0 +1,402 @@
+name: validate-feynman-synthetic-auth-reference
+
+on:
+  push:
+    paths:
+      - 'tooling/feynman_mock_responses_server.py'
+      - 'tooling/feynman_credential_leak_scan.py'
+      - 'tooling/feynman_synthetic_auth_reference_result.py'
+      - 'tooling/feynman_remote_exec_environment.py'
+      - 'tooling/feynman_remote_exec_reference_result.py'
+      - 'tooling/feynman_runner_job*.py'
+      - 'tooling/feynman_boundary_profile.py'
+      - 'tooling/feynman_docker_*.py'
+      - 'tooling/feynman_network_reference.py'
+      - 'tests/test_feynman_mock_responses_server.py'
+      - 'tests/test_feynman_credential_leak_scan.py'
+      - 'tests/test_feynman_synthetic_auth_reference_result.py'
+      - 'tests/test_feynman_remote_exec_environment.py'
+      - 'tests/test_feynman_remote_exec_reference_result.py'
+      - 'tests/test_feynman_runner_job*.py'
+      - 'tests/test_feynman_boundary_profile.py'
+      - '.github/workflows/validate-feynman-synthetic-auth-reference.yml'
+  pull_request:
+    paths:
+      - 'tooling/feynman_mock_responses_server.py'
+      - 'tooling/feynman_credential_leak_scan.py'
+      - 'tooling/feynman_synthetic_auth_reference_result.py'
+      - 'tooling/feynman_remote_exec_environment.py'
+      - 'tooling/feynman_remote_exec_reference_result.py'
+      - 'tooling/feynman_runner_job*.py'
+      - 'tooling/feynman_boundary_profile.py'
+      - 'tooling/feynman_docker_*.py'
+      - 'tooling/feynman_network_reference.py'
+      - 'tests/test_feynman_mock_responses_server.py'
+      - 'tests/test_feynman_credential_leak_scan.py'
+      - 'tests/test_feynman_synthetic_auth_reference_result.py'
+      - 'tests/test_feynman_remote_exec_environment.py'
+      - 'tests/test_feynman_remote_exec_reference_result.py'
+      - 'tests/test_feynman_runner_job*.py'
+      - 'tests/test_feynman_boundary_profile.py'
+      - '.github/workflows/validate-feynman-synthetic-auth-reference.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-auth-remote-exec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run synthetic-auth contract unit tests
+        run: |
+          python -m unittest \
+            tests.test_feynman_mock_responses_server \
+            tests.test_feynman_credential_leak_scan \
+            tests.test_feynman_synthetic_auth_reference_result \
+            tests.test_feynman_remote_exec_environment \
+            tests.test_feynman_remote_exec_reference_result \
+            tests.test_feynman_runner_job_validate \
+            tests.test_feynman_boundary_profile -v
+
+      - name: Build matching control-plane and exec-server Codex runtimes
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/feynman-synthetic-auth-reference
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT/control-node" "$ROOT/build" "$ROOT/protected-control"
+
+          CODEX_PACKAGE_VERSION="$(npm view @openai/codex version)"
+          test -n "$CODEX_PACKAGE_VERSION"
+          printf '%s\n' "$CODEX_PACKAGE_VERSION" > "$ROOT/codex-package-version.txt"
+
+          npm install --silent --prefix "$ROOT/control-node" "@openai/codex@${CODEX_PACKAGE_VERSION}"
+          CODEX_BIN="$ROOT/control-node/node_modules/.bin/codex"
+          test -x "$CODEX_BIN"
+          "$CODEX_BIN" --version | tee "$ROOT/control-codex-version.txt"
+
+          cat > "$ROOT/build/Dockerfile" <<'EOF'
+          FROM node:22-bookworm-slim
+          ARG CODEX_PACKAGE_VERSION
+          RUN apt-get update \
+              && apt-get install -y --no-install-recommends python3 ca-certificates \
+              && rm -rf /var/lib/apt/lists/*
+          RUN npm install -g "@openai/codex@${CODEX_PACKAGE_VERSION}"
+          EOF
+          docker build \
+            --build-arg "CODEX_PACKAGE_VERSION=$CODEX_PACKAGE_VERSION" \
+            -t feynman-codex-synthetic-auth:local \
+            -f "$ROOT/build/Dockerfile" \
+            "$ROOT/build"
+          docker run --rm --network none feynman-codex-synthetic-auth:local codex --version \
+            | tee "$ROOT/tool-codex-version.txt"
+          diff -u "$ROOT/control-codex-version.txt" "$ROOT/tool-codex-version.txt"
+
+          python - "$ROOT/protected-control/secret.txt" "$ROOT/synthetic-secret-sha256.txt" <<'PY'
+          import hashlib
+          import secrets
+          import sys
+          secret_path, digest_path = sys.argv[1:]
+          value = 'FYN_SYNTH_' + secrets.token_urlsafe(48)
+          with open(secret_path, 'w', encoding='utf-8') as handle:
+              handle.write(value + '\n')
+          digest = hashlib.sha256(value.encode()).hexdigest()
+          with open(digest_path, 'w', encoding='utf-8') as handle:
+              handle.write(digest + '\n')
+          PY
+          chmod 600 "$ROOT/protected-control/secret.txt"
+          test -s "$ROOT/protected-control/secret.txt"
+          grep -Eq '^[0-9a-f]{64}$' "$ROOT/synthetic-secret-sha256.txt"
+
+      - name: Prepare frozen baseline job and remote execution profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/feynman-synthetic-auth-reference
+          CANDIDATE="$ROOT/candidate"
+          EVALUATOR="$ROOT/evaluator"
+          CANDIDATE_HOME="$ROOT/candidate-home"
+          TOOL_CODEX_HOME="$ROOT/tool-codex-home"
+          TOOL_TEMP="$ROOT/tool-temp"
+          CONTROL_HOME="$ROOT/control-home"
+          CONTROL_CODEX_HOME="$ROOT/control-codex-home"
+          CONTROL_TEMP="$ROOT/control-temp"
+          mkdir -p "$CANDIDATE_HOME" "$TOOL_CODEX_HOME" "$TOOL_TEMP" \
+            "$CONTROL_HOME" "$CONTROL_CODEX_HOME" "$CONTROL_TEMP"
+
+          python tooling/feynman_eval_plan.py \
+            --root . --case mechanism-01 --condition baseline --repeats 1 --seed 0 \
+            --output "$ROOT/plan.json"
+          python tooling/feynman_condition_workspace.py \
+            --root . --case mechanism-01 --condition baseline \
+            --candidate-dir "$CANDIDATE" --evaluator-dir "$EVALUATOR" \
+            > "$ROOT/evaluator-record.stdout.json"
+
+          DOCKER_VERSION="$(docker version --format '{{.Server.Version}}')"
+          IMAGE_ID="$(docker image inspect feynman-codex-synthetic-auth:local --format '{{.Id}}')"
+          RUN_AS="$(id -u):$(id -g)"
+          python - "$ROOT/boundary-profile.json" "$DOCKER_VERSION" "$IMAGE_ID" "$RUN_AS" \
+            "$CANDIDATE" "$CANDIDATE_HOME" "$TOOL_CODEX_HOME" "$TOOL_TEMP" <<'PY'
+          import json, sys
+          output, docker_version, image_id, run_as, candidate, home, codex_home, temp_dir = sys.argv[1:]
+          profile = {
+              'schema_version': 1,
+              'backend': 'docker',
+              'backend_version': docker_version,
+              'image': 'feynman-codex-synthetic-auth:local',
+              'image_id': image_id,
+              'network_mode': 'none',
+              'read_only_root': True,
+              'no_new_privileges': True,
+              'capabilities': [],
+              'run_as': run_as,
+              'read_write_mounts': [candidate, home, codex_home, temp_dir],
+              'read_only_mounts': [],
+              'tmpfs_mounts': ['/tmp'],
+              'protected_roots_mounted': [],
+              'candidate_env_keys': ['HOME', 'CODEX_HOME', 'PATH', 'PYTHONDONTWRITEBYTECODE', 'TMPDIR'],
+              'scope': 'synthetic bearer host control-plane with network-none stdio remote tool boundary',
+          }
+          with open(output, 'w', encoding='utf-8') as handle:
+              json.dump(profile, handle, ensure_ascii=False, indent=2, sort_keys=True)
+              handle.write('\n')
+          PY
+          python tooling/feynman_boundary_profile.py \
+            --profile "$ROOT/boundary-profile.json" > "$ROOT/boundary-profile-check.json"
+
+          CODEX_VERSION="$(tr -d '\r\n' < "$ROOT/control-codex-version.txt")"
+          python tooling/feynman_runner_job.py \
+            --plan "$ROOT/plan.json" --ordinal 1 \
+            --evaluator-case "$EVALUATOR/case.json" \
+            --boundary-profile "$ROOT/boundary-profile.json" \
+            --run-id "synthetic-auth-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --model mock-responses-synthetic-auth \
+            --codex-cli "$CODEX_VERSION" \
+            --candidate-dir "$CANDIDATE" \
+            --evaluator-dir "$EVALUATOR" \
+            --source-repo "$GITHUB_WORKSPACE" \
+            --ephemeral-home "$CANDIDATE_HOME" \
+            --codex-home "$TOOL_CODEX_HOME" \
+            --temp-dir "$TOOL_TEMP" \
+            --real-home "$HOME" \
+            --output "$ROOT/runner-job.json" > "$ROOT/runner-job.stdout.json"
+          python tooling/feynman_runner_job_validate.py \
+            --job "$ROOT/runner-job.json" --boundary-profile "$ROOT/boundary-profile.json" \
+            > "$ROOT/runner-job-check.json"
+          python tooling/feynman_remote_exec_environment.py \
+            --job "$ROOT/runner-job.json" --boundary-profile "$ROOT/boundary-profile.json" \
+            --output "$CONTROL_CODEX_HOME/environments.toml" > "$ROOT/remote-environment-build.json"
+          python tooling/feynman_remote_exec_environment.py \
+            --job "$ROOT/runner-job.json" --boundary-profile "$ROOT/boundary-profile.json" \
+            --validate "$CONTROL_CODEX_HOME/environments.toml" > "$ROOT/remote-environment-check.json"
+          python tooling/feynman_eval_preflight.py \
+            --candidate-dir "$CANDIDATE" --home "$CONTROL_HOME" --codex-home "$CONTROL_CODEX_HOME" \
+            > "$ROOT/candidate-preflight.json"
+
+      - name: Run synthetic bearer control plane through isolated remote exec
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/feynman-synthetic-auth-reference
+          CANDIDATE="$ROOT/candidate"
+          CANDIDATE_HOME="$ROOT/candidate-home"
+          TOOL_CODEX_HOME="$ROOT/tool-codex-home"
+          TOOL_TEMP="$ROOT/tool-temp"
+          CONTROL_HOME="$ROOT/control-home"
+          CONTROL_CODEX_HOME="$ROOT/control-codex-home"
+          CONTROL_TEMP="$ROOT/control-temp"
+          SECRET_FILE="$ROOT/protected-control/secret.txt"
+          SECRET_SHA="$(tr -d '\r\n' < "$ROOT/synthetic-secret-sha256.txt")"
+          CODEX_BIN="$ROOT/control-node/node_modules/.bin/codex"
+          MOCK_PID=""
+          CONTAINER_NAME="$(python - "$ROOT/remote-environment-check.json" <<'PY'
+          import json, sys
+          print(json.load(open(sys.argv[1], encoding='utf-8'))['container_name'])
+          PY
+          )"
+
+          cleanup() {
+            if [ -n "$MOCK_PID" ]; then kill "$MOCK_PID" 2>/dev/null || true; fi
+            docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          HOST_IP="$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')"
+          test -n "$HOST_IP"
+          python tooling/feynman_mock_responses_server.py \
+            --scenario exec-only \
+            --expected-bearer-sha256 "$SECRET_SHA" \
+            --tool-network-host "$HOST_IP" \
+            --state "$ROOT/mock-state.json" \
+            --ready "$ROOT/mock-ready.json" \
+            > "$ROOT/mock-server.log" 2>&1 &
+          MOCK_PID=$!
+          for _ in $(seq 1 100); do
+            [ -s "$ROOT/mock-ready.json" ] && break
+            sleep 0.1
+          done
+          test -s "$ROOT/mock-ready.json"
+          PORT="$(python - "$ROOT/mock-ready.json" "$SECRET_SHA" <<'PY'
+          import json, sys
+          ready = json.load(open(sys.argv[1], encoding='utf-8'))
+          assert ready['schema_version'] == 2
+          assert ready['scenario'] == 'exec-only'
+          assert ready['expected_bearer_sha256'] == sys.argv[2]
+          print(ready['port'])
+          PY
+          )"
+          curl --fail --silent "http://127.0.0.1:${PORT}/healthz" > "$ROOT/mock-health.json"
+          python tooling/feynman_network_reference.py \
+            --host "$HOST_IP" --port "$PORT" \
+            --output "$ROOT/control-plane-network-reference.json" \
+            > "$ROOT/control-plane-network-reference.stdout.json"
+
+          python - "$CONTROL_CODEX_HOME/config.toml" "$PORT" \
+            "$CANDIDATE_HOME" "$TOOL_CODEX_HOME" "$TOOL_TEMP" <<'PY'
+          import json, sys
+          output, port, home, codex_home, temp_dir = sys.argv[1:]
+          q = lambda value: json.dumps(value)
+          text = f'''model = "mock-model"
+          model_provider = "mock"
+          approval_policy = "never"
+          sandbox_mode = "danger-full-access"
+
+          [model_providers.mock]
+          name = "mock"
+          base_url = "http://127.0.0.1:{port}/v1"
+          env_key = "OPENAI_API_KEY"
+          wire_api = "responses"
+
+          [shell_environment_policy]
+          inherit = "none"
+          set = {{ HOME = {q(home)}, CODEX_HOME = {q(codex_home)}, PATH = "/usr/local/bin:/usr/bin:/bin", TMPDIR = {q(temp_dir)}, PYTHONDONTWRITEBYTECODE = "1" }}
+          '''
+          lines = [line.strip() if line.startswith('          ') else line for line in text.splitlines()]
+          with open(output, 'w', encoding='utf-8') as handle:
+              handle.write('\n'.join(lines).strip() + '\n')
+          PY
+
+          CONTROL_PATH="$ROOT/control-node/node_modules/.bin:/usr/local/bin:/usr/bin:/bin"
+          PROMPT="$(cat "$CANDIDATE/task.txt")"
+          env -i \
+            HOME="$CONTROL_HOME" \
+            CODEX_HOME="$CONTROL_CODEX_HOME" \
+            PATH="$CONTROL_PATH" \
+            TMPDIR="$CONTROL_TEMP" \
+            OPENAI_API_KEY="$(cat "$SECRET_FILE")" \
+            "$CODEX_BIN" exec --json --skip-git-repo-check -C "$CANDIDATE" "$PROMPT" \
+            > "$ROOT/codex-trace.jsonl"
+
+          test -f "$CANDIDATE/remote-tool-proof.txt"
+          test "$(cat "$CANDIDATE/remote-tool-proof.txt")" = "REMOTE_EXEC_OK"
+          grep -q 'REMOTE_EXEC_REFERENCE_OK' "$ROOT/codex-trace.jsonl"
+          grep -q 'command_execution' "$ROOT/codex-trace.jsonl"
+          grep -q 'AUTH_VALUE_CLEAN' "$ROOT/codex-trace.jsonl"
+
+          docker inspect "$CONTAINER_NAME" > "$ROOT/tool-container-inspect.json"
+          test "$(docker inspect "$CONTAINER_NAME" --format '{{.State.ExitCode}}')" = "0"
+          python tooling/feynman_docker_reference_inspect.py \
+            --profile "$ROOT/boundary-profile.json" --inspect "$ROOT/tool-container-inspect.json" \
+            > "$ROOT/tool-container-inspect-check.json"
+
+          python tooling/feynman_remote_exec_reference_result.py \
+            --boundary-profile "$ROOT/boundary-profile.json" \
+            --runner-job "$ROOT/runner-job.json" \
+            --remote-environment "$CONTROL_CODEX_HOME/environments.toml" \
+            --network-reference "$ROOT/control-plane-network-reference.json" \
+            --mock-state "$ROOT/mock-state.json" \
+            --codex-trace "$ROOT/codex-trace.jsonl" \
+            --docker-inspect "$ROOT/tool-container-inspect.json" \
+            --candidate-proof "$CANDIDATE/remote-tool-proof.txt" \
+            --mock-server-program tooling/feynman_mock_responses_server.py \
+            --control-codex-version "$ROOT/control-codex-version.txt" \
+            --tool-codex-version "$ROOT/tool-codex-version.txt" \
+            --output "$ROOT/remote-reference-result.json" \
+            > "$ROOT/remote-reference-result.stdout.json"
+
+          python tooling/feynman_credential_leak_scan.py \
+            --secret-file "$SECRET_FILE" \
+            --root "$CANDIDATE" \
+            --root "$CANDIDATE_HOME" \
+            --root "$TOOL_CODEX_HOME" \
+            --root "$TOOL_TEMP" \
+            --file "$ROOT/codex-trace.jsonl" \
+            --file "$ROOT/mock-state.json" \
+            --file "$ROOT/remote-reference-result.json" \
+            --file "$ROOT/runner-job.json" \
+            --file "$ROOT/control-plane-network-reference.json" \
+            --file "$CONTROL_CODEX_HOME/config.toml" \
+            --file "$CONTROL_CODEX_HOME/environments.toml" \
+            --file "$ROOT/synthetic-secret-sha256.txt" \
+            --output "$ROOT/credential-leak-scan.json" \
+            > "$ROOT/credential-leak-scan.stdout.json"
+
+          python tooling/feynman_synthetic_auth_reference_result.py \
+            --secret-file "$SECRET_FILE" \
+            --remote-reference-result "$ROOT/remote-reference-result.json" \
+            --mock-state "$ROOT/mock-state.json" \
+            --leak-scan "$ROOT/credential-leak-scan.json" \
+            --output "$ROOT/synthetic-auth-result.json" \
+            > "$ROOT/synthetic-auth-result.stdout.json"
+
+          python - "$ROOT/synthetic-auth-result.json" "$SECRET_SHA" <<'PY'
+          import json, sys
+          result = json.load(open(sys.argv[1], encoding='utf-8'))
+          assert result['verdict'] == 'synthetic-control-plane-auth-reference-passed'
+          assert result['secret_sha256'] == sys.argv[2]
+          assert all(result['assertions'].values())
+          PY
+
+      - name: Remove protected synthetic secret before artifact upload
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/feynman-synthetic-auth-reference
+          rm -f "$ROOT/protected-control/secret.txt"
+          test ! -e "$ROOT/protected-control/secret.txt"
+
+      - name: Upload synthetic-auth reference evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: feynman-synthetic-auth-reference-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /tmp/feynman-synthetic-auth-reference/codex-package-version.txt
+            /tmp/feynman-synthetic-auth-reference/control-codex-version.txt
+            /tmp/feynman-synthetic-auth-reference/tool-codex-version.txt
+            /tmp/feynman-synthetic-auth-reference/synthetic-secret-sha256.txt
+            /tmp/feynman-synthetic-auth-reference/plan.json
+            /tmp/feynman-synthetic-auth-reference/evaluator/case.json
+            /tmp/feynman-synthetic-auth-reference/boundary-profile.json
+            /tmp/feynman-synthetic-auth-reference/boundary-profile-check.json
+            /tmp/feynman-synthetic-auth-reference/runner-job.json
+            /tmp/feynman-synthetic-auth-reference/runner-job-check.json
+            /tmp/feynman-synthetic-auth-reference/control-codex-home/environments.toml
+            /tmp/feynman-synthetic-auth-reference/control-codex-home/config.toml
+            /tmp/feynman-synthetic-auth-reference/remote-environment-check.json
+            /tmp/feynman-synthetic-auth-reference/candidate-preflight.json
+            /tmp/feynman-synthetic-auth-reference/control-plane-network-reference.json
+            /tmp/feynman-synthetic-auth-reference/mock-ready.json
+            /tmp/feynman-synthetic-auth-reference/mock-health.json
+            /tmp/feynman-synthetic-auth-reference/mock-state.json
+            /tmp/feynman-synthetic-auth-reference/mock-server.log
+            /tmp/feynman-synthetic-auth-reference/codex-trace.jsonl
+            /tmp/feynman-synthetic-auth-reference/tool-container-inspect.json
+            /tmp/feynman-synthetic-auth-reference/tool-container-inspect-check.json
+            /tmp/feynman-synthetic-auth-reference/candidate/remote-tool-proof.txt
+            /tmp/feynman-synthetic-auth-reference/remote-reference-result.json
+            /tmp/feynman-synthetic-auth-reference/credential-leak-scan.json
+            /tmp/feynman-synthetic-auth-reference/synthetic-auth-result.json
+          if-no-files-found: warn
+          retention-days: 14
