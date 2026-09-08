@@ -11,10 +11,12 @@ import argparse
 from collections import defaultdict
 import json
 from pathlib import Path
+import re
 import statistics
 from typing import Any, Iterable
 
 PRIMARY_CONDITIONS = ("baseline", "generic", "legacy-clean", "feynman-v05")
+SKILL_CONDITIONS = {"legacy-clean", "feynman-v05"}
 DECISION_SCORE = {"correct": 1.0, "partial": 0.5, "incorrect": 0.0}
 
 
@@ -53,7 +55,7 @@ def _result_key(record: dict[str, Any]) -> tuple[str, str, int, str]:
 def _validate_result(record: dict[str, Any]) -> None:
     if record.get("schema_version") != 1 or record.get("valid_for_analysis") is not True:
         raise ValueError("result is not marked analysis-ready")
-    _result_key(record)
+    _, condition, _, _ = _result_key(record)
     metrics = record.get("metrics")
     if not isinstance(metrics, dict):
         raise ValueError("result has no metrics object")
@@ -77,6 +79,16 @@ def _validate_result(record: dict[str, Any]) -> None:
     behavior = metrics.get("behavior_scores")
     if not isinstance(behavior, dict) or not all(type(v) is int and v in {0, 1, 2} for v in behavior.values()):
         raise ValueError("invalid behavior_scores")
+
+    digests = record.get("digests")
+    if not isinstance(digests, dict):
+        raise ValueError("result has no digests object")
+    runtime_sha = digests.get("runtime_sha256")
+    if condition in SKILL_CONDITIONS:
+        if not isinstance(runtime_sha, str) or re.fullmatch(r"[0-9a-f]{64}", runtime_sha) is None:
+            raise ValueError("skill-condition result requires a SHA-256 runtime digest")
+    elif runtime_sha is not None:
+        raise ValueError("no-skill result must use runtime_sha256=null")
 
 
 def _condition_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
@@ -172,6 +184,7 @@ def aggregate(plan: dict[str, Any], records: Iterable[dict[str, Any]]) -> dict[s
     models: set[str] = set()
     cli_versions: set[str] = set()
     runner_profiles: set[str] = set()
+    runtimes_by_condition: dict[str, set[str | None]] = defaultdict(set)
     for record in records:
         _validate_result(record)
         key = _result_key(record)
@@ -184,9 +197,7 @@ def aggregate(plan: dict[str, Any], records: Iterable[dict[str, Any]]) -> dict[s
         result_job = record["job"]
         if result_job.get("ordinal") != planned_job.get("ordinal"):
             raise ValueError(f"result ordinal differs from frozen plan job: {key}")
-        digests = record.get("digests")
-        if not isinstance(digests, dict):
-            raise ValueError("result has no digests object")
+        digests = record["digests"]
         if digests.get("candidate_prompt_sha256") != planned_job.get("candidate_prompt_sha256"):
             raise ValueError(f"result prompt digest differs from frozen plan job: {key}")
 
@@ -203,6 +214,7 @@ def aggregate(plan: dict[str, Any], records: Iterable[dict[str, Any]]) -> dict[s
         if not isinstance(runner, dict) or not isinstance(runner.get("profile_sha256"), str):
             raise ValueError("result has no runner profile")
         runner_profiles.add(runner["profile_sha256"])
+        runtimes_by_condition[key[1]].add(digests.get("runtime_sha256"))
 
     missing = sorted(expected.keys() - observed.keys())
     extra = sorted(observed.keys() - expected.keys())
@@ -210,18 +222,25 @@ def aggregate(plan: dict[str, Any], records: Iterable[dict[str, Any]]) -> dict[s
     for key, record in observed.items():
         by_condition[key[1]].append(record)
 
+    runtime_summary = {
+        condition: sorted(values, key=lambda value: "" if value is None else value)
+        for condition, values in sorted(runtimes_by_condition.items())
+    }
     environment_consistency = {
         "models": sorted(models),
         "codex_cli_versions": sorted(cli_versions),
         "runner_profile_sha256": sorted(runner_profiles),
+        "runtime_sha256_by_condition": runtime_summary,
         "single_model": len(models) <= 1,
         "single_codex_cli_version": len(cli_versions) <= 1,
         "single_runner_profile": len(runner_profiles) <= 1,
+        "single_runtime_per_condition": all(len(values) <= 1 for values in runtimes_by_condition.values()),
     }
     mixed_environment = not all((
         environment_consistency["single_model"],
         environment_consistency["single_codex_cli_version"],
         environment_consistency["single_runner_profile"],
+        environment_consistency["single_runtime_per_condition"],
     ))
     unverified_primary = [
         key for key, record in observed.items()
@@ -235,7 +254,9 @@ def aggregate(plan: dict[str, Any], records: Iterable[dict[str, Any]]) -> dict[s
     if missing or extra:
         blocking_reasons.append("frozen plan is incomplete or contains unexpected result jobs")
     if mixed_environment:
-        blocking_reasons.append("model, Codex CLI version, or runner profile differs across result records")
+        blocking_reasons.append(
+            "model, Codex CLI version, runner profile, or condition runtime digest differs across result records"
+        )
     if unverified_primary:
         blocking_reasons.append("one or more primary semantic outcomes are unverified")
 
