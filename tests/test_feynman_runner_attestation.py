@@ -95,6 +95,7 @@ def boundary_report(value: dict):
     return {
         "schema_version": 1,
         "run_id": value["run_id"],
+        "boundary_profile_sha256": value["boundary"]["profile_sha256"],
         "verdict": "passed",
         "failed_probes": [],
         "not_required_probes": not_required,
@@ -118,6 +119,13 @@ class RunnerAttestationTests(unittest.TestCase):
         value = attestation()
         result = validate(value, probe_report=boundary_report(value), probe_report_sha256=SHA)
         self.assertTrue(result["probe_report_bound"])
+
+    def test_probe_report_profile_mismatch_is_rejected(self):
+        value = attestation()
+        report = boundary_report(value)
+        report["boundary_profile_sha256"] = "b" * 64
+        with self.assertRaises(ValueError):
+            validate(value, probe_report=report, probe_report_sha256=SHA)
 
     def test_network_required_report_marks_denial_probe_not_required(self):
         value = attestation()
