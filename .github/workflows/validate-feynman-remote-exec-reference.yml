@@ -201,7 +201,7 @@ jobs:
             --codex-home "$CONTROL_CODEX_HOME" \
             > "$ROOT/candidate-preflight.json"
 
-      - name: Run mock model through remote apply-patch and network-disabled exec-server
+      - name: Run mock model through isolated network-disabled remote exec
         shell: bash
         run: |
           set -euo pipefail
@@ -232,6 +232,7 @@ jobs:
           HOST_IP="$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')"
           test -n "$HOST_IP"
           python tooling/feynman_mock_responses_server.py \
+            --scenario exec-only \
             --tool-network-host "$HOST_IP" \
             --state "$ROOT/mock-state.json" \
             --ready "$ROOT/mock-ready.json" \
@@ -244,7 +245,9 @@ jobs:
           test -s "$ROOT/mock-ready.json"
           PORT="$(python - "$ROOT/mock-ready.json" <<'PY'
           import json, sys
-          print(json.load(open(sys.argv[1], encoding='utf-8'))['port'])
+          ready = json.load(open(sys.argv[1], encoding='utf-8'))
+          assert ready['scenario'] == 'exec-only'
+          print(ready['port'])
           PY
           )"
           curl --fail --silent "http://127.0.0.1:${PORT}/healthz" > "$ROOT/mock-health.json"
@@ -295,8 +298,7 @@ jobs:
               "$PROMPT" \
             > "$ROOT/codex-trace.jsonl"
 
-          test -f "$CANDIDATE/remote-patch-proof.txt"
-          test "$(cat "$CANDIDATE/remote-patch-proof.txt")" = "REMOTE_PATCH_OK"
+          test ! -e "$CANDIDATE/remote-patch-proof.txt"
           test -f "$CANDIDATE/remote-tool-proof.txt"
           test "$(cat "$CANDIDATE/remote-tool-proof.txt")" = "REMOTE_EXEC_OK"
           grep -q 'REMOTE_EXEC_REFERENCE_OK' "$ROOT/codex-trace.jsonl"
@@ -317,7 +319,6 @@ jobs:
             --mock-state "$ROOT/mock-state.json" \
             --codex-trace "$ROOT/codex-trace.jsonl" \
             --docker-inspect "$ROOT/tool-container-inspect.json" \
-            --patch-proof "$CANDIDATE/remote-patch-proof.txt" \
             --candidate-proof "$CANDIDATE/remote-tool-proof.txt" \
             --mock-server-program tooling/feynman_mock_responses_server.py \
             --control-codex-version "$ROOT/control-codex-version.txt" \
@@ -344,12 +345,13 @@ jobs:
             /tmp/feynman-remote-exec-reference/remote-environment-check.json
             /tmp/feynman-remote-exec-reference/candidate-preflight.json
             /tmp/feynman-remote-exec-reference/control-plane-network-reference.json
+            /tmp/feynman-remote-exec-reference/mock-ready.json
+            /tmp/feynman-remote-exec-reference/mock-health.json
             /tmp/feynman-remote-exec-reference/mock-state.json
             /tmp/feynman-remote-exec-reference/mock-server.log
             /tmp/feynman-remote-exec-reference/codex-trace.jsonl
             /tmp/feynman-remote-exec-reference/tool-container-inspect.json
             /tmp/feynman-remote-exec-reference/tool-container-inspect-check.json
-            /tmp/feynman-remote-exec-reference/candidate/remote-patch-proof.txt
             /tmp/feynman-remote-exec-reference/candidate/remote-tool-proof.txt
             /tmp/feynman-remote-exec-reference/reference-result.json
             /tmp/feynman-remote-exec-reference/reference-result.stdout.json
