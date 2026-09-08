@@ -43,6 +43,18 @@ class ReviewPipelineTests(unittest.TestCase):
         extract(trace, evidence)
         return candidate, evaluator, evidence
 
+    def _message_evidence(self, name: str, thread_id: str, message: str) -> Path:
+        trace = self.base / f"trace-{name}.jsonl"
+        events = [
+            {"type": "thread.started", "thread_id": thread_id},
+            {"type": "item.completed", "item": {
+                "id": f"msg-{name}", "type": "agent_message", "text": message}},
+        ]
+        trace.write_text("\n".join(json.dumps(event) for event in events) + "\n", encoding="utf-8")
+        evidence = self.base / f"evidence-{name}"
+        extract(trace, evidence)
+        return evidence
+
     def test_review_bundle_contains_task_rubric_final_and_verified_evidence(self):
         _, evaluator, evidence = self._trace_bundle()
         review_bundle = self.base / "review-bundle"
@@ -106,23 +118,63 @@ class ReviewPipelineTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             assemble(evaluator, evidence, self.base / "review-bundle")
 
-    def test_followup_is_included_only_when_requested(self):
+    def test_followup_review_contains_both_answers_from_same_thread(self):
         candidate = self.base / "candidate-followup"
         evaluator = self.base / "evaluator-followup"
         prepare(ROOT, "revise-08", candidate, evaluator, install_skill=True)
-        trace = self.base / "trace-followup.jsonl"
-        trace.write_text(json.dumps({"type": "item.completed", "item": {
-            "id": "msg-1", "type": "agent_message", "text": "Updated judgment."}}) + "\n", encoding="utf-8")
-        evidence = self.base / "evidence-followup"
-        extract(trace, evidence)
-        initial = self.base / "review-initial"
-        followup = self.base / "review-followup"
-        assemble(evaluator, evidence, initial, include_followup=False)
-        assemble(evaluator, evidence, followup, include_followup=True)
-        initial_input = json.loads((initial / "review-input.json").read_text())
-        followup_input = json.loads((followup / "review-input.json").read_text())
+        initial_evidence = self._message_evidence(
+            "initial", "thread-episode", "At 20/s, the system appears to meet the 15/s target."
+        )
+        followup_evidence = self._message_evidence(
+            "followup", "thread-episode", "With corrected throughput 10/s, the system misses the 15/s target."
+        )
+        initial_review = self.base / "review-initial"
+        followup_review = self.base / "review-followup"
+        assemble(evaluator, initial_evidence, initial_review, include_followup=False)
+        manifest = assemble(
+            evaluator,
+            followup_evidence,
+            followup_review,
+            include_followup=True,
+            initial_evidence_bundle=initial_evidence,
+        )
+        initial_input = json.loads((initial_review / "review-input.json").read_text())
+        followup_input = json.loads((followup_review / "review-input.json").read_text())
         self.assertIsNone(initial_input["followup"])
         self.assertIn("교정 후 안정 처리량", followup_input["followup"])
+        self.assertIn("20/s", followup_input["initial_candidate_final"])
+        self.assertIn("10/s", followup_input["candidate_final"])
+        self.assertEqual(followup_input["conversation_thread_id"], "thread-episode")
+        self.assertEqual(manifest["conversation_thread_id"], "thread-episode")
+        self.assertNotEqual(manifest["initial_source_trace_sha256"], manifest["source_trace_sha256"])
+
+    def test_followup_review_rejects_different_thread(self):
+        candidate = self.base / "candidate-followup-mismatch"
+        evaluator = self.base / "evaluator-followup-mismatch"
+        prepare(ROOT, "retain-09", candidate, evaluator, install_skill=True)
+        initial_evidence = self._message_evidence("initial-mismatch", "thread-a", "12")
+        followup_evidence = self._message_evidence("followup-mismatch", "thread-b", "12")
+        with self.assertRaises(ValueError):
+            assemble(
+                evaluator,
+                followup_evidence,
+                self.base / "review-followup-mismatch",
+                include_followup=True,
+                initial_evidence_bundle=initial_evidence,
+            )
+
+    def test_followup_review_requires_initial_evidence(self):
+        candidate = self.base / "candidate-followup-missing"
+        evaluator = self.base / "evaluator-followup-missing"
+        prepare(ROOT, "retain-09", candidate, evaluator, install_skill=True)
+        followup_evidence = self._message_evidence("followup-missing", "thread-a", "12")
+        with self.assertRaises(ValueError):
+            assemble(
+                evaluator,
+                followup_evidence,
+                self.base / "review-followup-missing",
+                include_followup=True,
+            )
 
     def test_modified_review_input_breaks_manifest_linkage(self):
         _, evaluator, evidence = self._trace_bundle()
