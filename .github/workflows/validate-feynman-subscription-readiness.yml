@@ -15,6 +15,7 @@ on:
       - 'tests/test_feynman_eval_results.py'
       - 'tests/test_feynman_analysis_result_schema.py'
       - 'tests/test_feynman_subscription_*.py'
+      - 'docs/feynman-subscription-local-smoke.md'
       - '.github/workflows/validate-feynman-subscription-readiness.yml'
   pull_request:
     paths:
@@ -30,6 +31,7 @@ on:
       - 'tests/test_feynman_eval_results.py'
       - 'tests/test_feynman_analysis_result_schema.py'
       - 'tests/test_feynman_subscription_*.py'
+      - 'docs/feynman-subscription-local-smoke.md'
       - '.github/workflows/validate-feynman-subscription-readiness.yml'
 
 permissions:
@@ -54,7 +56,8 @@ jobs:
             tests.test_feynman_analysis_result_schema \
             tests.test_feynman_eval_results \
             tests.test_feynman_subscription_smoke_plan \
-            tests.test_feynman_subscription_run_preflight -v
+            tests.test_feynman_subscription_run_preflight \
+            tests.test_feynman_subscription_auth_gate -v
 
       - name: Assert canonical subscription path contains no retired API credential contract
         shell: bash
@@ -69,6 +72,7 @@ jobs:
             tooling/feynman_eval_aggregate_v4.py
             tooling/feynman_subscription_smoke_plan.py
             tooling/feynman_subscription_run_preflight.py
+            tooling/feynman_subscription_auth_gate.py
             evals/feynman-thinking/runner-job.schema.json
             evals/feynman-thinking/runner-attestation.schema.json
             evals/feynman-thinking/runner-job-link.schema.json
