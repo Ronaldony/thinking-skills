@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -10,6 +11,7 @@ sys.path.insert(0, str(ROOT))
 
 from tooling.feynman_mock_responses_server import (
     AUTH_ENV_MARKER,
+    AUTH_VALUE_MARKER,
     EXEC_CALL_ID,
     FINAL_TEXT,
     NETWORK_MARKER,
@@ -20,6 +22,7 @@ from tooling.feynman_mock_responses_server import (
     SCENARIO_PATCH_THEN_EXEC,
     SCENARIOS,
     WORKSPACE_MARKER,
+    _bearer_digest,
     _sse,
     apply_patch_events,
     exec_command_events,
@@ -54,9 +57,39 @@ class MockResponsesServerTests(unittest.TestCase):
         self.assertIn(WORKSPACE_MARKER, args["cmd"])
         self.assertIn(NETWORK_MARKER, args["cmd"])
         self.assertIn(AUTH_ENV_MARKER, args["cmd"])
+        self.assertNotIn(AUTH_VALUE_MARKER, args["cmd"])
         self.assertIn("172.17.0.1", args["cmd"])
         self.assertIn("19001", args["cmd"])
         self.assertEqual(args["yield_time_ms"], 1000)
+
+    def test_synthetic_bearer_digest_adds_value_hash_check_without_raw_secret(self):
+        raw_secret = "synthetic-credential-value"
+        secret_sha = hashlib.sha256(raw_secret.encode()).hexdigest()
+        events = exec_command_events(
+            "172.17.0.1",
+            19001,
+            expected_bearer_sha256=secret_sha,
+        )
+        args = json.loads(events[1]["item"]["arguments"])
+        self.assertIn(AUTH_VALUE_MARKER, args["cmd"])
+        self.assertIn(secret_sha, args["cmd"])
+        self.assertNotIn(raw_secret, args["cmd"])
+
+    def test_invalid_bearer_digest_is_rejected(self):
+        with self.assertRaises(ValueError):
+            exec_command_events("172.17.0.1", 19001, expected_bearer_sha256="not-a-sha")
+
+    def test_bearer_digest_records_only_hash(self):
+        token = "very-sensitive-synthetic-token"
+        present, digest = _bearer_digest("Bearer " + token)
+        self.assertTrue(present)
+        self.assertEqual(digest, hashlib.sha256(token.encode()).hexdigest())
+        self.assertNotIn(token, digest)
+
+    def test_missing_or_empty_bearer_is_not_present(self):
+        self.assertEqual(_bearer_digest(None), (False, None))
+        self.assertEqual(_bearer_digest("Bearer "), (False, None))
+        self.assertEqual(_bearer_digest("Basic abc"), (False, None))
 
     def test_patch_then_exec_command_requires_patch_marker(self):
         events = exec_command_events("172.17.0.1", 19001, require_patch=True)
