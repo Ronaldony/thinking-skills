@@ -10,26 +10,41 @@ sys.path.insert(0, str(ROOT))
 
 from tooling.feynman_mock_responses_server import (
     AUTH_ENV_MARKER,
-    CALL_ID,
+    EXEC_CALL_ID,
     FINAL_TEXT,
     NETWORK_MARKER,
+    PATCH_CALL_ID,
+    PATCH_FILENAME,
+    PATCH_MARKER,
     WORKSPACE_MARKER,
     _sse,
+    apply_patch_events,
+    exec_command_events,
     final_events,
-    find_matching_tool_output,
-    function_call_events,
+    find_exec_output,
+    find_patch_output,
 )
 
 
 class MockResponsesServerTests(unittest.TestCase):
-    def test_first_response_requests_exec_command_with_all_boundary_checks(self):
-        events = function_call_events("172.17.0.1", 19001)
-        self.assertEqual(events[0]["type"], "response.created")
+    def test_first_response_requests_apply_patch_for_remote_marker_file(self):
+        events = apply_patch_events()
+        call = events[1]["item"]
+        self.assertEqual(call["type"], "custom_tool_call")
+        self.assertEqual(call["call_id"], PATCH_CALL_ID)
+        self.assertEqual(call["name"], "apply_patch")
+        self.assertIn(f"*** Add File: {PATCH_FILENAME}", call["input"])
+        self.assertIn(f"+{PATCH_MARKER}", call["input"])
+
+    def test_second_response_exec_command_reads_patch_and_checks_boundary(self):
+        events = exec_command_events("172.17.0.1", 19001)
         call = events[1]["item"]
         self.assertEqual(call["type"], "function_call")
-        self.assertEqual(call["call_id"], CALL_ID)
+        self.assertEqual(call["call_id"], EXEC_CALL_ID)
         self.assertEqual(call["name"], "exec_command")
         args = json.loads(call["arguments"])
+        self.assertIn(PATCH_FILENAME, args["cmd"])
+        self.assertIn(PATCH_MARKER, args["cmd"])
         self.assertIn(WORKSPACE_MARKER, args["cmd"])
         self.assertIn(NETWORK_MARKER, args["cmd"])
         self.assertIn(AUTH_ENV_MARKER, args["cmd"])
@@ -37,32 +52,48 @@ class MockResponsesServerTests(unittest.TestCase):
         self.assertIn("19001", args["cmd"])
         self.assertEqual(args["yield_time_ms"], 1000)
 
-    def test_matching_function_output_is_found_recursively(self):
+    def test_matching_patch_output_is_found_recursively(self):
         body = {
-            "input": [
-                {"type": "message", "role": "user", "content": []},
-                {
-                    "type": "function_call_output",
-                    "call_id": CALL_ID,
-                    "output": f"{AUTH_ENV_MARKER}\n{NETWORK_MARKER}\n{WORKSPACE_MARKER}\n",
-                },
-            ]
+            "input": [{
+                "type": "custom_tool_call_output",
+                "call_id": PATCH_CALL_ID,
+                "output": {"content": "Done!", "success": True},
+            }]
         }
-        output = find_matching_tool_output(body)
+        output = find_patch_output(body)
         self.assertIsNotNone(output)
+        self.assertIn("Done!", output)
+
+    def test_matching_exec_output_is_found_recursively(self):
+        body = {
+            "input": [{
+                "type": "function_call_output",
+                "call_id": EXEC_CALL_ID,
+                "output": f"{PATCH_MARKER}\n{AUTH_ENV_MARKER}\n{NETWORK_MARKER}\n{WORKSPACE_MARKER}\n",
+            }]
+        }
+        output = find_exec_output(body)
+        self.assertIsNotNone(output)
+        self.assertIn(PATCH_MARKER, output)
         self.assertIn(AUTH_ENV_MARKER, output)
         self.assertIn(NETWORK_MARKER, output)
         self.assertIn(WORKSPACE_MARKER, output)
 
-    def test_wrong_call_id_is_not_accepted(self):
-        body = {
-            "input": [{
-                "type": "function_call_output",
-                "call_id": "other-call",
-                "output": f"{AUTH_ENV_MARKER} {NETWORK_MARKER} {WORKSPACE_MARKER}",
-            }]
-        }
-        self.assertIsNone(find_matching_tool_output(body))
+    def test_wrong_patch_call_id_is_not_accepted(self):
+        body = {"input": [{
+            "type": "custom_tool_call_output",
+            "call_id": "other-call",
+            "output": "Done!",
+        }]}
+        self.assertIsNone(find_patch_output(body))
+
+    def test_wrong_exec_call_id_is_not_accepted(self):
+        body = {"input": [{
+            "type": "function_call_output",
+            "call_id": "other-call",
+            "output": f"{PATCH_MARKER} {AUTH_ENV_MARKER} {NETWORK_MARKER} {WORKSPACE_MARKER}",
+        }]}
+        self.assertIsNone(find_exec_output(body))
 
     def test_final_response_contains_only_expected_reference_text(self):
         events = final_events()
@@ -79,11 +110,11 @@ class MockResponsesServerTests(unittest.TestCase):
 
     def test_invalid_tool_host_is_rejected(self):
         with self.assertRaises(ValueError):
-            function_call_events("host;touch /tmp/bad", 19001)
+            exec_command_events("host;touch /tmp/bad", 19001)
 
     def test_invalid_tool_port_is_rejected(self):
         with self.assertRaises(ValueError):
-            function_call_events("172.17.0.1", 0)
+            exec_command_events("172.17.0.1", 0)
 
 
 if __name__ == "__main__":
