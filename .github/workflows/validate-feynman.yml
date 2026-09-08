@@ -31,6 +31,8 @@ jobs:
           python-version: '3.12'
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
+      - name: Validate public development cases and rubrics
+        run: python tooling/feynman_eval_data.py --base evals/feynman-thinking
       - name: Reproduce audited legacy decision paths
         run: python audit/legacy_probes.py
       - name: Build allowlisted runtime
@@ -70,6 +72,7 @@ jobs:
           python tooling/codex_exec_evidence.py /tmp/feynman-trace.jsonl --output /tmp/feynman-evidence
           grep -q 'command_execution:cmd-1' /tmp/feynman-evidence/evidence-index.json
           grep -q 'FAILED synthetic check' /tmp/feynman-evidence/evidence/0001-command.txt
+          grep -q 'final_sha256' /tmp/feynman-evidence/evidence-index.json
           ! grep -R -q 'DO_NOT_COPY_REASONING' /tmp/feynman-evidence
       - name: Exercise semantic review linkage and structural gate
         run: |
@@ -96,6 +99,7 @@ jobs:
             --review /tmp/feynman-semantic-review.json \
             --output /tmp/feynman-gate.json
           grep -q '"verdict": "passed"' /tmp/feynman-gate.json
+          grep -q '"hard_failure_ids": \[\]' /tmp/feynman-gate.json
       - name: Fetch pinned legacy source for sanitized comparison validation
         run: |
           git init -q /tmp/feynman-legacy-source
