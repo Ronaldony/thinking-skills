@@ -90,13 +90,20 @@ def attestation(condition: str = "baseline"):
 
 
 def boundary_report(value: dict):
+    requires_network = value["network"]["case_requires_tool_network"]
+    not_required = ["tool_network_denied"] if requires_network else []
     return {
         "schema_version": 1,
         "run_id": value["run_id"],
         "verdict": "passed",
         "failed_probes": [],
+        "not_required_probes": not_required,
+        "source_artifact_sha256": SHA,
+        "probe_program_sha256": SHA,
+        "network_reference_sha256": None if requires_network else SHA,
         "observed_env_keys": sorted(value["environment"]["candidate_env_keys"]),
         "probes": {name: deepcopy(value["probes"][name]) for name in BOUNDARY_REPORT_PROBES},
+        "scope": "synthetic normalized boundary report for unit tests",
     }
 
 
@@ -110,6 +117,19 @@ class RunnerAttestationTests(unittest.TestCase):
     def test_verified_boundary_report_is_bound(self):
         value = attestation()
         result = validate(value, probe_report=boundary_report(value), probe_report_sha256=SHA)
+        self.assertTrue(result["probe_report_bound"])
+
+    def test_network_required_report_marks_denial_probe_not_required(self):
+        value = attestation()
+        value["network"].update({
+            "case_requires_tool_network": True,
+            "tool_network": "restricted",
+            "control_plane_separate_from_tool_network": True,
+            "allowed_tool_destinations": ["fixture.example.invalid"],
+        })
+        value["probes"]["tool_network_denied"]["passed"] = False
+        report = boundary_report(value)
+        result = validate(value, probe_report=report, probe_report_sha256=SHA)
         self.assertTrue(result["probe_report_bound"])
 
     def test_probe_report_digest_mismatch_is_rejected(self):
