@@ -149,3 +149,48 @@
   - 실제 credential을 가진 control plane의 end-to-end 검증은 미실행.
   - `apply_patch` custom-tool remote compatibility 미해결.
   - 실제 baseline/generic/legacy/v0.5 행동 비교는 미실행.
+
+---
+
+## LOG-004 — apply_patch 실패 원인: mock model metadata 부재 확인
+
+- **시각(KST)**: 2026-09-08 20:55
+- **시작 head**: `7834b84557eb8414420e64e469782280404af4b0`
+- **목적**: `unsupported custom tool call: apply_patch`가 remote exec transport 한계인지, model tool registration 문제인지 구분한다.
+- **Codex 소스 관찰**:
+  - `core/src/tools/handlers/apply_patch.rs`: `ApplyPatchHandler`는 `ToolPayload::Custom`을 기대한다. 따라서 기존 mock server의 `custom_tool_call` 표현 자체가 근본적으로 잘못된 것은 아니다.
+  - `core/src/tools/spec_plan.rs`: environment가 존재하고 `context.model_info.apply_patch_tool_type.is_some()`일 때만 `ApplyPatchHandler`를 registry에 추가한다.
+  - 성공한 exec-only trace에서는 `Model metadata for 'mock-model' not found. Defaulting to fallback metadata` 경고가 관찰됐다.
+  - Codex 자체 테스트 `app-server/tests/suite/v2/turn_start.rs`는 `mock-model`을 사용할 때 models metadata의 `slug/display_name`을 `mock-model`로 바꾸고 `apply_patch_tool_type="freeform"`을 명시한다.
+  - `models-manager/models.json`에는 실제 bundled model metadata 중 `apply_patch_tool_type="freeform"`인 항목이 존재한다.
+  - `codex debug models --bundled`는 설치된 Codex의 bundled catalog를 JSON으로 출력하는 공식 debug 경로다.
+  - config의 `model_catalog_json`은 startup 시 JSON model catalog를 직접 적용할 수 있다.
+- **판단**:
+  - 이전 patch 실패의 직접 원인은 remote transport 자체가 아니라 `mock-model` fallback metadata에서 apply-patch handler가 등록되지 않은 것이라는 설명이 소스와 일치한다.
+  - current-main 모델 slug를 하드코딩하면 설치 버전과 어긋날 수 있으므로 금지한다.
+  - 설치된 Codex가 실제로 bundled catalog에서 `freeform` patch 지원을 광고하는 모델만 source로 허용한다.
+- **변경**:
+  - `tooling/feynman_mock_model_catalog.py` 추가 — bundled catalog에서 `freeform apply_patch + unified exec + text input`을 이미 광고하는 첫 모델을 결정적으로 선택하고, `slug/display_name`만 `mock-model`로 변경. 그 외 metadata 변경은 자체 검증으로 거부.
+  - `tests/test_feynman_mock_model_catalog.py` 추가 — patch 미지원, disabled shell, text 미지원, 중복 slug, malformed entry를 fail-closed로 거부하는 regression.
+  - `.github/workflows/validate-feynman-remote-patch-reference.yml` 추가 — exec-only와 독립된 patch reference workflow.
+- **관련 커밋**:
+  - `3e4e256a4f935cd2f432bf73c61d251aaa46539e` — bundled metadata 기반 mock catalog helper
+  - `330c0da86a83a7dd07ae4edc1b21a00559f93073` — helper regression tests
+  - `e761af40e95ce3374e639a5deb22939d7a0b58b8` — 독립 remote patch reference CI
+- **새 remote-patch workflow의 검증 순서**:
+  1. 설치된 `@openai/codex` 버전 고정 및 host/tool 동일 버전 확인.
+  2. `codex debug models --bundled` 원본 catalog 보존.
+  3. patch-capable source metadata를 `mock-model`로 복제하고 source/output SHA 보존.
+  4. `model_catalog_json`으로 해당 catalog를 control plane에 직접 적용.
+  5. `patch-then-exec` mock scenario 실행.
+  6. `remote-patch-proof.txt == REMOTE_PATCH_OK` 확인.
+  7. 이어지는 remote `exec_command`가 patch marker를 읽고 network/auth/workspace markers를 함께 반환하는지 확인.
+  8. Docker inspect/profile 및 content-bound reference-result 재검증.
+- **검증 상태**: helper/test/workflow는 커밋됨. 실제 GitHub Actions 결과는 아직 이 로그 시점에 확정하지 않음.
+- **결론**: patch reference를 다시 시도할 근거가 생겼지만, 아직 patch E2E 성공은 주장하지 않는다.
+- **다음 작업**: `e761af40…`에서 새 `validate-feynman-remote-patch-reference`의 최초 실제 run을 확인한다.
+- **남은 위험**:
+  - Codex 0.153.4의 `debug models --bundled` 출력 형식이 helper 예상과 실제 일치하는지 CI에서 최초 확인 필요.
+  - `model_catalog_json`이 custom provider의 `mock-model`에도 예상대로 metadata를 적용하는지 미확인.
+  - apply_patch가 remote selected environment의 filesystem으로 실제 라우팅되는지 미확인.
+  - 실제 external credential/model-service는 여전히 사용하지 않음.
