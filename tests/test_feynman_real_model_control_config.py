@@ -59,7 +59,7 @@ class RealModelControlConfigTests(unittest.TestCase):
             json.dumps(self.profile, sort_keys=True).encode("utf-8")
         ).hexdigest()
         self.job = {
-            "schema_version": 1,
+            "schema_version": 2,
             "run_id": "real-smoke",
             "job": {
                 "ordinal": 1,
@@ -84,7 +84,9 @@ class RealModelControlConfigTests(unittest.TestCase):
                 "control_plane_separate_from_tool_network": True,
             },
             "authentication": {
-                "mode": "external-broker",
+                "mode": "control-plane-only",
+                "control_plane_credential_source": "environment",
+                "control_plane_credential_env_key": "OPENAI_API_KEY",
                 "candidate_tool_auth_env_keys": [],
                 "candidate_readable_credential_files": [],
                 "credential_command_arguments": [],
@@ -119,6 +121,20 @@ class RealModelControlConfigTests(unittest.TestCase):
         parsed = tomllib.loads(text)
         result = validate_document(parsed, deepcopy(self.job), deepcopy(self.profile), self.profile_sha)
         self.assertFalse(result["credential_value_stored"])
+        self.assertEqual(result["authentication_mode"], "control-plane-only")
+        self.assertEqual(result["credential_source"], "environment")
+
+    def test_custom_control_plane_env_key_is_propagated_from_runner_job(self):
+        job = deepcopy(self.job)
+        job["authentication"]["control_plane_credential_env_key"] = "MODEL_SERVICE_TOKEN"
+        document = build_document(job, deepcopy(self.profile), self.profile_sha)
+        self.assertEqual(
+            document["model_providers"]["openai-api"]["env_key"],
+            "MODEL_SERVICE_TOKEN",
+        )
+        self.assertNotIn("MODEL_SERVICE_TOKEN", document["shell_environment_policy"]["set"])
+        result = validate_document(document, job, deepcopy(self.profile), self.profile_sha)
+        self.assertEqual(result["credential_env_key_name"], "MODEL_SERVICE_TOKEN")
 
     def test_mock_model_id_is_rejected(self):
         job = deepcopy(self.job)
@@ -143,6 +159,14 @@ class RealModelControlConfigTests(unittest.TestCase):
         job["authentication"]["candidate_tool_auth_env_keys"] = ["OPENAI_API_KEY"]
         with self.assertRaises(ValueError):
             build_document(job, deepcopy(self.profile), self.profile_sha)
+
+    def test_job_exposing_control_plane_key_in_candidate_env_is_rejected(self):
+        job = deepcopy(self.job)
+        profile = deepcopy(self.profile)
+        job["boundary"]["candidate_env_keys"].append("OPENAI_API_KEY")
+        profile["candidate_env_keys"].append("OPENAI_API_KEY")
+        with self.assertRaises(ValueError):
+            build_document(job, profile, self.profile_sha)
 
 
 if __name__ == "__main__":
