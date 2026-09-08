@@ -36,11 +36,31 @@ SHA_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 PRIMARY_CONDITIONS = {"baseline", "generic", "legacy-clean", "feynman-v05"}
 
 
+def _without_symlink_components(path: Path, label: str) -> Path:
+    absolute = path.expanduser().absolute()
+    parts = absolute.parts
+    if not parts:
+        raise ValueError(f"{label} path is empty")
+    current = Path(parts[0])
+    for part in parts[1:]:
+        current = current / part
+        if current.is_symlink():
+            raise ValueError(f"{label} path contains symlink component: {current}")
+    return absolute
+
+
 def _regular(path: Path, label: str) -> Path:
-    path = path.resolve()
-    if path.is_symlink() or not path.is_file():
-        raise ValueError(f"{label} must be a regular file: {path}")
-    return path
+    absolute = _without_symlink_components(path, label)
+    if not absolute.is_file():
+        raise ValueError(f"{label} must be a regular file: {absolute}")
+    return absolute.resolve()
+
+
+def _real_directory(path: Path, label: str) -> Path:
+    absolute = _without_symlink_components(path, label)
+    if not absolute.is_dir():
+        raise ValueError(f"{label} must be a real directory: {absolute}")
+    return absolute.resolve()
 
 
 def _json_object(path: Path, label: str) -> dict[str, Any]:
@@ -52,7 +72,7 @@ def _json_object(path: Path, label: str) -> dict[str, Any]:
 
 
 def _sha(path: Path) -> str:
-    return hashlib.sha256(path.resolve().read_bytes()).hexdigest()
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _valid_sha(value: Any) -> bool:
@@ -117,9 +137,10 @@ def _validate_candidate_task(runner_job: dict[str, Any]) -> tuple[Path, str]:
     digests = runner_job.get("digests")
     if not isinstance(paths, dict) or not isinstance(digests, dict):
         raise ValueError("runner job lacks paths/digests")
-    candidate_dir = Path(paths.get("candidate_dir", "")).resolve()
-    if not candidate_dir.is_dir() or candidate_dir.is_symlink():
-        raise ValueError("candidate directory must be a real directory")
+    candidate_raw = paths.get("candidate_dir")
+    if not isinstance(candidate_raw, str) or not candidate_raw:
+        raise ValueError("runner job has invalid candidate directory")
+    candidate_dir = _real_directory(Path(candidate_raw), "candidate directory")
     task = _regular(candidate_dir / "task.txt", "candidate task")
     task_sha = _sha(task)
     if task_sha != digests.get("candidate_prompt_sha256"):
