@@ -7,9 +7,16 @@
     "host": {"type": "string", "minLength": 1},
     "port": {"type": "integer", "minimum": 1, "maximum": 65535},
     "reachable_from_control_plane": {"const": true},
-    "probe_method": {"type": "string", "minLength": 1},
+    "probe_method": {"const": "tcp-connect:v1"},
     "endpoint_identity_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
   },
-  "required": ["schema_version", "host", "port", "reachable_from_control_plane"],
+  "required": [
+    "schema_version",
+    "host",
+    "port",
+    "reachable_from_control_plane",
+    "probe_method",
+    "endpoint_identity_sha256"
+  ],
   "additionalProperties": false
 }
