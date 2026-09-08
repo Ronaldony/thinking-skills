@@ -53,6 +53,11 @@ def _candidate_prompt(prefix: str, task: str) -> str:
     return task if not prefix.strip() else f"{prefix.strip()}\n\n사용자 과제:\n{task}"
 
 
+def _candidate_prompt_bytes(prompt: str) -> bytes:
+    """Canonical bytes written to task.txt and attested by candidate_prompt_sha256."""
+    return (prompt + "\n").encode("utf-8")
+
+
 def build_plan(repo_root: Path, *, case_ids: list[str] | None = None,
                condition_ids: list[str] | None = None, repeats: int = 1,
                seed: int = 20260908) -> dict[str, Any]:
@@ -94,7 +99,7 @@ def build_plan(repo_root: Path, *, case_ids: list[str] | None = None,
                     "expected_skills": condition["expected_skills"],
                     "required_source_commit": condition.get("required_source_commit"),
                     "candidate_prompt": prompt,
-                    "candidate_prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+                    "candidate_prompt_sha256": hashlib.sha256(_candidate_prompt_bytes(prompt)).hexdigest(),
                 })
     random.Random(seed).shuffle(jobs)
     for ordinal, job in enumerate(jobs, 1):
