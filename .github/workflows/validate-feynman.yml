@@ -96,3 +96,34 @@ jobs:
             --review /tmp/feynman-semantic-review.json \
             --output /tmp/feynman-gate.json
           grep -q '"verdict": "passed"' /tmp/feynman-gate.json
+      - name: Fetch pinned legacy source for sanitized comparison validation
+        run: |
+          git init -q /tmp/feynman-legacy-source
+          git -C /tmp/feynman-legacy-source remote add origin https://github.com/Ronaldony/feynman-thinking.git
+          git -C /tmp/feynman-legacy-source fetch --depth 1 origin 1609b8b6909f9ab596c1ecf298fbec4a0c70d6b4
+          git -C /tmp/feynman-legacy-source checkout --detach -q FETCH_HEAD
+          test "$(git -C /tmp/feynman-legacy-source rev-parse HEAD)" = "1609b8b6909f9ab596c1ecf298fbec4a0c70d6b4"
+      - name: Build and install pinned legacy-clean runtime
+        run: |
+          python tooling/feynman_legacy_package.py \
+            --legacy-root /tmp/feynman-legacy-source \
+            --output /tmp/feynman-legacy-clean
+          test -f /tmp/feynman-legacy-clean/feynman-thinking/SKILL.md
+          test ! -e /tmp/feynman-legacy-clean/feynman-thinking/evals
+          test ! -e /tmp/feynman-legacy-clean/feynman-thinking/scripts
+          test ! -e /tmp/feynman-legacy-clean/feynman-thinking/references/evaluation.md
+          ! grep -q 'references/evaluation.md' /tmp/feynman-legacy-clean/feynman-thinking/SKILL.md
+          python tooling/feynman_condition_workspace.py \
+            --root . \
+            --case mechanism-01 \
+            --condition legacy-clean \
+            --candidate-dir /tmp/feynman-legacy-candidate \
+            --evaluator-dir /tmp/feynman-legacy-evaluator \
+            --legacy-root /tmp/feynman-legacy-source
+          mkdir -p /tmp/feynman-legacy-home /tmp/feynman-legacy-codex-home
+          python tooling/feynman_eval_preflight.py \
+            --candidate-dir /tmp/feynman-legacy-candidate \
+            --expected-skill feynman-thinking \
+            --home /tmp/feynman-legacy-home \
+            --codex-home /tmp/feynman-legacy-codex-home
+          grep -q '^\$feynman-thinking' /tmp/feynman-legacy-candidate/task.txt
