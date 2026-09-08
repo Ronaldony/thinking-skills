@@ -43,6 +43,7 @@ def validate_runtime(root: Path) -> dict[str, Any]:
     parts = text.split("---", 2)
     if not text.startswith("---\n") or len(parts) != 3:
         raise ValueError("missing frontmatter")
+    # This is a validator for this package's single-line fields, not a general YAML parser.
     header = parts[1]
     if not re.search(r"(?m)^name: feynman-thinking\s*$", header):
         raise ValueError("skill name does not match package directory")
@@ -89,6 +90,27 @@ def git_value(root: Path, *args: str) -> str | None:
         return None
     return result.stdout.strip() if result.returncode == 0 else None
 
+def git_repository_state(root: Path) -> tuple[str | None, bool | None]:
+    """Read provenance only when *root itself* is the Git worktree root.
+
+    `git -C <dir>` normally walks to parent repositories. That is useful for Git,
+    but wrong for a package manifest because it can silently attribute an enclosing
+    repository's commit to a nested, non-repository package directory.
+    """
+    root = root.resolve()
+    top = git_value(root, "rev-parse", "--show-toplevel")
+    if top is None:
+        return None, None
+    try:
+        top_path = Path(top).resolve()
+    except OSError:
+        return None, None
+    if top_path != root:
+        return None, None
+    commit = git_value(root, "rev-parse", "HEAD")
+    status = git_value(root, "status", "--porcelain")
+    return commit, None if status is None else bool(status)
+
 def build(repo_root: Path, output: Path) -> dict[str, Any]:
     repo_root = repo_root.resolve()
     runtime = repo_root / "skills" / SKILL_NAME
@@ -99,11 +121,11 @@ def build(repo_root: Path, output: Path) -> dict[str, Any]:
         raise FileExistsError(f"refusing to overwrite: {output}")
     if output.resolve().is_relative_to(runtime.resolve()):
         raise ValueError("output cannot be inside the runtime source")
-    status = git_value(repo_root, "status", "--porcelain")
+    repository_commit, repository_dirty = git_repository_state(repo_root)
     manifest = {"schema_version": 1, "skill": SKILL_NAME,
                 "runtime_sha256": sha, "files": file_hashes,
-                "repository_commit": git_value(repo_root, "rev-parse", "HEAD"),
-                "repository_dirty": None if status is None else bool(status),
+                "repository_commit": repository_commit,
+                "repository_dirty": repository_dirty,
                 "validation": stats,
                 "scope": "allowlist packaging only; no OS/network isolation or behavioral validation"}
     output.mkdir(parents=True, exist_ok=False)

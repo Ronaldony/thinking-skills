@@ -2,6 +2,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -67,6 +68,21 @@ class PackageTests(unittest.TestCase):
         manifest = build(self.repo, target)
         self.assertEqual(manifest["runtime_sha256"], runtime_digest(target / SKILL_NAME)[0])
         self.assertIsNone(manifest["repository_commit"])
+
+    def test_manifest_does_not_adopt_enclosing_repository_commit(self):
+        if shutil.which("git") is None:
+            self.skipTest("git unavailable")
+        outer = self.base / "outer"
+        outer.mkdir()
+        subprocess.run(["git", "-C", str(outer), "init", "-q"], check=True)
+        subprocess.run(["git", "-C", str(outer), "-c", "user.name=Package Test",
+                        "-c", "user.email=test@example.invalid", "commit",
+                        "--allow-empty", "-qm", "outer"], check=True)
+        nested_repo = outer / "export"
+        shutil.copytree(self.repo, nested_repo)
+        manifest = build(nested_repo, self.base / "nested-dist")
+        self.assertIsNone(manifest["repository_commit"])
+        self.assertIsNone(manifest["repository_dirty"])
 
 class GradeGateTests(unittest.TestCase):
     def setUp(self):
