@@ -1,0 +1,315 @@
+name: validate-feynman-codex-reference
+
+on:
+  push:
+    paths:
+      - 'tooling/feynman_boundary_*.py'
+      - 'tooling/feynman_docker_*.py'
+      - 'tooling/feynman_network_reference.py'
+      - 'evals/feynman-thinking/boundary-*.schema.json'
+      - 'tests/test_feynman_boundary_*.py'
+      - 'tests/test_feynman_docker_*.py'
+      - '.github/workflows/validate-feynman-codex-reference.yml'
+  pull_request:
+    paths:
+      - 'tooling/feynman_boundary_*.py'
+      - 'tooling/feynman_docker_*.py'
+      - 'tooling/feynman_network_reference.py'
+      - 'evals/feynman-thinking/boundary-*.schema.json'
+      - 'tests/test_feynman_boundary_*.py'
+      - 'tests/test_feynman_docker_*.py'
+      - '.github/workflows/validate-feynman-codex-reference.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  codex-reference-boundary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build Codex reference image
+        id: build_codex
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/feynman-codex-reference
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT"
+
+          CODEX_PACKAGE_VERSION="$(npm view @openai/codex version)"
+          test -n "$CODEX_PACKAGE_VERSION"
+          printf '%s\n' "$CODEX_PACKAGE_VERSION" > "$ROOT/codex-package-version.txt"
+
+          cat > "$ROOT/Dockerfile" <<'EOF'
+          FROM node:22-bookworm-slim
+          ARG CODEX_PACKAGE_VERSION
+          RUN apt-get update \
+              && apt-get install -y --no-install-recommends python3 ca-certificates \
+              && rm -rf /var/lib/apt/lists/*
+          RUN npm install -g "@openai/codex@${CODEX_PACKAGE_VERSION}"
+          EOF
+
+          docker build \
+            --build-arg "CODEX_PACKAGE_VERSION=$CODEX_PACKAGE_VERSION" \
+            -t feynman-codex-reference:local \
+            -f "$ROOT/Dockerfile" \
+            "$ROOT"
+
+          docker run --rm --network none feynman-codex-reference:local codex --version \
+            | tee "$ROOT/codex-build-version.txt"
+          grep -qi 'codex' "$ROOT/codex-build-version.txt"
+
+      - name: Canary and inspect the Codex reference boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/feynman-codex-reference
+          PROBE_CONTAINER="feynman-codex-probe-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CODEX_CONTAINER="feynman-codex-version-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p \
+            "$ROOT/candidate" \
+            "$ROOT/evaluator" \
+            "$ROOT/harness" \
+            "$ROOT/candidate-home" \
+            "$ROOT/codex-home" \
+            "$ROOT/temp"
+
+          SOURCE_CANARY="$GITHUB_WORKSPACE/.feynman-codex-source-read-canary"
+          REAL_HOME_CANARY="$HOME/.feynman-codex-real-home-read-canary"
+          FORBIDDEN_SOURCE="$GITHUB_WORKSPACE/.feynman-codex-forbidden-write"
+          FORBIDDEN_HOME="$HOME/.feynman-codex-forbidden-write"
+          FORBIDDEN_EVALUATOR="$ROOT/evaluator/forbidden-write.txt"
+          SERVER_PID=""
+
+          cleanup() {
+            docker rm -f "$PROBE_CONTAINER" "$CODEX_CONTAINER" >/dev/null 2>&1 || true
+            if [ -n "$SERVER_PID" ]; then
+              kill "$SERVER_PID" 2>/dev/null || true
+            fi
+            rm -f "$SOURCE_CANARY" "$REAL_HOME_CANARY" "$FORBIDDEN_SOURCE" "$FORBIDDEN_HOME"
+          }
+          trap cleanup EXIT
+
+          printf %s candidate-marker > "$ROOT/candidate/read-canary.txt"
+          printf %s evaluator-marker > "$ROOT/evaluator/read-canary.txt"
+          printf %s source-marker > "$SOURCE_CANARY"
+          printf %s real-home-marker > "$REAL_HOME_CANARY"
+          rm -f "$ROOT/candidate/write-canary.txt" "$FORBIDDEN_EVALUATOR" "$FORBIDDEN_SOURCE" "$FORBIDDEN_HOME"
+          cp tooling/feynman_boundary_probe.py "$ROOT/harness/feynman_boundary_probe.py"
+
+          HOST_IP="$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')"
+          DOCKER_VERSION="$(docker version --format '{{.Server.Version}}')"
+          IMAGE_ID="$(docker image inspect feynman-codex-reference:local --format '{{.Id}}')"
+          RUN_AS="$(id -u):$(id -g)"
+          test -n "$HOST_IP"
+          test -n "$IMAGE_ID"
+
+          python - "$ROOT/boundary-profile.json" "$DOCKER_VERSION" "$IMAGE_ID" "$RUN_AS" "$ROOT" <<'PY'
+          import json
+          import sys
+
+          output, docker_version, image_id, run_as, root = sys.argv[1:]
+          profile = {
+              "schema_version": 1,
+              "backend": "docker",
+              "backend_version": docker_version,
+              "image": "feynman-codex-reference:local",
+              "image_id": image_id,
+              "network_mode": "none",
+              "read_only_root": True,
+              "no_new_privileges": True,
+              "capabilities": [],
+              "run_as": run_as,
+              "read_write_mounts": [
+                  f"{root}/candidate",
+                  f"{root}/candidate-home",
+                  f"{root}/codex-home",
+                  f"{root}/temp",
+              ],
+              "read_only_mounts": ["/probe/feynman_boundary_probe.py"],
+              "tmpfs_mounts": ["/tmp"],
+              "protected_roots_mounted": [],
+              "candidate_env_keys": [
+                  "CODEX_HOME", "HOME", "PATH", "PYTHONDONTWRITEBYTECODE", "TMPDIR"
+              ],
+              "scope": "Codex CLI reference image under inspected Docker boundary; no model request",
+          }
+          with open(output, "w", encoding="utf-8") as handle:
+              json.dump(profile, handle, ensure_ascii=False, indent=2, sort_keys=True)
+              handle.write("\n")
+          PY
+          python tooling/feynman_boundary_profile.py --profile "$ROOT/boundary-profile.json" \
+            > "$ROOT/boundary-profile-check.json"
+          PROFILE_SHA="$(sha256sum "$ROOT/boundary-profile.json" | awk '{print $1}')"
+
+          python - "$ROOT/network-port" <<'PY' &
+          import socket
+          import sys
+
+          path = sys.argv[1]
+          sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+          sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+          sock.bind(("0.0.0.0", 0))
+          sock.listen(16)
+          with open(path, "w", encoding="utf-8") as handle:
+              handle.write(str(sock.getsockname()[1]))
+              handle.flush()
+          while True:
+              conn, _ = sock.accept()
+              conn.close()
+          PY
+          SERVER_PID=$!
+          for _ in $(seq 1 50); do
+            [ -s "$ROOT/network-port" ] && break
+            sleep 0.1
+          done
+          test -s "$ROOT/network-port"
+          PORT="$(cat "$ROOT/network-port")"
+          python tooling/feynman_network_reference.py \
+            --host "$HOST_IP" \
+            --port "$PORT" \
+            --output "$ROOT/network-reference.json"
+
+          common_args=(
+            --network none
+            --cap-drop ALL
+            --security-opt no-new-privileges
+            --read-only
+            --user "$RUN_AS"
+            --tmpfs /tmp:rw,nosuid,nodev
+            -v "$ROOT/candidate:$ROOT/candidate:rw"
+            -v "$ROOT/candidate-home:$ROOT/candidate-home:rw"
+            -v "$ROOT/codex-home:$ROOT/codex-home:rw"
+            -v "$ROOT/temp:$ROOT/temp:rw"
+            -v "$ROOT/harness/feynman_boundary_probe.py:/probe/feynman_boundary_probe.py:ro"
+          )
+
+          docker create \
+            --name "$PROBE_CONTAINER" \
+            "${common_args[@]}" \
+            feynman-codex-reference:local \
+            env -i \
+              HOME="$ROOT/candidate-home" \
+              CODEX_HOME="$ROOT/codex-home" \
+              PATH=/usr/local/bin:/usr/bin:/bin \
+              TMPDIR="$ROOT/temp" \
+              PYTHONDONTWRITEBYTECODE=1 \
+              python3 /probe/feynman_boundary_probe.py \
+                --run-id codex-reference-probe \
+                --boundary-profile-sha256 "$PROFILE_SHA" \
+                --candidate-read "$ROOT/candidate/read-canary.txt" \
+                --candidate-read-marker candidate-marker \
+                --evaluator-read "$ROOT/evaluator/read-canary.txt" \
+                --source-read "$SOURCE_CANARY" \
+                --real-home-read "$REAL_HOME_CANARY" \
+                --candidate-write "$ROOT/candidate/write-canary.txt" \
+                --candidate-write-marker candidate-write-marker \
+                --forbidden-write "$FORBIDDEN_EVALUATOR" \
+                --forbidden-write "$FORBIDDEN_SOURCE" \
+                --forbidden-write "$FORBIDDEN_HOME" \
+                --forbidden-write-marker should-not-write \
+                --network-host "$HOST_IP" \
+                --network-port "$PORT" \
+                --output "$ROOT/candidate/probe-artifact.json" \
+            >/dev/null
+
+          docker inspect "$PROBE_CONTAINER" > "$ROOT/probe-container-inspect.json"
+          python tooling/feynman_docker_reference_inspect.py \
+            --profile "$ROOT/boundary-profile.json" \
+            --inspect "$ROOT/probe-container-inspect.json" \
+            > "$ROOT/probe-container-inspect-check.json"
+          docker start -a "$PROBE_CONTAINER"
+          test "$(docker inspect "$PROBE_CONTAINER" --format '{{.State.ExitCode}}')" = "0"
+
+          python tooling/feynman_boundary_probe_verify.py \
+            --artifact "$ROOT/candidate/probe-artifact.json" \
+            --expected-run-id codex-reference-probe \
+            --boundary-profile-sha256 "$PROFILE_SHA" \
+            --probe-program "$ROOT/harness/feynman_boundary_probe.py" \
+            --candidate-read "$ROOT/candidate/read-canary.txt" \
+            --candidate-read-marker candidate-marker \
+            --evaluator-read "$ROOT/evaluator/read-canary.txt" \
+            --evaluator-read-marker evaluator-marker \
+            --source-read "$SOURCE_CANARY" \
+            --source-read-marker source-marker \
+            --real-home-read "$REAL_HOME_CANARY" \
+            --real-home-read-marker real-home-marker \
+            --candidate-write "$ROOT/candidate/write-canary.txt" \
+            --candidate-write-marker candidate-write-marker \
+            --forbidden-write "$FORBIDDEN_EVALUATOR" \
+            --forbidden-write "$FORBIDDEN_SOURCE" \
+            --forbidden-write "$FORBIDDEN_HOME" \
+            --network-reference "$ROOT/network-reference.json" \
+            --output "$ROOT/probe-report.json"
+
+          docker create \
+            --name "$CODEX_CONTAINER" \
+            "${common_args[@]}" \
+            feynman-codex-reference:local \
+            env -i \
+              HOME="$ROOT/candidate-home" \
+              CODEX_HOME="$ROOT/codex-home" \
+              PATH=/usr/local/bin:/usr/bin:/bin \
+              TMPDIR="$ROOT/temp" \
+              PYTHONDONTWRITEBYTECODE=1 \
+              codex --version \
+            >/dev/null
+
+          docker inspect "$CODEX_CONTAINER" > "$ROOT/codex-container-inspect.json"
+          python tooling/feynman_docker_reference_inspect.py \
+            --profile "$ROOT/boundary-profile.json" \
+            --inspect "$ROOT/codex-container-inspect.json" \
+            > "$ROOT/codex-container-inspect-check.json"
+          docker start -a "$CODEX_CONTAINER" | tee "$ROOT/codex-boundary-version.txt"
+          test "$(docker inspect "$CODEX_CONTAINER" --format '{{.State.ExitCode}}')" = "0"
+          grep -qi 'codex' "$ROOT/codex-boundary-version.txt"
+          grep -q '"verdict": "passed"' "$ROOT/probe-report.json"
+          grep -q '"docker-inspect-matches-profile"' "$ROOT/codex-container-inspect-check.json"
+
+          python - "$ROOT" <<'PY'
+          import hashlib
+          import json
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          profile_raw = (root / "boundary-profile.json").read_bytes()
+          report_raw = (root / "probe-report.json").read_bytes()
+          profile_sha = hashlib.sha256(profile_raw).hexdigest()
+          report = json.loads(report_raw)
+          codex_check = json.loads((root / "codex-container-inspect-check.json").read_text())
+          assert report["verdict"] == "passed"
+          assert report["boundary_profile_sha256"] == profile_sha
+          assert codex_check["boundary_profile_sha256"] == profile_sha
+          print(json.dumps({
+              "codex_reference_boundary": "passed",
+              "boundary_profile_sha256": profile_sha,
+              "probe_report_sha256": hashlib.sha256(report_raw).hexdigest(),
+              "codex_version": (root / "codex-boundary-version.txt").read_text().strip(),
+              "scope": "same inspected boundary profile supports canary + Codex CLI version command; no model request/authentication",
+          }, indent=2))
+          PY
+
+      - name: Upload Codex reference evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: feynman-codex-reference-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /tmp/feynman-codex-reference/codex-package-version.txt
+            /tmp/feynman-codex-reference/codex-build-version.txt
+            /tmp/feynman-codex-reference/boundary-profile.json
+            /tmp/feynman-codex-reference/boundary-profile-check.json
+            /tmp/feynman-codex-reference/network-reference.json
+            /tmp/feynman-codex-reference/probe-container-inspect-check.json
+            /tmp/feynman-codex-reference/candidate/probe-artifact.json
+            /tmp/feynman-codex-reference/probe-report.json
+            /tmp/feynman-codex-reference/codex-container-inspect-check.json
+            /tmp/feynman-codex-reference/codex-boundary-version.txt
+          if-no-files-found: error
+          retention-days: 14
