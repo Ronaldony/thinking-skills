@@ -54,6 +54,10 @@ def _valid_sha(value: Any) -> bool:
     return isinstance(value, str) and SHA_PATTERN.fullmatch(value) is not None
 
 
+def _endpoint_identity(host: str, port: int) -> str:
+    return hashlib.sha256(f"tcp://{host}:{port}".encode("utf-8")).hexdigest()
+
+
 def _regular_marker(path: Path, marker: str, label: str) -> dict[str, Any]:
     if path.is_symlink() or not path.is_file():
         raise ValueError(f"{label} canary must exist as a regular file: {path}")
@@ -85,11 +89,12 @@ def _probe(name: str, passed: bool, source_sha: str, observation: Any,
 
 
 def validate_report(report: dict[str, Any]) -> dict[str, Any]:
-    """Validate the normalized evaluator-side report shape and self-consistency."""
     if report.get("schema_version") != 1:
         raise ValueError("unsupported boundary probe report schema_version")
     if not isinstance(report.get("run_id"), str) or not report["run_id"].strip():
         raise ValueError("boundary probe report run_id must be nonempty")
+    if not _valid_sha(report.get("boundary_profile_sha256")):
+        raise ValueError("boundary probe report boundary_profile_sha256 must be SHA-256")
     if report.get("verdict") not in {"passed", "failed"}:
         raise ValueError("boundary probe report verdict must be passed/failed")
     for field in ("source_artifact_sha256", "probe_program_sha256"):
@@ -136,7 +141,8 @@ def validate_report(report: dict[str, Any]) -> dict[str, Any]:
     return report
 
 
-def verify(*, artifact_path: Path, expected_run_id: str, probe_program: Path,
+def verify(*, artifact_path: Path, expected_run_id: str,
+           expected_boundary_profile_sha256: str, probe_program: Path,
            candidate_read: Path, candidate_read_marker: str,
            evaluator_read: Path, evaluator_read_marker: str,
            source_read: Path, source_read_marker: str,
@@ -144,11 +150,15 @@ def verify(*, artifact_path: Path, expected_run_id: str, probe_program: Path,
            candidate_write: Path, candidate_write_marker: str,
            forbidden_writes: list[Path], network_reference: Path | None = None,
            require_network_denied: bool = True) -> dict[str, Any]:
+    if not _valid_sha(expected_boundary_profile_sha256):
+        raise ValueError("expected boundary profile digest must be SHA-256")
     artifact_path = artifact_path.resolve()
     artifact = _load(artifact_path)
     source_sha = _sha(artifact_path)
     if artifact.get("schema_version") != 1 or artifact.get("run_id") != expected_run_id:
         raise ValueError("probe artifact schema/run_id mismatch")
+    if artifact.get("boundary_profile_sha256") != expected_boundary_profile_sha256:
+        raise ValueError("probe artifact boundary profile digest mismatch")
     if probe_program.is_symlink() or not probe_program.is_file():
         raise ValueError("probe program must be a regular file")
     program_sha = _sha(probe_program.resolve())
@@ -187,8 +197,6 @@ def verify(*, artifact_path: Path, expected_run_id: str, probe_program: Path,
         if not isinstance(obs, dict):
             raise ValueError(f"missing protected read observation: {obs_name}")
         _expected_path(obs, path, probe_name)
-        # Host existence proves that ENOENT inside a mount namespace represents
-        # invisibility, not a forgotten canary fixture.
         host = _regular_marker(path, marker, probe_name)
         passed = obs.get("succeeded") is False and obs.get("denied") is True
         probes[probe_name] = _probe(probe_name, passed, source_sha, obs, host)
@@ -263,6 +271,10 @@ def verify(*, artifact_path: Path, expected_run_id: str, probe_program: Path,
         host, port = reference.get("host"), reference.get("port")
         if not isinstance(host, str) or not host or type(port) is not int or not (1 <= port <= 65535):
             raise ValueError("network reference has invalid endpoint")
+        if reference.get("probe_method") != "tcp-connect:v1":
+            raise ValueError("network reference must be created by tcp-connect:v1")
+        if reference.get("endpoint_identity_sha256") != _endpoint_identity(host, port):
+            raise ValueError("network reference endpoint identity mismatch")
         network_host_check.update({"host": host, "port": port, "reference_sha256": network_reference_sha})
         network_ok = (
             network_obs.get("attempted") is True
@@ -284,6 +296,7 @@ def verify(*, artifact_path: Path, expected_run_id: str, probe_program: Path,
     report = {
         "schema_version": 1,
         "run_id": expected_run_id,
+        "boundary_profile_sha256": expected_boundary_profile_sha256,
         "verdict": "passed" if not failed else "failed",
         "failed_probes": failed,
         "not_required_probes": not_required,
@@ -301,6 +314,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifact", type=Path, required=True)
     parser.add_argument("--expected-run-id", required=True)
+    parser.add_argument("--boundary-profile-sha256", required=True)
     parser.add_argument("--probe-program", type=Path, default=Path(__file__).with_name("feynman_boundary_probe.py"))
     parser.add_argument("--candidate-read", type=Path, required=True)
     parser.add_argument("--candidate-read-marker", required=True)
@@ -321,6 +335,7 @@ def main() -> int:
         report = verify(
             artifact_path=args.artifact,
             expected_run_id=args.expected_run_id,
+            expected_boundary_profile_sha256=args.boundary_profile_sha256,
             probe_program=args.probe_program,
             candidate_read=args.candidate_read,
             candidate_read_marker=args.candidate_read_marker,
