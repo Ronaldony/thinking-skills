@@ -57,7 +57,7 @@ class RemoteExecEnvironmentTests(unittest.TestCase):
         raw = json.dumps(self.profile, sort_keys=True).encode("utf-8")
         self.profile_sha = hashlib.sha256(raw).hexdigest()
         self.job = {
-            "schema_version": 1,
+            "schema_version": 2,
             "run_id": "reference/run 1",
             "job": {
                 "ordinal": 1,
@@ -82,7 +82,9 @@ class RemoteExecEnvironmentTests(unittest.TestCase):
                 "control_plane_separate_from_tool_network": True,
             },
             "authentication": {
-                "mode": "external-broker",
+                "mode": "control-plane-only",
+                "control_plane_credential_source": "environment",
+                "control_plane_credential_env_key": "OPENAI_API_KEY",
                 "candidate_tool_auth_env_keys": [],
                 "candidate_readable_credential_files": [],
                 "credential_command_arguments": [],
@@ -113,6 +115,7 @@ class RemoteExecEnvironmentTests(unittest.TestCase):
         self.assertNotIn(self.paths["evaluator_dir"], " ".join(args))
         self.assertNotIn(self.paths["source_repo"], " ".join(args))
         self.assertNotIn(self.paths["real_home"], " ".join(args))
+        self.assertNotIn("OPENAI_API_KEY", " ".join(args))
 
     def test_all_candidate_owned_roots_are_exact_rw_binds(self):
         args = expected_docker_args(deepcopy(self.job), deepcopy(self.profile))
