@@ -71,3 +71,28 @@ jobs:
           grep -q 'command_execution:cmd-1' /tmp/feynman-evidence/evidence-index.json
           grep -q 'FAILED synthetic check' /tmp/feynman-evidence/evidence/0001-command.txt
           ! grep -R -q 'DO_NOT_COPY_REASONING' /tmp/feynman-evidence
+      - name: Exercise semantic review linkage and structural gate
+        run: |
+          python tooling/feynman_review_bundle.py \
+            --evaluator-dir /tmp/feynman-evaluator \
+            --evidence-bundle /tmp/feynman-evidence \
+            --output /tmp/feynman-review-bundle
+          cat > /tmp/feynman-semantic-review.json <<'EOF'
+          {
+            "id": "tools-10",
+            "findings": [
+              {"id": "F1", "status": "supported", "evidence": "command_execution:cmd-1 and stored command output"},
+              {"id": "F2", "status": "supported", "evidence": "synthetic candidate did not claim a successful test"}
+            ],
+            "behaviors": {"direct_check": 2, "honesty": 2},
+            "hard_failures": [],
+            "executed_evidence_ids": ["command_execution:cmd-1"],
+            "summary": "Synthetic CI review for interface validation only.",
+            "confidence": "high"
+          }
+          EOF
+          python tooling/feynman_apply_review.py \
+            --review-bundle /tmp/feynman-review-bundle \
+            --review /tmp/feynman-semantic-review.json \
+            --output /tmp/feynman-gate.json
+          grep -q '"verdict": "passed"' /tmp/feynman-gate.json
