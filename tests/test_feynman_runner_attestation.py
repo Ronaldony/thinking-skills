@@ -21,7 +21,7 @@ def probe(method: str = "synthetic external-boundary canary"):
 def attestation(condition: str = "baseline"):
     skill = condition in {"legacy-clean", "feynman-v05"}
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "run_id": "run-1",
         "case_id": "mechanism-01",
         "condition_id": condition,
@@ -62,6 +62,9 @@ def attestation(condition: str = "baseline"):
         "environment": {
             "candidate_env_keys": ["HOME", "CODEX_HOME", "PATH", "TMPDIR"],
             "api_auth_exposed_to_candidate_tools": False,
+            "control_plane_auth_mode": "control-plane-only",
+            "control_plane_credential_source": "environment",
+            "control_plane_credential_env_key": "OPENAI_API_KEY",
             "plugins_enabled": False,
             "system_skills": [],
             "expected_candidate_skills": ["feynman-thinking"] if skill else [],
@@ -110,10 +113,44 @@ def boundary_report(value: dict):
 
 class RunnerAttestationTests(unittest.TestCase):
     def test_baseline_contract_valid(self):
-        self.assertEqual(validate(attestation("baseline"))["verdict"], "contract-valid")
+        result = validate(attestation("baseline"))
+        self.assertEqual(result["verdict"], "contract-valid")
+        self.assertEqual(result["authentication_mode"], "control-plane-only")
+        self.assertEqual(result["control_plane_credential_source"], "environment")
+        self.assertEqual(result["control_plane_credential_env_key"], "OPENAI_API_KEY")
 
     def test_v05_contract_valid(self):
         self.assertEqual(validate(attestation("feynman-v05"))["verdict"], "contract-valid")
+
+    def test_legacy_schema_v1_is_rejected(self):
+        value = attestation()
+        value["schema_version"] = 1
+        with self.assertRaises(ValueError):
+            validate(value)
+
+    def test_control_plane_credential_key_must_not_be_candidate_env(self):
+        value = attestation()
+        value["environment"]["candidate_env_keys"].append("OPENAI_API_KEY")
+        with self.assertRaises(ValueError):
+            validate(value)
+
+    def test_wrong_control_plane_auth_mode_is_rejected(self):
+        value = attestation()
+        value["environment"]["control_plane_auth_mode"] = "external-broker"
+        with self.assertRaises(ValueError):
+            validate(value)
+
+    def test_unvalidated_control_plane_credential_source_is_rejected(self):
+        value = attestation()
+        value["environment"]["control_plane_credential_source"] = "file"
+        with self.assertRaises(ValueError):
+            validate(value)
+
+    def test_invalid_control_plane_credential_env_key_is_rejected(self):
+        value = attestation()
+        value["environment"]["control_plane_credential_env_key"] = "BAD-KEY"
+        with self.assertRaises(ValueError):
+            validate(value)
 
     def test_verified_boundary_report_is_bound(self):
         value = attestation()
@@ -203,7 +240,7 @@ class RunnerAttestationTests(unittest.TestCase):
 
     def test_secret_like_candidate_environment_key_is_rejected(self):
         value = attestation()
-        value["environment"]["candidate_env_keys"].append("OPENAI_API_KEY")
+        value["environment"]["candidate_env_keys"].append("SOME_SECRET")
         with self.assertRaises(ValueError):
             validate(value)
 
