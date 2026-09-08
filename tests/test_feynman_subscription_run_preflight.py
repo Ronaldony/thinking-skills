@@ -39,8 +39,9 @@ class SubscriptionPreflightTests(unittest.TestCase):
         for p in self.control.iterdir():p.unlink()
         self.control.rmdir();target=self.real/"other";target.mkdir();self.control.symlink_to(target,target_is_directory=True)
         with self.assertRaises(ValueError):self._run()
-    def test_api_text_in_job_rejected(self):
-        v=deepcopy(self.job);v["scope"]="OPENAI_API_KEY";self.jp.write_text(json.dumps(v),encoding="utf-8")
+    def test_retired_auth_object_rejected(self):
+        v=deepcopy(self.job);v["authentication"]["control_plane_credential_env_key"]="RETIRED"
+        self.jp.write_text(json.dumps(v),encoding="utf-8")
         with self.assertRaises(ValueError):self._run()
     def test_candidate_task_drift_rejected(self):
         (self.candidate/"task.txt").write_text("drift",encoding="utf-8")

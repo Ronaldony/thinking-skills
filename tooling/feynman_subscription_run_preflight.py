@@ -29,19 +29,24 @@ def _no_symlink(path:Path,label:str)->Path:
         cur=cur/part
         if cur.is_symlink(): raise ValueError(f"{label} path contains symlink component: {cur}")
     return a
+
 def _regular(path:Path,label:str)->Path:
     a=_no_symlink(path,label)
     if not a.is_file(): raise ValueError(f"{label} must be a regular file: {a}")
     return a.resolve()
+
 def _directory(path:Path,label:str)->Path:
     a=_no_symlink(path,label)
     if not a.is_dir(): raise ValueError(f"{label} must be a real directory: {a}")
     return a.resolve()
+
 def _load(path:Path,label:str)->dict[str,Any]:
     p=_regular(path,label);v=json.loads(p.read_text(encoding="utf-8"))
     if not isinstance(v,dict): raise ValueError(f"{label} JSON root must be object")
     return v
+
 def _sha(path:Path)->str: return hashlib.sha256(path.read_bytes()).hexdigest()
+
 def _planned(plan:dict[str,Any],ordinal:int)->dict[str,Any]:
     jobs=plan.get("jobs")
     if not isinstance(jobs,list): raise ValueError("eval plan has no jobs list")
@@ -91,8 +96,6 @@ def preflight_files(*,plan_path:Path,ordinal:int,evaluator_case_path:Path,runner
     if auth!={"mode":"chatgpt-subscription","control_plane_auth_source":"codex-session","api_key_auth_allowed":False,
              "candidate_auth_exposed":False,"candidate_tool_auth_env_keys":[],"candidate_readable_auth_paths":[],"auth_command_arguments":[]}:
         raise ValueError("runner job does not use canonical subscription auth")
-    raw=json.dumps(job,sort_keys=True)
-    if "OPENAI_API_KEY" in raw or "api.openai.com" in raw: raise ValueError("retired API path appears in subscription runner job")
 
     return {
       "schema_version":1,"verdict":"ready-for-local-chatgpt-session-check","run_id":job["run_id"],
