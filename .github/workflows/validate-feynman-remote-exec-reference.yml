@@ -1,0 +1,371 @@
+name: validate-feynman-remote-exec-reference
+
+on:
+  push:
+    paths:
+      - 'tooling/feynman_mock_responses_server.py'
+      - 'tooling/feynman_remote_exec_environment.py'
+      - 'tooling/feynman_runner_job*.py'
+      - 'tooling/feynman_boundary_profile.py'
+      - 'tooling/feynman_docker_*.py'
+      - 'tooling/feynman_network_reference.py'
+      - 'evals/feynman-thinking/**'
+      - 'tests/test_feynman_mock_responses_server.py'
+      - 'tests/test_feynman_remote_exec_environment.py'
+      - 'tests/test_feynman_runner_job*.py'
+      - 'tests/test_feynman_boundary_profile.py'
+      - '.github/workflows/validate-feynman-remote-exec-reference.yml'
+  pull_request:
+    paths:
+      - 'tooling/feynman_mock_responses_server.py'
+      - 'tooling/feynman_remote_exec_environment.py'
+      - 'tooling/feynman_runner_job*.py'
+      - 'tooling/feynman_boundary_profile.py'
+      - 'tooling/feynman_docker_*.py'
+      - 'tooling/feynman_network_reference.py'
+      - 'evals/feynman-thinking/**'
+      - 'tests/test_feynman_mock_responses_server.py'
+      - 'tests/test_feynman_remote_exec_environment.py'
+      - 'tests/test_feynman_runner_job*.py'
+      - 'tests/test_feynman_boundary_profile.py'
+      - '.github/workflows/validate-feynman-remote-exec-reference.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  mock-model-remote-exec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run remote-exec contract unit tests
+        run: |
+          python -m unittest \
+            tests.test_feynman_mock_responses_server \
+            tests.test_feynman_remote_exec_environment \
+            tests.test_feynman_runner_job_validate \
+            tests.test_feynman_boundary_profile -v
+
+      - name: Build matching control-plane and exec-server Codex runtimes
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/feynman-remote-exec-reference
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT/control-node" "$ROOT/build"
+
+          CODEX_PACKAGE_VERSION="$(npm view @openai/codex version)"
+          test -n "$CODEX_PACKAGE_VERSION"
+          printf '%s\n' "$CODEX_PACKAGE_VERSION" > "$ROOT/codex-package-version.txt"
+
+          npm install --silent --prefix "$ROOT/control-node" "@openai/codex@${CODEX_PACKAGE_VERSION}"
+          CODEX_BIN="$ROOT/control-node/node_modules/.bin/codex"
+          test -x "$CODEX_BIN"
+          "$CODEX_BIN" --version | tee "$ROOT/control-codex-version.txt"
+
+          cat > "$ROOT/build/Dockerfile" <<'EOF'
+          FROM node:22-bookworm-slim
+          ARG CODEX_PACKAGE_VERSION
+          RUN apt-get update \
+              && apt-get install -y --no-install-recommends python3 ca-certificates \
+              && rm -rf /var/lib/apt/lists/*
+          RUN npm install -g "@openai/codex@${CODEX_PACKAGE_VERSION}"
+          EOF
+          docker build \
+            --build-arg "CODEX_PACKAGE_VERSION=$CODEX_PACKAGE_VERSION" \
+            -t feynman-codex-remote:local \
+            -f "$ROOT/build/Dockerfile" \
+            "$ROOT/build"
+          docker run --rm --network none feynman-codex-remote:local codex --version \
+            | tee "$ROOT/tool-codex-version.txt"
+          diff -u "$ROOT/control-codex-version.txt" "$ROOT/tool-codex-version.txt"
+
+      - name: Prepare frozen baseline job and remote execution profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/feynman-remote-exec-reference
+          CANDIDATE="$ROOT/candidate"
+          EVALUATOR="$ROOT/evaluator"
+          CANDIDATE_HOME="$ROOT/candidate-home"
+          TOOL_CODEX_HOME="$ROOT/tool-codex-home"
+          TOOL_TEMP="$ROOT/tool-temp"
+          CONTROL_HOME="$ROOT/control-home"
+          CONTROL_CODEX_HOME="$ROOT/control-codex-home"
+          CONTROL_TEMP="$ROOT/control-temp"
+          mkdir -p "$CANDIDATE_HOME" "$TOOL_CODEX_HOME" "$TOOL_TEMP" \
+            "$CONTROL_HOME" "$CONTROL_CODEX_HOME" "$CONTROL_TEMP"
+
+          python tooling/feynman_eval_plan.py \
+            --root . \
+            --case mechanism-01 \
+            --condition baseline \
+            --repeats 1 \
+            --seed 0 \
+            --output "$ROOT/plan.json"
+          python tooling/feynman_condition_workspace.py \
+            --root . \
+            --case mechanism-01 \
+            --condition baseline \
+            --candidate-dir "$CANDIDATE" \
+            --evaluator-dir "$EVALUATOR" \
+            > "$ROOT/evaluator-record.stdout.json"
+
+          DOCKER_VERSION="$(docker version --format '{{.Server.Version}}')"
+          IMAGE_ID="$(docker image inspect feynman-codex-remote:local --format '{{.Id}}')"
+          RUN_AS="$(id -u):$(id -g)"
+          python - "$ROOT/boundary-profile.json" "$DOCKER_VERSION" "$IMAGE_ID" "$RUN_AS" \
+            "$CANDIDATE" "$CANDIDATE_HOME" "$TOOL_CODEX_HOME" "$TOOL_TEMP" <<'PY'
+          import json
+          import sys
+          (
+              output, docker_version, image_id, run_as,
+              candidate, home, codex_home, temp_dir,
+          ) = sys.argv[1:]
+          profile = {
+              "schema_version": 1,
+              "backend": "docker",
+              "backend_version": docker_version,
+              "image": "feynman-codex-remote:local",
+              "image_id": image_id,
+              "network_mode": "none",
+              "read_only_root": True,
+              "no_new_privileges": True,
+              "capabilities": [],
+              "run_as": run_as,
+              "read_write_mounts": [candidate, home, codex_home, temp_dir],
+              "read_only_mounts": [],
+              "tmpfs_mounts": ["/tmp"],
+              "protected_roots_mounted": [],
+              "candidate_env_keys": [
+                  "HOME", "CODEX_HOME", "PATH", "PYTHONDONTWRITEBYTECODE", "TMPDIR"
+              ],
+              "scope": "mock-model stdio remote-exec Docker tool boundary",
+          }
+          with open(output, "w", encoding="utf-8") as handle:
+              json.dump(profile, handle, ensure_ascii=False, indent=2, sort_keys=True)
+              handle.write("\n")
+          PY
+          python tooling/feynman_boundary_profile.py \
+            --profile "$ROOT/boundary-profile.json" \
+            > "$ROOT/boundary-profile-check.json"
+
+          CODEX_VERSION="$(cat "$ROOT/control-codex-version.txt" | tr -d '\r\n')"
+          python tooling/feynman_runner_job.py \
+            --plan "$ROOT/plan.json" \
+            --ordinal 1 \
+            --evaluator-case "$EVALUATOR/case.json" \
+            --boundary-profile "$ROOT/boundary-profile.json" \
+            --run-id "mock-remote-exec-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --model mock-responses-remote-exec \
+            --codex-cli "$CODEX_VERSION" \
+            --candidate-dir "$CANDIDATE" \
+            --evaluator-dir "$EVALUATOR" \
+            --source-repo "$GITHUB_WORKSPACE" \
+            --ephemeral-home "$CANDIDATE_HOME" \
+            --codex-home "$TOOL_CODEX_HOME" \
+            --temp-dir "$TOOL_TEMP" \
+            --real-home "$HOME" \
+            --output "$ROOT/runner-job.json" \
+            > "$ROOT/runner-job.stdout.json"
+          python tooling/feynman_runner_job_validate.py \
+            --job "$ROOT/runner-job.json" \
+            --boundary-profile "$ROOT/boundary-profile.json" \
+            > "$ROOT/runner-job-check.json"
+          python tooling/feynman_remote_exec_environment.py \
+            --job "$ROOT/runner-job.json" \
+            --boundary-profile "$ROOT/boundary-profile.json" \
+            --output "$CONTROL_CODEX_HOME/environments.toml" \
+            > "$ROOT/remote-environment-build.json"
+          python tooling/feynman_remote_exec_environment.py \
+            --job "$ROOT/runner-job.json" \
+            --boundary-profile "$ROOT/boundary-profile.json" \
+            --validate "$CONTROL_CODEX_HOME/environments.toml" \
+            > "$ROOT/remote-environment-check.json"
+
+          python tooling/feynman_eval_preflight.py \
+            --candidate-dir "$CANDIDATE" \
+            --home "$CONTROL_HOME" \
+            --codex-home "$CONTROL_CODEX_HOME" \
+            > "$ROOT/candidate-preflight.json"
+
+      - name: Run mock model through network-disabled stdio exec-server
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/feynman-remote-exec-reference
+          CANDIDATE="$ROOT/candidate"
+          CANDIDATE_HOME="$ROOT/candidate-home"
+          TOOL_CODEX_HOME="$ROOT/tool-codex-home"
+          TOOL_TEMP="$ROOT/tool-temp"
+          CONTROL_HOME="$ROOT/control-home"
+          CONTROL_CODEX_HOME="$ROOT/control-codex-home"
+          CONTROL_TEMP="$ROOT/control-temp"
+          CODEX_BIN="$ROOT/control-node/node_modules/.bin/codex"
+          MOCK_PID=""
+          CONTAINER_NAME="$(python - "$ROOT/remote-environment-check.json" <<'PY'
+          import json, sys
+          print(json.load(open(sys.argv[1], encoding='utf-8'))['container_name'])
+          PY
+          )"
+
+          cleanup() {
+            if [ -n "$MOCK_PID" ]; then
+              kill "$MOCK_PID" 2>/dev/null || true
+            fi
+            docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          HOST_IP="$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')"
+          test -n "$HOST_IP"
+          python tooling/feynman_mock_responses_server.py \
+            --tool-network-host "$HOST_IP" \
+            --state "$ROOT/mock-state.json" \
+            --ready "$ROOT/mock-ready.json" \
+            > "$ROOT/mock-server.log" 2>&1 &
+          MOCK_PID=$!
+          for _ in $(seq 1 100); do
+            [ -s "$ROOT/mock-ready.json" ] && break
+            sleep 0.1
+          done
+          test -s "$ROOT/mock-ready.json"
+          PORT="$(python - "$ROOT/mock-ready.json" <<'PY'
+          import json, sys
+          print(json.load(open(sys.argv[1], encoding='utf-8'))['port'])
+          PY
+          )"
+          curl --fail --silent "http://127.0.0.1:${PORT}/healthz" > "$ROOT/mock-health.json"
+          python tooling/feynman_network_reference.py \
+            --host "$HOST_IP" \
+            --port "$PORT" \
+            --output "$ROOT/control-plane-network-reference.json" \
+            > "$ROOT/control-plane-network-reference.stdout.json"
+
+          python - "$CONTROL_CODEX_HOME/config.toml" "$PORT" \
+            "$CANDIDATE_HOME" "$TOOL_CODEX_HOME" "$TOOL_TEMP" <<'PY'
+          import json
+          import sys
+          output, port, home, codex_home, temp_dir = sys.argv[1:]
+          q = lambda value: json.dumps(value)
+          text = f'''model = "mock-model"
+          model_provider = "mock"
+          approval_policy = "never"
+          sandbox_mode = "danger-full-access"
+
+          [model_providers.mock]
+          name = "mock"
+          base_url = "http://127.0.0.1:{port}/v1"
+          env_key = "OPENAI_API_KEY"
+          wire_api = "responses"
+
+          [shell_environment_policy]
+          inherit = "none"
+          set = {{ HOME = {q(home)}, CODEX_HOME = {q(codex_home)}, PATH = "/usr/local/bin:/usr/bin:/bin", TMPDIR = {q(temp_dir)}, PYTHONDONTWRITEBYTECODE = "1" }}
+          '''
+          # Remove indentation introduced solely for readable YAML heredoc.
+          lines = [line.strip() if line.startswith('          ') else line for line in text.splitlines()]
+          with open(output, 'w', encoding='utf-8') as handle:
+              handle.write('\n'.join(lines).strip() + '\n')
+          PY
+
+          CONTROL_PATH="$ROOT/control-node/node_modules/.bin:/usr/local/bin:/usr/bin:/bin"
+          PROMPT="$(cat "$CANDIDATE/task.txt")"
+          env -i \
+            HOME="$CONTROL_HOME" \
+            CODEX_HOME="$CONTROL_CODEX_HOME" \
+            PATH="$CONTROL_PATH" \
+            TMPDIR="$CONTROL_TEMP" \
+            OPENAI_API_KEY="MOCK_REFERENCE_ONLY_NOT_A_SECRET" \
+            "$CODEX_BIN" exec \
+              --json \
+              --skip-git-repo-check \
+              -C "$CANDIDATE" \
+              "$PROMPT" \
+            > "$ROOT/codex-trace.jsonl"
+
+          test -f "$CANDIDATE/remote-tool-proof.txt"
+          test "$(cat "$CANDIDATE/remote-tool-proof.txt")" = "REMOTE_EXEC_OK"
+          grep -q 'REMOTE_EXEC_REFERENCE_OK' "$ROOT/codex-trace.jsonl"
+          grep -q 'command_execution' "$ROOT/codex-trace.jsonl"
+
+          python - "$ROOT/mock-state.json" <<'PY'
+          import json
+          import sys
+          state = json.load(open(sys.argv[1], encoding='utf-8'))
+          assert state['validation_error'] is None, state
+          assert len(state['requests']) >= 2, state
+          accepted = state['requests'][-1]
+          assert accepted['has_matching_tool_output'] is True, accepted
+          assert accepted['tool_output_contains_workspace_marker'] is True, accepted
+          assert accepted['tool_output_contains_network_marker'] is True, accepted
+          assert accepted['tool_output_contains_auth_env_marker'] is True, accepted
+          PY
+
+          docker inspect "$CONTAINER_NAME" > "$ROOT/tool-container-inspect.json"
+          test "$(docker inspect "$CONTAINER_NAME" --format '{{.State.ExitCode}}')" = "0"
+          python tooling/feynman_docker_reference_inspect.py \
+            --profile "$ROOT/boundary-profile.json" \
+            --inspect "$ROOT/tool-container-inspect.json" \
+            > "$ROOT/tool-container-inspect-check.json"
+
+          python - "$ROOT" <<'PY'
+          import hashlib
+          import json
+          import sys
+          from pathlib import Path
+          root = Path(sys.argv[1])
+          profile_raw = (root / 'boundary-profile.json').read_bytes()
+          job_raw = (root / 'runner-job.json').read_bytes()
+          trace_raw = (root / 'codex-trace.jsonl').read_bytes()
+          state = json.loads((root / 'mock-state.json').read_text())
+          inspect_check = json.loads((root / 'tool-container-inspect-check.json').read_text())
+          result = {
+              'schema_version': 1,
+              'verdict': 'mock-remote-exec-reference-passed',
+              'boundary_profile_sha256': hashlib.sha256(profile_raw).hexdigest(),
+              'runner_job_sha256': hashlib.sha256(job_raw).hexdigest(),
+              'codex_trace_sha256': hashlib.sha256(trace_raw).hexdigest(),
+              'model_requests': len(state['requests']),
+              'docker_inspect_verdict': inspect_check['verdict'],
+              'scope': 'credential-free mock model control plane -> Codex frontend -> network-none stdio exec-server -> tool output -> mock final; not an external model-service authentication result',
+          }
+          (root / 'reference-result.json').write_text(json.dumps(result, indent=2) + '\n')
+          print(json.dumps(result, indent=2))
+          PY
+
+      - name: Upload remote-exec reference evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: feynman-remote-exec-reference-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /tmp/feynman-remote-exec-reference/codex-package-version.txt
+            /tmp/feynman-remote-exec-reference/control-codex-version.txt
+            /tmp/feynman-remote-exec-reference/tool-codex-version.txt
+            /tmp/feynman-remote-exec-reference/plan.json
+            /tmp/feynman-remote-exec-reference/evaluator/case.json
+            /tmp/feynman-remote-exec-reference/boundary-profile.json
+            /tmp/feynman-remote-exec-reference/boundary-profile-check.json
+            /tmp/feynman-remote-exec-reference/runner-job.json
+            /tmp/feynman-remote-exec-reference/runner-job-check.json
+            /tmp/feynman-remote-exec-reference/control-codex-home/environments.toml
+            /tmp/feynman-remote-exec-reference/remote-environment-check.json
+            /tmp/feynman-remote-exec-reference/candidate-preflight.json
+            /tmp/feynman-remote-exec-reference/control-plane-network-reference.json
+            /tmp/feynman-remote-exec-reference/mock-state.json
+            /tmp/feynman-remote-exec-reference/mock-server.log
+            /tmp/feynman-remote-exec-reference/codex-trace.jsonl
+            /tmp/feynman-remote-exec-reference/tool-container-inspect.json
+            /tmp/feynman-remote-exec-reference/tool-container-inspect-check.json
+            /tmp/feynman-remote-exec-reference/candidate/remote-tool-proof.txt
+            /tmp/feynman-remote-exec-reference/reference-result.json
+          if-no-files-found: warn
+          retention-days: 14
