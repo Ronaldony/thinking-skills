@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from tooling.feynman_mock_responses_server import (
+    AUTH_ENV_MARKER,
     CALL_ID,
     FINAL_TEXT,
     NETWORK_MARKER,
@@ -21,7 +22,7 @@ from tooling.feynman_mock_responses_server import (
 
 
 class MockResponsesServerTests(unittest.TestCase):
-    def test_first_response_requests_exec_command_with_network_and_workspace_checks(self):
+    def test_first_response_requests_exec_command_with_all_boundary_checks(self):
         events = function_call_events("172.17.0.1", 19001)
         self.assertEqual(events[0]["type"], "response.created")
         call = events[1]["item"]
@@ -31,6 +32,7 @@ class MockResponsesServerTests(unittest.TestCase):
         args = json.loads(call["arguments"])
         self.assertIn(WORKSPACE_MARKER, args["cmd"])
         self.assertIn(NETWORK_MARKER, args["cmd"])
+        self.assertIn(AUTH_ENV_MARKER, args["cmd"])
         self.assertIn("172.17.0.1", args["cmd"])
         self.assertIn("19001", args["cmd"])
         self.assertEqual(args["yield_time_ms"], 1000)
@@ -42,12 +44,13 @@ class MockResponsesServerTests(unittest.TestCase):
                 {
                     "type": "function_call_output",
                     "call_id": CALL_ID,
-                    "output": f"{NETWORK_MARKER}\n{WORKSPACE_MARKER}\n",
+                    "output": f"{AUTH_ENV_MARKER}\n{NETWORK_MARKER}\n{WORKSPACE_MARKER}\n",
                 },
             ]
         }
         output = find_matching_tool_output(body)
         self.assertIsNotNone(output)
+        self.assertIn(AUTH_ENV_MARKER, output)
         self.assertIn(NETWORK_MARKER, output)
         self.assertIn(WORKSPACE_MARKER, output)
 
@@ -56,7 +59,7 @@ class MockResponsesServerTests(unittest.TestCase):
             "input": [{
                 "type": "function_call_output",
                 "call_id": "other-call",
-                "output": f"{NETWORK_MARKER} {WORKSPACE_MARKER}",
+                "output": f"{AUTH_ENV_MARKER} {NETWORK_MARKER} {WORKSPACE_MARKER}",
             }]
         }
         self.assertIsNone(find_matching_tool_output(body))
