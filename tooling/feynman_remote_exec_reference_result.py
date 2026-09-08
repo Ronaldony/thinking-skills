@@ -9,6 +9,10 @@ A separate ``patch-then-exec`` scenario retains the stronger apply-patch + exec
 contract, but failure of that custom-tool integration does not invalidate the
 more basic remote exec transport claim.
 
+Mock-state schema v4 extends v3 with optional authorization-digest evidence. This
+validator accepts both because the core remote-tool assertions are unchanged;
+synthetic-auth references apply their stricter v4-only checks separately.
+
 This does not authenticate to an external model service and does not measure
 Feynman skill quality.
 """
@@ -117,8 +121,8 @@ def _validate_request_digests(requests: list[dict[str, Any]]) -> None:
 
 
 def _validate_mock_state(value: dict[str, Any]) -> str:
-    if value.get("schema_version") != 3:
-        raise ValueError("mock state schema_version must be 3")
+    if value.get("schema_version") not in {3, 4}:
+        raise ValueError("mock state schema_version must be 3 or 4")
     scenario = value.get("scenario")
     if scenario not in {SCENARIO_EXEC_ONLY, SCENARIO_PATCH_THEN_EXEC}:
         raise ValueError("mock state has unsupported scenario")
