@@ -1,18 +1,19 @@
 # 행동 평가 외부 runner 계약
 
-상태: **v0.4 research protocol — Docker reference boundary canary validated; model runner not yet validated**.
+상태: **v0.5 research protocol — Docker/Codex/remote-exec/remote-patch/synthetic-auth references validated; external model-service run pending**.
 
-이 문서는 `feynman-thinking` 행동 비교에서 후보가 evaluator 자료·다른 조건의 스킬·실제 사용자 파일에 접근하지 못하도록 하는 외부 실행 경계와 그 검증 절차를 정의한다. 저장소의 Python 도구는 경계를 **기술하고, 실제 canary 동작을 검사하고, 결과를 해시로 연결**한다. OS/container/VM 경계 자체나 모델 API 인증 broker를 제공하지는 않는다.
+이 문서는 `feynman-thinking` 행동 비교에서 후보가 evaluator 자료·다른 조건의 스킬·실제 사용자 파일에 접근하지 못하도록 하는 외부 실행 경계와 그 검증 절차를 정의한다. 저장소의 Python 도구는 경계를 **기술하고, 실제 canary 동작을 검사하고, 실행 전/후 artifact를 해시로 연결**한다. OS/container/VM 자체를 제공하는 것이 아니라, 제공된 외부 경계의 선언과 동작을 fail-closed로 검증한다.
 
 ## 1. 검증하려는 주장
 
-단순히 `sandbox=true`, `workspace-write`, `read-only` 같은 설정 이름을 기록하는 것으로 격리를 입증하지 않는다. 다음 세 층을 구분한다.
+단순히 `sandbox=true`, `workspace-write`, `read-only` 같은 설정 이름을 기록하는 것으로 격리를 입증하지 않는다. 다음 네 층을 구분한다.
 
 1. **선언된 boundary profile**: 어떤 backend·image·mount·network·권한·환경변수 정책을 쓰기로 했는가.
 2. **동작 기반 canary**: 그 경계 안에서 실제 read/write/network 시도가 허용·차단됐는가.
-3. **평가 결과 결속**: 검증된 경계와 canary report가 정확히 어느 모델 run의 결과에 대응하는가.
+3. **실행 전/후 lineage**: frozen plan에서 만든 pre-run runner job과 post-run attestation이 같은 실행을 기술하는가.
+4. **평가 결과 결속**: 검증된 경계·runner linkage·trace/evidence/review/gate가 정확히 어느 모델 run 결과에 대응하는가.
 
-세 층 중 하나라도 연결되지 않으면 해당 run을 primary 행동 비교에 사용하지 않는다.
+네 층 중 하나라도 연결되지 않으면 해당 run을 primary 행동 비교에 사용하지 않는다.
 
 ## 2. 위협 모델
 
@@ -25,6 +26,7 @@
 - candidate tool subprocess가 API key·credential을 환경변수나 파일로 읽음.
 - tool network가 공개 정답이나 외부 자료를 임의로 조회함.
 - runner가 `passed=true`라고 쓰지만 실제 파일/네트워크 동작은 그렇지 않음.
+- pre-run runner job과 다른 model/path/profile/auth 정책으로 실행한 뒤 attestation만 맞춰 씀.
 - multi-turn 사례를 서로 다른 대화 두 개로 실행한 뒤 하나의 수정/유지 episode처럼 합침.
 
 이 계약은 악의적인 kernel/hypervisor/runner 운영자를 방어하는 암호학적 보안 설계가 아니다. 평가 harness와 runner의 우발적 또는 모델 주도 오염을 fail-closed로 발견하고 재현 가능하게 기록하는 것이 목표다.
@@ -45,9 +47,9 @@
 - ephemeral temp는 명시적 tmpfs 또는 candidate-owned temp
 - candidate environment key는 allowlist이며 secret-like key가 없어야 함
 
-profile 원본 bytes의 SHA-256을 `boundary_profile_sha256`으로 사용한다. canary artifact와 report, runner attestation은 모두 이 값을 동일하게 가져야 한다.
+profile 원본 bytes의 SHA-256을 `boundary_profile_sha256`으로 사용한다. canary artifact/report, runner job, runner attestation, runner-job-link, analysis result가 모두 같은 profile bytes를 가리켜야 한다.
 
-중요: profile validator는 **선언의 내부 일관성**만 검사한다. 실제 Docker/VM이 그 선언대로 시작됐는지는 동작 canary와, 가능하면 backend inspect 자료로 별도 확인한다.
+중요: profile validator는 **선언의 내부 일관성**만 검사한다. 실제 Docker/VM이 그 선언대로 시작됐는지는 동작 canary와 backend inspect 자료로 별도 확인한다.
 
 ## 4. 파일 읽기 경계
 
@@ -96,7 +98,7 @@ mount namespace로 parent가 보이지 않아 `ENOENT`가 발생하는 것은 �
 tool network가 필요 없는 case는 `tool_network=blocked`로 실행하고 control plane과 candidate tool network를 분리한다.
 
 ```text
-host/evaluator ── allowed control plane ── model service
+host/control plane ── allowed model network ── model service
        │
        └── external boundary ── candidate tool process
                                 └── outbound tool network blocked
@@ -115,13 +117,33 @@ network가 필요한 case에서는 `tool_network_denied`를 성공으로 꾸미�
 
 ## 7. 인증정보와 환경변수
 
-API 인증정보는 candidate-readable file, candidate tool environment, command argument, trace tool output에 들어가면 안 된다. control-plane 인증은 별도 broker/process에서 처리하는 것이 바람직하다.
+현재 runner-job/attestation/link에서 검증된 인증 구조는 다음이다.
+
+```json
+{
+  "mode": "control-plane-only",
+  "control_plane_credential_source": "environment",
+  "control_plane_credential_env_key": "OPENAI_API_KEY"
+}
+```
+
+여기서 기록하는 것은 env-key **이름**뿐이다. 실제 credential 값은 pre-run/post-run artifact에 저장하지 않는다.
+
+필수 규칙:
+
+- API credential material은 candidate-readable file, candidate tool environment, command argument에 들어가면 안 된다.
+- candidate env allowlist에 control-plane credential env-key 이름이 나타나면 run을 실패시킨다.
+- control-plane process만 credential을 소유한다.
+- closed-network tool process는 model endpoint에 직접 접근하지 못한다.
+- 별도 arbitrary candidate-accessible credential proxy를 인증 분리의 근거로 만들지 않는다.
 
 boundary probe는 환경변수 **값을 복사하지 않고 key 목록만** 기록한다. `TOKEN`, `KEY`, `SECRET`, `PASSWORD`, `CREDENTIAL`, `COOKIE`, `AUTH` 계열의 secret-like key가 candidate environment에 보이면 run을 실패시킨다.
 
+synthetic-auth reference는 run-scoped synthetic bearer가 control-plane HTTP request에는 존재하지만 remote tool env/file/argv와 보존 artifact exact-byte scan에는 나타나지 않는 경로를 검증했다. 실제 model-service credential의 인증 성공 자체는 아직 미검증이다.
+
 ## 8. 스킬·플러그인 오염
 
-`tooling/feynman_eval_preflight.py`를 candidate와 동일한 boundary 안에서 수행한다.
+`tooling/feynman_eval_preflight.py`를 candidate와 동일한 boundary 정책 아래에서 수행한다.
 
 - `baseline`, `generic`: candidate skill set = empty
 - `legacy-clean`, `feynman-v05`: candidate skill set = `feynman-thinking` 하나
@@ -191,23 +213,29 @@ verifier는 host canary와 candidate artifact를 교차검증하고 `probe-repor
 
 report 구조는 `evals/feynman-thinking/boundary-probe-report.schema.json`과 `validate_report()`가 정의한다.
 
-## 11. artifact hash chain
+## 11. 실행 전/후 artifact hash chain
 
-primary 분석에 들어가는 한 run의 연결은 다음과 같다.
+primary 분석에 들어가는 한 run의 canonical 연결은 다음과 같다.
 
 ```text
-boundary-profile.json
-   │ raw SHA-256
+frozen eval plan
+   │
    ▼
-probe-artifact.json
-   │ boundary_profile_sha256 + probe_program_sha256
-   ▼
-probe-report.json
-   │ host postcheck + same boundary_profile_sha256
-   ▼
-runner-attestation.json
-   │ probe_report_sha256 + boundary.profile_sha256
-   ▼
+runner-job.json v2  ───────────────┐
+   │ plan/prompt/runtime/profile    │
+   ▼                                │
+boundary-profile.json               │
+   │ raw SHA-256                    │
+   ▼                                │
+probe-artifact.json                 │
+   ▼                                │
+probe-report.json                   │
+   ▼                                │
+runner-attestation.json v2          │
+   │                                │
+   └──────── runner-job-link.json v2◄┘
+                    │
+                    ▼
 Codex JSONL trace / candidate final
    │ evidence/final hashes
    ▼
@@ -217,14 +245,18 @@ semantic review v2
    ▼
 grade gate
    ▼
-analysis result v2
+analysis-result.json v3
    ▼
-frozen-plan aggregator
+v3-only frozen-plan aggregator
 ```
 
 `tooling/feynman_runner_attestation.py --probe-report ...`는 report run ID, profile digest, report bytes SHA, normalized probe records, env key, network-required 정책을 attestation과 대조한다.
 
-`tooling/feynman_eval_result.py`는 verified probe report와 review bundle이 없으면 `valid_for_analysis` result를 만들지 않는다. `tooling/feynman_eval_aggregate.py`도 probe-report digest가 없는 수제 result를 거부한다.
+`tooling/feynman_runner_job_link.py`는 raw runner job과 raw attestation을 profile/probe report와 함께 검증해 run/case/condition/model/CLI/path/network/auth/prompt/runtime/plan digest를 결속한다.
+
+`tooling/feynman_eval_result.py`는 raw runner job과 raw saved runner-job-link를 모두 다시 요구하며 saved link를 raw inputs에서 재계산한다. `analysis-result.schema.json` v3가 canonical 형식이다.
+
+`tooling/feynman_eval_aggregate.py`는 schema-v3 result만 primary aggregation에 받는다. historical schema-v2 result는 canonical primary comparison에 사용할 수 없다.
 
 ## 12. probe 기대값
 
@@ -240,42 +272,47 @@ frozen-plan aggregator
 | ambient skill preflight | 예상 skill set과 정확히 일치 | run invalid |
 | candidate env | secret-like key 없음 | run invalid |
 
-## 13. Docker reference boundary
+## 13. reference boundary / tool E2E
 
-GitHub Actions `validate-feynman`은 실제 Docker boundary를 reference profile로 실행한다.
+GitHub Actions의 reference workflows는 서로 다른 주장을 분리한다.
 
-현재 reference 특성:
+### Docker boundary reference
 
-- Docker backend
-- `python:3.12-slim` image와 실제 image ID 기록
+- content-addressed Docker image ID
 - `--network none`
-- `--read-only`
+- read-only root
 - `--cap-drop ALL`
-- `--security-opt no-new-privileges`
-- host UID:GID로 실행
-- candidate/candidate-home/CODEX_HOME/temp만 rw mount
-- probe program만 ro mount
-- evaluator/source/real-HOME은 mount하지 않음
-- environment는 `env -i`로 allowlist 구성
-- control-plane에서 reachable한 synthetic TCP endpoint 사용
+- no-new-privileges
+- exact rw mounts
+- `env -i`
+- filesystem/network canary
+- Docker inspect/profile consistency
 
-이 reference Docker run에서 candidate read/write 허용, evaluator/source/real-HOME read 차단, forbidden write 차단, tool network 차단을 evaluator-side verifier가 실제로 확인했고 CI가 성공했다.
+### Codex reference
 
-이 결과가 증명하는 범위는 **reference Docker tool-process boundary canary가 현재 GitHub Actions 환경에서 의도한 filesystem/network 성질을 만족했다는 것**이다.
+동일한 inspected boundary profile에서 Codex CLI 자체가 실행 가능함을 확인한다. 이 reference만으로 model request를 증명하지 않는다.
 
-증명하지 않는 것:
+### remote-exec reference
 
-- Codex/model process가 같은 boundary에서 실제 실행됐음
-- model API control plane/auth broker가 안전하게 분리됐음
-- 다른 host/OS/Docker 버전에서도 같은 성질을 보장함
-- 악의적인 runner 운영자를 방어함
+host/control-plane Codex가 mock Responses endpoint와 통신하고, candidate command는 network-none Docker `codex exec-server --listen stdio`에서 실행되며 tool output이 model loop에 되돌아오는 것을 확인한다.
 
-## 14. runner attestation
+### remote-patch reference
+
+installed Codex bundled metadata 중 실제 `apply_patch_tool_type=freeform` 지원 model만 이용해 selected remote environment에서 `apply_patch → exec_command` round trip을 확인한다.
+
+### synthetic-auth reference
+
+run-scoped synthetic bearer가 control-plane request에만 존재하고 candidate remote tool env/file/argv 및 보존 artifact exact-byte scan에는 나타나지 않음을 확인한다.
+
+각 reference 성공은 **그 reference가 직접 검사한 architecture property**만 증명한다. 실제 외부 model-service credential/authentication 또는 Feynman 행동 품질을 증명하지 않는다.
+
+## 14. runner attestation v2
 
 각 실제 model run은 `runner-attestation.json`을 evaluator 쪽에 남긴다. `evals/feynman-thinking/runner-attestation.schema.json`과 `tooling/feynman_runner_attestation.py`가 검사한다.
 
 필수 기록에는 다음이 포함된다.
 
+- schema version 2
 - run/case/condition ID
 - backend/version/platform/kernel
 - `external_enforcement=true`
@@ -284,6 +321,7 @@ GitHub Actions `validate-feynman`은 실제 Docker boundary를 reference profile
 - readable/writable/platform runtime roots
 - tool/control-plane network 정책
 - candidate env key 목록
+- control-plane auth mode/source/env-key 이름
 - expected/observed candidate skill 및 system/plugin 정책
 - normalized boundary probe records
 - `probe_report_sha256`
@@ -299,18 +337,22 @@ validator 결과는 `contract-valid`이지 `secure`가 아니다.
 
 - 같은 model snapshot
 - 같은 Codex/agent 버전
-- 같은 external boundary profile family
+- 같은 external boundary profile
 - 같은 system/plugin 정책
 - 같은 tool/network 정책(과제가 요구하지 않는 한)
+- 같은 control-plane authentication profile(mode/source/env-key 이름)
 - 동일 condition 반복에서 runtime digest 고정
 - evaluator/source/real-HOME 보호 canary 통과
-- verified probe report가 analysis result에 결속
+- pre-run runner-job 존재
+- post-run attestation 존재
+- recomputable runner-job-link 존재
+- analysis-result schema v3
 
-한 조건이라도 다르면 aggregator가 `mixed-environment`, `incomplete`, `unverified-outcomes` 등으로 primary comparison을 차단해야 한다.
+하나라도 다르면 aggregator가 `mixed-environment`, `incomplete`, `unverified-outcomes` 등으로 primary comparison을 차단해야 한다.
 
 ## 16. 현재 구현 상태
 
-구현 완료:
+구현·reference 검증 완료:
 
 - runtime allowlist와 candidate/evaluator 분리
 - ambient skill-root preflight
@@ -318,22 +360,25 @@ validator 결과는 `contract-valid`이지 `secure`가 아니다.
 - inside-boundary read/write/env/network probe recorder
 - evaluator-side host post-verifier
 - network control-plane reference generator
-- boundary artifact/report/profile schemas
 - profile → artifact → report → attestation hash linkage
+- runner-job schema v2 / strict validator
+- runner-attestation schema v2
+- runner-job-link schema v2 / recomputation
+- control-plane-only/environment auth architecture contract
 - reasoning-free Codex evidence extraction
 - final/evidence/review/gate hash linkage
 - semantic review v2와 predefined hard failure
-- multi-turn same-thread 검증
-- analysis-result schema v2와 frozen-plan aggregator
+- multi-turn same-thread 구조 검증
+- analysis-result schema v3 / v3-only canonical aggregator
 - sanitized pinned legacy runtime
-- 실제 Docker reference boundary canary CI
+- Docker/Codex/remote-exec/remote-patch/synthetic-auth reference workflows
 
 아직 미완료:
 
-- Codex/model candidate process를 reference 외부 경계 안에서 실행하는 runner
-- model control-plane 인증 broker와 candidate tool network 분리의 실제 end-to-end 검증
-- 실제 `baseline / generic / legacy-clean / feynman-v05` 행동 pilot
+- 승인된 실제 외부 model-service credential을 사용한 end-to-end run
+- 실제 외부 model 응답으로 만든 `baseline / generic / legacy-clean / feynman-v05` 행동 pilot
+- 실제 multi-turn model run의 same-thread evidence
 - 독립 semantic judge / blinded human review
 - 비공개 held-out 평가
 
-따라서 **FYN-04의 boundary 검증 도구와 Docker reference profile은 구현·검증됐지만, model-runner 수준의 FYN-04 완료를 선언하지 않는다.** 실제 model process에서 같은 canary/attestation chain이 통과하기 전에는 행동 성능 근거로 사용하지 않는다.
+따라서 **FYN-04/FYN-05의 구조와 reference 검증은 크게 진척됐지만 실제 model-service 행동 평가 완료를 선언하지 않는다.** 실제 model process와 credential로 같은 runner-job/profile/probe/attestation/link/result-v3 chain이 통과하기 전에는 행동 성능 근거로 사용하지 않는다.
