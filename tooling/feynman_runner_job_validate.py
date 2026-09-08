@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Validate an external model-runner job against its original boundary profile.
 
-External runners must validate a generated job before launching a candidate. This
-closes the gap between a job's path declarations and the actual boundary profile:
-the candidate workspace, ephemeral HOME, CODEX_HOME and temp must be exactly the
-profile's writable mounts, and credential exposure fields must remain empty.
+Runner-job schema v2 describes the architecture actually exercised by the
+references: model-service credential ownership belongs to the host-side control
+plane, while candidate tools receive no auth material. The credential value is
+never present in the job; only the environment-variable name that supplies the
+control plane is recorded.
 """
 from __future__ import annotations
 
@@ -21,6 +22,7 @@ except ImportError:
     from feynman_boundary_profile import validate_profile_file
 
 SHA_PATTERN = re.compile(r"[0-9a-f]{64}")
+ENV_KEY_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 SKILL_CONDITIONS = {"legacy-clean", "feynman-v05"}
 NO_SKILL_CONDITIONS = {"baseline", "generic"}
 
@@ -52,8 +54,8 @@ def _absolute_string(value: Any, label: str) -> str:
 
 
 def validate_job(job: dict[str, Any], profile: dict[str, Any], profile_sha: str) -> dict[str, Any]:
-    if job.get("schema_version") != 1:
-        raise ValueError("unsupported runner job schema_version")
+    if job.get("schema_version") != 2:
+        raise ValueError("unsupported runner job schema_version; expected 2")
     run_id = job.get("run_id")
     if not isinstance(run_id, str) or not run_id.strip():
         raise ValueError("runner job run_id must be nonempty")
@@ -126,6 +128,8 @@ def validate_job(job: dict[str, Any], profile: dict[str, Any], profile_sha: str)
     job_env = boundary.get("candidate_env_keys")
     if not isinstance(profile_env, list) or not isinstance(job_env, list) or sorted(profile_env) != sorted(job_env):
         raise ValueError("runner job candidate env-key allowlist differs from profile")
+    if not all(isinstance(key, str) and ENV_KEY_PATTERN.fullmatch(key) for key in job_env):
+        raise ValueError("runner job candidate env keys must be valid environment variable names")
 
     profile_rw = profile.get("read_write_mounts")
     if not isinstance(profile_rw, list):
@@ -138,13 +142,29 @@ def validate_job(job: dict[str, Any], profile: dict[str, Any], profile_sha: str)
     if any(root in normalized_profile_rw for root in protected):
         raise ValueError("protected path appears in boundary profile writable mounts")
 
-    if auth != {
-        "mode": "external-broker",
-        "candidate_tool_auth_env_keys": [],
-        "candidate_readable_credential_files": [],
-        "credential_command_arguments": [],
-    }:
-        raise ValueError("runner job authentication must be external-broker with zero candidate credential exposure")
+    if auth.get("mode") != "control-plane-only":
+        raise ValueError("runner job authentication mode must be control-plane-only")
+    if auth.get("control_plane_credential_source") != "environment":
+        raise ValueError("runner job currently supports only environment-sourced control-plane credentials")
+    credential_key = auth.get("control_plane_credential_env_key")
+    if not isinstance(credential_key, str) or ENV_KEY_PATTERN.fullmatch(credential_key) is None:
+        raise ValueError("runner job control-plane credential env key is invalid")
+    for field in (
+        "candidate_tool_auth_env_keys",
+        "candidate_readable_credential_files",
+        "credential_command_arguments",
+    ):
+        if auth.get(field) != []:
+            raise ValueError(f"runner job authentication field must stay empty: {field}")
+    if credential_key in job_env or credential_key in profile_env:
+        raise ValueError("control-plane credential env key must not be exposed to candidate tools")
+    expected_auth_keys = {
+        "mode", "control_plane_credential_source", "control_plane_credential_env_key",
+        "candidate_tool_auth_env_keys", "candidate_readable_credential_files",
+        "credential_command_arguments",
+    }
+    if set(auth) != expected_auth_keys:
+        raise ValueError("runner job authentication contains missing or unexpected fields")
 
     case_requires_network = network.get("case_requires_tool_network")
     tool_network = network.get("tool_network")
@@ -189,8 +209,10 @@ def validate_job(job: dict[str, Any], profile: dict[str, Any], profile_sha: str)
         "candidate_owned_roots": sorted(candidate_owned),
         "protected_roots": sorted(protected),
         "tool_network": tool_network,
-        "authentication_mode": "external-broker",
-        "scope": "pre-execution runner-job/profile consistency; does not prove backend enforcement or model behavior",
+        "authentication_mode": "control-plane-only",
+        "control_plane_credential_source": "environment",
+        "control_plane_credential_env_key": credential_key,
+        "scope": "pre-execution runner-job/profile consistency; does not prove backend enforcement or real model-service auth",
     }
 
 
