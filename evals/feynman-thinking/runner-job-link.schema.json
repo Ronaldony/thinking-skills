@@ -3,7 +3,7 @@
   "title": "Feynman runner-job to attestation linkage",
   "type": "object",
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
     "verdict": {"const": "runner-job-attestation-bound"},
     "run_id": {"type": "string", "minLength": 1},
     "case_id": {"type": "string", "minLength": 1},
@@ -17,6 +17,9 @@
     "runtime_sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
     "model": {"type": "string", "minLength": 1},
     "codex_cli": {"type": "string", "minLength": 1},
+    "authentication_mode": {"const": "control-plane-only"},
+    "control_plane_credential_source": {"const": "environment"},
+    "control_plane_credential_env_key": {"$ref": "#/$defs/env_key"},
     "scope": {"type": "string", "minLength": 1}
   },
   "required": [
@@ -34,10 +37,14 @@
     "runtime_sha256",
     "model",
     "codex_cli",
+    "authentication_mode",
+    "control_plane_credential_source",
+    "control_plane_credential_env_key",
     "scope"
   ],
   "additionalProperties": false,
   "$defs": {
-    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "env_key": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}
   }
 }
