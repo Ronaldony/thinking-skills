@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
-"""Build a fail-closed external model-runner job spec from frozen evaluation inputs.
+"""Build a fail-closed ChatGPT-subscription Codex runner job.
 
-The job spec contains no credential values. Runner-job schema v2 records only the
-verified authentication architecture: the host-side model control plane owns a
-credential supplied by one named environment variable, while candidate tools
-must receive no auth env keys/files/argv credentials. It does not launch Codex or
-a model; an external runner must consume the spec, enforce the referenced
-boundary profile, and later produce the verified probe report + runner
-attestation chain.
+Runner-job schema v3 has no API-key mode. The host control-plane Codex must use
+an already authenticated ChatGPT subscription session stored under a protected
+control CODEX_HOME. Candidate tools use a separate CODEX_HOME, receive no auth
+material, and run under the referenced external boundary profile.
 """
 from __future__ import annotations
 
@@ -26,9 +23,10 @@ except ImportError:
 PRIMARY_CONDITIONS = {"baseline", "generic", "legacy-clean", "feynman-v05"}
 SKILL_CONDITIONS = {"legacy-clean", "feynman-v05"}
 SHA_PATTERN = re.compile(r"[0-9a-f]{64}")
-ENV_KEY_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-DEFAULT_CONTROL_PLANE_CREDENTIAL_ENV_KEY = "OPENAI_API_KEY"
-
+SECRET_KEY_PATTERN = re.compile(
+    r"(?:TOKEN|SECRET|PASSWORD|CREDENTIAL|COOKIE|AUTH|API[_-]?KEY|ACCESS[_-]?KEY|PRIVATE[_-]?KEY)",
+    re.IGNORECASE,
+)
 
 def _load(path: Path) -> dict[str, Any]:
     if path.is_symlink() or not path.is_file():
@@ -38,29 +36,23 @@ def _load(path: Path) -> dict[str, Any]:
         raise ValueError(f"JSON root must be object: {path}")
     return value
 
-
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
-
 
 def _valid_sha(value: Any) -> bool:
     return isinstance(value, str) and SHA_PATTERN.fullmatch(value) is not None
 
-
 def _absolute(path: Path, label: str) -> Path:
-    path = path.absolute()
+    path = path.expanduser().absolute()
     if not path.is_absolute():
         raise ValueError(f"{label} must be absolute")
     return path.resolve(strict=False)
 
-
 def _contains(root: Path, path: Path) -> bool:
     return path == root or path.is_relative_to(root)
 
-
 def _overlap(a: Path, b: Path) -> bool:
     return _contains(a, b) or _contains(b, a)
-
 
 def _job(plan: dict[str, Any], ordinal: int) -> dict[str, Any]:
     jobs = plan.get("jobs")
@@ -71,19 +63,14 @@ def _job(plan: dict[str, Any], ordinal: int) -> dict[str, Any]:
         raise ValueError(f"eval plan must contain exactly one job with ordinal {ordinal}")
     return matches[0]
 
-
 def build_job(*, plan_path: Path, ordinal: int, evaluator_case_path: Path,
-              boundary_profile_path: Path, run_id: str,
-              model: str, codex_cli: str,
+              boundary_profile_path: Path, run_id: str, model: str, codex_cli: str,
               candidate_dir: Path, evaluator_dir: Path, source_repo: Path,
               ephemeral_home: Path, codex_home: Path, temp_dir: Path, real_home: Path,
-              case_requires_tool_network: bool = False,
-              allowed_tool_destinations: list[str] | None = None,
-              control_plane_credential_env_key: str = DEFAULT_CONTROL_PLANE_CREDENTIAL_ENV_KEY) -> dict[str, Any]:
+              control_codex_home: Path | None = None, case_requires_tool_network: bool = False,
+              allowed_tool_destinations: list[str] | None = None) -> dict[str, Any]:
     if not run_id.strip() or not model.strip() or not codex_cli.strip():
         raise ValueError("run_id, model, and codex_cli must be nonempty")
-    if not isinstance(control_plane_credential_env_key, str) or ENV_KEY_PATTERN.fullmatch(control_plane_credential_env_key) is None:
-        raise ValueError("control-plane credential env key must be a valid environment variable name")
     allowed_tool_destinations = allowed_tool_destinations or []
     if len(set(allowed_tool_destinations)) != len(allowed_tool_destinations):
         raise ValueError("allowed tool destinations must not contain duplicates")
@@ -145,6 +132,8 @@ def build_job(*, plan_path: Path, ordinal: int, evaluator_case_path: Path,
         if network_mode == "restricted" and not allowed_tool_destinations:
             raise ValueError("restricted tool network requires explicit allowed destinations")
 
+    real_home_path = _absolute(real_home, "real_home")
+    control_codex_home = control_codex_home or (real_home_path / ".codex")
     paths = {
         "candidate_dir": _absolute(candidate_dir, "candidate_dir"),
         "evaluator_dir": _absolute(evaluator_dir, "evaluator_dir"),
@@ -152,9 +141,10 @@ def build_job(*, plan_path: Path, ordinal: int, evaluator_case_path: Path,
         "ephemeral_home": _absolute(ephemeral_home, "ephemeral_home"),
         "codex_home": _absolute(codex_home, "codex_home"),
         "temp_dir": _absolute(temp_dir, "temp_dir"),
-        "real_home": _absolute(real_home, "real_home"),
+        "real_home": real_home_path,
+        "control_codex_home": _absolute(control_codex_home, "control_codex_home"),
     }
-    protected_names = ("evaluator_dir", "source_repo", "real_home")
+    protected_names = ("evaluator_dir", "source_repo", "real_home", "control_codex_home")
     owned_names = ("candidate_dir", "ephemeral_home", "codex_home", "temp_dir")
     for protected_name in protected_names:
         for owned_name in owned_names:
@@ -164,11 +154,12 @@ def build_job(*, plan_path: Path, ordinal: int, evaluator_case_path: Path,
     profile_env_keys = profile.get("candidate_env_keys")
     if not isinstance(profile_env_keys, list) or not profile_env_keys:
         raise ValueError("boundary profile has no candidate env-key allowlist")
-    if control_plane_credential_env_key in profile_env_keys:
-        raise ValueError("control-plane credential env key must not be exposed to candidate tools")
+    secretish = sorted(key for key in profile_env_keys if isinstance(key, str) and SECRET_KEY_PATTERN.search(key))
+    if secretish:
+        raise ValueError("candidate env allowlist contains secret-like names: " + ", ".join(secretish))
 
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "run_id": run_id,
         "job": {
             "ordinal": ordinal,
@@ -193,12 +184,13 @@ def build_job(*, plan_path: Path, ordinal: int, evaluator_case_path: Path,
             "control_plane_separate_from_tool_network": True,
         },
         "authentication": {
-            "mode": "control-plane-only",
-            "control_plane_credential_source": "environment",
-            "control_plane_credential_env_key": control_plane_credential_env_key,
+            "mode": "chatgpt-subscription",
+            "control_plane_auth_source": "codex-session",
+            "api_key_auth_allowed": False,
+            "candidate_auth_exposed": False,
             "candidate_tool_auth_env_keys": [],
-            "candidate_readable_credential_files": [],
-            "credential_command_arguments": [],
+            "candidate_readable_auth_paths": [],
+            "auth_command_arguments": [],
         },
         "skills": {
             "expected_candidate_skills": required_skills,
@@ -211,11 +203,10 @@ def build_job(*, plan_path: Path, ordinal: int, evaluator_case_path: Path,
             "runtime_sha256": runtime_sha,
         },
         "scope": (
-            "immutable external model-runner job contract; credential values stay in the host-side "
-            "model control plane and are excluded from candidate tools"
+            "immutable ChatGPT-subscription Codex runner contract; control-plane session state stays "
+            "under protected control_codex_home and no API-key or candidate auth path is allowed"
         ),
     }
-
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -233,34 +224,20 @@ def main() -> int:
     parser.add_argument("--codex-home", type=Path, required=True)
     parser.add_argument("--temp-dir", type=Path, required=True)
     parser.add_argument("--real-home", type=Path, required=True)
+    parser.add_argument("--control-codex-home", type=Path)
     parser.add_argument("--case-requires-tool-network", action="store_true")
     parser.add_argument("--allowed-tool-destination", action="append", default=[])
-    parser.add_argument(
-        "--control-plane-credential-env-key",
-        default=DEFAULT_CONTROL_PLANE_CREDENTIAL_ENV_KEY,
-        help="name only; credential value is never written to runner-job.json",
-    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
         result = build_job(
-            plan_path=args.plan,
-            ordinal=args.ordinal,
-            evaluator_case_path=args.evaluator_case,
-            boundary_profile_path=args.boundary_profile,
-            run_id=args.run_id,
-            model=args.model,
-            codex_cli=args.codex_cli,
-            candidate_dir=args.candidate_dir,
-            evaluator_dir=args.evaluator_dir,
-            source_repo=args.source_repo,
-            ephemeral_home=args.ephemeral_home,
-            codex_home=args.codex_home,
-            temp_dir=args.temp_dir,
-            real_home=args.real_home,
+            plan_path=args.plan, ordinal=args.ordinal, evaluator_case_path=args.evaluator_case,
+            boundary_profile_path=args.boundary_profile, run_id=args.run_id, model=args.model,
+            codex_cli=args.codex_cli, candidate_dir=args.candidate_dir, evaluator_dir=args.evaluator_dir,
+            source_repo=args.source_repo, ephemeral_home=args.ephemeral_home, codex_home=args.codex_home,
+            temp_dir=args.temp_dir, real_home=args.real_home, control_codex_home=args.control_codex_home,
             case_requires_tool_network=args.case_requires_tool_network,
             allowed_tool_destinations=args.allowed_tool_destination,
-            control_plane_credential_env_key=args.control_plane_credential_env_key,
         )
         if args.output.exists() or args.output.is_symlink():
             raise FileExistsError(f"refusing to overwrite: {args.output}")
@@ -270,7 +247,6 @@ def main() -> int:
         parser.exit(2, f"error: {exc}\n")
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())
