@@ -162,6 +162,7 @@ def extract(trace_path: Path, output_dir: Path) -> dict[str, Any]:
 
             records.append(record)
 
+        final_bytes = final_message.encode("utf-8")
         index = {
             "schema_version": 1,
             "source": "codex-exec-jsonl",
@@ -169,12 +170,13 @@ def extract(trace_path: Path, output_dir: Path) -> dict[str, Any]:
             "thread_id": thread_id,
             "trusted_execution_ids": trusted_execution_ids,
             "records": records,
+            "final_sha256": hashlib.sha256(final_bytes).hexdigest(),
             "reasoning_items_copied": 0,
             "scope": "evaluator evidence extraction; actions are not semantic proof of conclusions",
         }
         (output_dir / "evidence-index.json").write_text(
             json.dumps(index, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        (output_dir / "final.md").write_text(final_message, encoding="utf-8")
+        (output_dir / "final.md").write_bytes(final_bytes)
         return index
     except Exception:
         shutil.rmtree(output_dir)
