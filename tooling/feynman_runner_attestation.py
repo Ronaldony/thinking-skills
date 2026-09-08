@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Validate structural invariants of an external-runner attestation.
 
+Attestation schema v2 records the authentication architecture actually exercised
+by the reference runner: model-service credentials belong to the host-side model
+control plane and candidate tools receive no auth material. Only the credential
+source and environment-variable *name* are recorded; credential values are never
+part of the attestation.
+
 A valid result means the attestation is internally consistent with the evaluation
 contract. It does NOT prove the external runner or its probe artifacts are honest.
 When a verified boundary-probe report is supplied, its bytes, boundary profile,
@@ -24,6 +30,7 @@ SECRET_KEY_PATTERN = re.compile(
     r"(?:TOKEN|SECRET|PASSWORD|CREDENTIAL|COOKIE|AUTH|API[_-]?KEY|ACCESS[_-]?KEY|PRIVATE[_-]?KEY)",
     re.IGNORECASE,
 )
+ENV_KEY_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 SKILL_CONDITIONS = {"legacy-clean", "feynman-v05"}
 NO_SKILL_CONDITIONS = {"baseline", "generic"}
 REQUIRED_PROBES = {
@@ -136,8 +143,8 @@ def validate(attestation: dict[str, Any], *, allow_plugins: bool = False,
              probe_report: dict[str, Any] | None = None,
              probe_report_sha256: str | None = None) -> dict[str, Any]:
     allowed_system_skills = allowed_system_skills or set()
-    if attestation.get("schema_version") != 1:
-        raise ValueError("unsupported schema_version")
+    if attestation.get("schema_version") != 2:
+        raise ValueError("unsupported schema_version; expected runner attestation v2")
     condition = attestation.get("condition_id")
     if condition not in SKILL_CONDITIONS | NO_SKILL_CONDITIONS:
         raise ValueError(f"unsupported condition_id: {condition!r}")
@@ -203,21 +210,31 @@ def validate(attestation: dict[str, Any], *, allow_plugins: bool = False,
     if tool_network not in {"blocked", "restricted", "open"}:
         raise ValueError("invalid tool_network")
     allowed_destinations = _strings(network.get("allowed_tool_destinations"), "allowed_tool_destinations")
+    if network.get("control_plane_separate_from_tool_network") is not True:
+        raise ValueError("runner attestation requires control-plane/tool-network separation")
     if tool_network == "blocked" and allowed_destinations:
         raise ValueError("blocked tool network must not declare allowed_tool_destinations")
-    if not requires_network:
-        if tool_network != "blocked":
-            raise ValueError("closed-network case requires tool_network=blocked")
-        if network.get("control_plane_separate_from_tool_network") is not True:
-            raise ValueError("closed-network case requires control-plane/tool-network separation")
+    if not requires_network and tool_network != "blocked":
+        raise ValueError("closed-network case requires tool_network=blocked")
 
     environment = _object(attestation.get("environment"), "environment")
     env_keys = _strings(environment.get("candidate_env_keys"), "candidate_env_keys")
+    if not all(ENV_KEY_PATTERN.fullmatch(key) for key in env_keys):
+        raise ValueError("candidate environment contains invalid variable name")
     secretish = sorted(key for key in env_keys if SECRET_KEY_PATTERN.search(key))
     if secretish:
         raise ValueError("candidate tool environment exposes secret-like variable names: " + ", ".join(secretish))
     if environment.get("api_auth_exposed_to_candidate_tools") is not False:
         raise ValueError("API auth must not be exposed to candidate tools")
+    if environment.get("control_plane_auth_mode") != "control-plane-only":
+        raise ValueError("control_plane_auth_mode must be control-plane-only")
+    if environment.get("control_plane_credential_source") != "environment":
+        raise ValueError("only environment-sourced control-plane credentials are currently validated")
+    credential_key = environment.get("control_plane_credential_env_key")
+    if not isinstance(credential_key, str) or ENV_KEY_PATTERN.fullmatch(credential_key) is None:
+        raise ValueError("control-plane credential env key is invalid")
+    if credential_key in env_keys:
+        raise ValueError("control-plane credential env key must not be present in candidate tool environment")
     if environment.get("plugins_enabled") is not False and not allow_plugins:
         raise ValueError("plugins must be disabled unless explicitly allowed by the eval protocol")
     system_skills = set(_strings(environment.get("system_skills"), "system_skills"))
@@ -270,8 +287,11 @@ def validate(attestation: dict[str, Any], *, allow_plugins: bool = False,
         "condition_id": condition,
         "backend": boundary["backend"],
         "profile_sha256": boundary["profile_sha256"],
+        "authentication_mode": "control-plane-only",
+        "control_plane_credential_source": "environment",
+        "control_plane_credential_env_key": credential_key,
         "probe_report_bound": probe_report is not None,
-        "scope": "structural consistency of runner attestation; not cryptographic proof of sandbox honesty",
+        "scope": "structural consistency of runner attestation; not cryptographic proof of sandbox honesty or real provider auth",
     }
 
 
