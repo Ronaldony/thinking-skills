@@ -53,7 +53,7 @@ class RunnerJobValidateTests(unittest.TestCase):
         raw = json.dumps(self.profile, sort_keys=True).encode("utf-8")
         self.profile_sha = hashlib.sha256(raw).hexdigest()
         self.job = {
-            "schema_version": 1,
+            "schema_version": 2,
             "run_id": "run-1",
             "job": {
                 "ordinal": 1,
@@ -78,7 +78,9 @@ class RunnerJobValidateTests(unittest.TestCase):
                 "control_plane_separate_from_tool_network": True,
             },
             "authentication": {
-                "mode": "external-broker",
+                "mode": "control-plane-only",
+                "control_plane_credential_source": "environment",
+                "control_plane_credential_env_key": "OPENAI_API_KEY",
                 "candidate_tool_auth_env_keys": [],
                 "candidate_readable_credential_files": [],
                 "credential_command_arguments": [],
@@ -99,7 +101,47 @@ class RunnerJobValidateTests(unittest.TestCase):
     def test_matching_job_and_profile_pass(self):
         result = validate_job(deepcopy(self.job), deepcopy(self.profile), self.profile_sha)
         self.assertEqual(result["verdict"], "runner-job-valid")
-        self.assertEqual(result["authentication_mode"], "external-broker")
+        self.assertEqual(result["authentication_mode"], "control-plane-only")
+        self.assertEqual(result["control_plane_credential_source"], "environment")
+        self.assertEqual(result["control_plane_credential_env_key"], "OPENAI_API_KEY")
+
+    def test_legacy_schema_v1_is_rejected(self):
+        job = deepcopy(self.job)
+        job["schema_version"] = 1
+        with self.assertRaises(ValueError):
+            validate_job(job, deepcopy(self.profile), self.profile_sha)
+
+    def test_legacy_external_broker_mode_is_rejected(self):
+        job = deepcopy(self.job)
+        job["authentication"]["mode"] = "external-broker"
+        with self.assertRaises(ValueError):
+            validate_job(job, deepcopy(self.profile), self.profile_sha)
+
+    def test_unvalidated_credential_source_is_rejected(self):
+        job = deepcopy(self.job)
+        job["authentication"]["control_plane_credential_source"] = "file"
+        with self.assertRaises(ValueError):
+            validate_job(job, deepcopy(self.profile), self.profile_sha)
+
+    def test_invalid_control_plane_credential_env_key_is_rejected(self):
+        job = deepcopy(self.job)
+        job["authentication"]["control_plane_credential_env_key"] = "BAD-KEY"
+        with self.assertRaises(ValueError):
+            validate_job(job, deepcopy(self.profile), self.profile_sha)
+
+    def test_control_plane_key_in_candidate_env_is_rejected(self):
+        job = deepcopy(self.job)
+        job["boundary"]["candidate_env_keys"].append("OPENAI_API_KEY")
+        profile = deepcopy(self.profile)
+        profile["candidate_env_keys"].append("OPENAI_API_KEY")
+        with self.assertRaises(ValueError):
+            validate_job(job, profile, self.profile_sha)
+
+    def test_unexpected_auth_field_is_rejected(self):
+        job = deepcopy(self.job)
+        job["authentication"]["credential_value"] = "must-never-appear"
+        with self.assertRaises(ValueError):
+            validate_job(job, deepcopy(self.profile), self.profile_sha)
 
     def test_extra_writable_mount_is_rejected(self):
         profile = deepcopy(self.profile)
@@ -122,6 +164,12 @@ class RunnerJobValidateTests(unittest.TestCase):
     def test_candidate_credential_file_is_rejected(self):
         job = deepcopy(self.job)
         job["authentication"]["candidate_readable_credential_files"] = ["/run/credentials.json"]
+        with self.assertRaises(ValueError):
+            validate_job(job, deepcopy(self.profile), self.profile_sha)
+
+    def test_credential_command_argument_is_rejected(self):
+        job = deepcopy(self.job)
+        job["authentication"]["credential_command_arguments"] = ["--api-key=secret"]
         with self.assertRaises(ValueError):
             validate_job(job, deepcopy(self.profile), self.profile_sha)
 
