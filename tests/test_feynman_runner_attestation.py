@@ -8,7 +8,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from tooling.feynman_runner_attestation import validate
+from tooling.feynman_runner_attestation import BOUNDARY_REPORT_PROBES, validate
 
 
 SHA = "a" * 64
@@ -83,8 +83,20 @@ def attestation(condition: str = "baseline"):
             "eval_plan_sha256": SHA,
             "runtime_sha256": SHA if skill else None,
             "candidate_prompt_sha256": SHA,
+            "probe_report_sha256": SHA,
         },
         "limitations": ["synthetic unit-test attestation only"],
+    }
+
+
+def boundary_report(value: dict):
+    return {
+        "schema_version": 1,
+        "run_id": value["run_id"],
+        "verdict": "passed",
+        "failed_probes": [],
+        "observed_env_keys": sorted(value["environment"]["candidate_env_keys"]),
+        "probes": {name: deepcopy(value["probes"][name]) for name in BOUNDARY_REPORT_PROBES},
     }
 
 
@@ -94,6 +106,36 @@ class RunnerAttestationTests(unittest.TestCase):
 
     def test_v05_contract_valid(self):
         self.assertEqual(validate(attestation("feynman-v05"))["verdict"], "contract-valid")
+
+    def test_verified_boundary_report_is_bound(self):
+        value = attestation()
+        result = validate(value, probe_report=boundary_report(value), probe_report_sha256=SHA)
+        self.assertTrue(result["probe_report_bound"])
+
+    def test_probe_report_digest_mismatch_is_rejected(self):
+        value = attestation()
+        with self.assertRaises(ValueError):
+            validate(value, probe_report=boundary_report(value), probe_report_sha256="b" * 64)
+
+    def test_probe_report_probe_mismatch_is_rejected(self):
+        value = attestation()
+        report = boundary_report(value)
+        report["probes"]["candidate_read"]["artifact_sha256"] = "b" * 64
+        with self.assertRaises(ValueError):
+            validate(value, probe_report=report, probe_report_sha256=SHA)
+
+    def test_probe_report_environment_mismatch_is_rejected(self):
+        value = attestation()
+        report = boundary_report(value)
+        report["observed_env_keys"] = ["HOME"]
+        with self.assertRaises(ValueError):
+            validate(value, probe_report=report, probe_report_sha256=SHA)
+
+    def test_missing_probe_report_digest_is_rejected(self):
+        value = attestation()
+        del value["digests"]["probe_report_sha256"]
+        with self.assertRaises(ValueError):
+            validate(value)
 
     def test_internal_only_enforcement_is_rejected(self):
         value = attestation()
