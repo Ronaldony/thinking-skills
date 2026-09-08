@@ -2,10 +2,10 @@
 """Serve deterministic Responses API SSE for the remote-exec reference.
 
 The first response asks Codex to run one `exec_command`. The command writes a
-marker in the selected remote workspace and verifies that the tool process cannot
-reach the control-plane host/port. A later response is returned only after Codex
-feeds the matching tool output back and that output contains both expected
-markers.
+marker in the selected remote workspace, verifies that the tool process cannot
+reach the control-plane host/port, and verifies that secret-like environment
+keys were not propagated from the control plane. A later response is returned
+only after Codex feeds the matching tool output back with all expected markers.
 
 This is a test model server. It never calls an external model service and never
 needs a real credential.
@@ -26,6 +26,7 @@ CALL_ID = "call-remote-exec-reference"
 FINAL_TEXT = "REMOTE_EXEC_REFERENCE_OK"
 WORKSPACE_MARKER = "REMOTE_EXEC_OK"
 NETWORK_MARKER = "NETWORK_BLOCKED"
+AUTH_ENV_MARKER = "AUTH_ENV_CLEAN"
 MAX_BODY_BYTES = 5 * 1024 * 1024
 HOST_PATTERN = re.compile(r"(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])")
 
@@ -66,6 +67,17 @@ def _tool_command(host: str, port: int) -> str:
         raise ValueError("tool network port must be in 1..65535")
     return f"""set -eu
 printf '%s\\n' '{WORKSPACE_MARKER}' > remote-tool-proof.txt
+python3 - <<'PY'
+import os
+import re
+import sys
+pattern = re.compile(r'(?:TOKEN|SECRET|PASSWORD|CREDENTIAL|COOKIE|AUTH|API[_-]?KEY|ACCESS[_-]?KEY|PRIVATE[_-]?KEY)', re.I)
+bad = sorted(key for key in os.environ if pattern.search(key))
+if bad:
+    print('AUTH_ENV_LEAK:' + ','.join(bad))
+    raise SystemExit(8)
+print({AUTH_ENV_MARKER!r})
+PY
 python3 - <<'PY'
 import socket
 import sys
@@ -248,6 +260,7 @@ class ReferenceHandler(BaseHTTPRequestHandler):
             "tool_output_sha256": hashlib.sha256(output.encode("utf-8")).hexdigest() if output is not None else None,
             "tool_output_contains_workspace_marker": WORKSPACE_MARKER in output if output is not None else False,
             "tool_output_contains_network_marker": NETWORK_MARKER in output if output is not None else False,
+            "tool_output_contains_auth_env_marker": AUTH_ENV_MARKER in output if output is not None else False,
         }
         self.server.requests.append(record)
 
@@ -256,7 +269,8 @@ class ReferenceHandler(BaseHTTPRequestHandler):
             self._sse(function_call_events(self.server.tool_network_host, self.server.server_port))
             return
 
-        if output is None or WORKSPACE_MARKER not in output or NETWORK_MARKER not in output:
+        required = (WORKSPACE_MARKER, NETWORK_MARKER, AUTH_ENV_MARKER)
+        if output is None or not all(marker in output for marker in required):
             self.server.validation_error = "second model request lacks verified remote tool output markers"
             self.server.write_state()
             self._json(409, {"error": self.server.validation_error})
