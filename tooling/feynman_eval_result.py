@@ -2,8 +2,8 @@
 """Assemble one analysis-ready Feynman evaluation result record.
 
 This joins a frozen eval-plan job, evaluator-side condition record, externally
-validated runner attestation, semantic review, and structural gate output. It
-does not run a model or judge correctness itself.
+validated runner attestation, evaluator review bundle, semantic review, and
+structural gate output. It does not run a model or judge correctness itself.
 """
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 try:
@@ -34,6 +35,12 @@ def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _sha256_string(value: Any, label: str) -> str:
+    if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
+        raise ValueError(f"{label} must be SHA-256")
+    return value
+
+
 def _job(plan: dict[str, Any], ordinal: int) -> dict[str, Any]:
     jobs = plan.get("jobs")
     if not isinstance(jobs, list):
@@ -46,18 +53,26 @@ def _job(plan: dict[str, Any], ordinal: int) -> dict[str, Any]:
 
 def assemble(plan_path: Path, ordinal: int, evaluator_case_path: Path,
              attestation_path: Path, semantic_review_path: Path, gate_path: Path,
-             *, allowed_system_skills: set[str] | None = None,
+             *, review_bundle_path: Path | None = None,
+             allowed_system_skills: set[str] | None = None,
              allow_plugins: bool = False) -> dict[str, Any]:
     plan_path = plan_path.resolve()
     evaluator_case_path = evaluator_case_path.resolve()
     attestation_path = attestation_path.resolve()
     semantic_review_path = semantic_review_path.resolve()
     gate_path = gate_path.resolve()
+    if review_bundle_path is None:
+        raise ValueError("analysis-ready result requires the evaluator review bundle")
+    review_bundle_path = review_bundle_path.resolve()
+    review_input_path = review_bundle_path / "review-input.json"
+    review_manifest_path = review_bundle_path / "review-manifest.json"
 
     plan = _load(plan_path)
     job = _job(plan, ordinal)
     evaluator_case = _load(evaluator_case_path)
     attestation = _load(attestation_path)
+    review_input = _load(review_input_path)
+    review_manifest = _load(review_manifest_path)
     review = _load(semantic_review_path)
     gate = _load(gate_path)
 
@@ -110,12 +125,83 @@ def assemble(plan_path: Path, ordinal: int, evaluator_case_path: Path,
         if required_commit is not None and runtime_manifest.get("source_commit") != required_commit:
             raise ValueError("legacy runtime source commit differs from preregistered commit")
 
+    # Rebind semantic judging to the actual evaluator review package. Without this,
+    # a hand-edited gate file could point at a different candidate/evidence bundle.
+    actual_review_input_sha = _sha(review_input_path)
+    actual_review_manifest_sha = _sha(review_manifest_path)
+    if review_manifest.get("case_id") != case_id or review_input.get("case_id") != case_id:
+        raise ValueError("review bundle case does not match eval-plan job")
+    if review_manifest.get("review_input_sha256") != actual_review_input_sha:
+        raise ValueError("review manifest is not bound to review-input.json")
+    if gate.get("review_input_sha256") != actual_review_input_sha:
+        raise ValueError("gate output is not bound to review-input.json")
+    if gate.get("review_manifest_sha256") != actual_review_manifest_sha:
+        raise ValueError("gate output is not bound to review-manifest.json")
+    if review_input.get("task") != evaluator_case.get("prompt"):
+        raise ValueError("review input task differs from evaluator case prompt")
+    if review_input.get("rubric") != evaluator_case.get("rubric"):
+        raise ValueError("review input rubric differs from evaluator case rubric")
+
     if review.get("schema_version") != 2 or review.get("id") != case_id:
         raise ValueError("analysis-ready result requires semantic review schema v2 for the same case")
     if gate.get("schema_version") != 2 or gate.get("case_id") != case_id:
         raise ValueError("analysis-ready result requires gate schema v2 for the same case")
     if gate.get("semantic_review_sha256") != _sha(semantic_review_path):
         raise ValueError("gate output is not bound to this semantic review")
+
+    candidate_final_sha = _sha256_string(
+        review_manifest.get("candidate_final_sha256"), "review candidate_final_sha256"
+    )
+    if gate.get("candidate_final_sha256") != candidate_final_sha:
+        raise ValueError("gate candidate final digest differs from review manifest")
+    source_trace_sha = _sha256_string(
+        review_manifest.get("source_trace_sha256"), "review source_trace_sha256"
+    )
+    if gate.get("source_trace_sha256") != source_trace_sha:
+        raise ValueError("gate source trace digest differs from review manifest")
+
+    has_followup = isinstance(evaluator_case.get("followup"), str)
+    phase = review_manifest.get("phase")
+    conversation_thread_id: str | None = None
+    initial_candidate_final_sha: str | None = None
+    initial_source_trace_sha: str | None = None
+    if has_followup:
+        if phase != "followup" or gate.get("phase") != "followup" or review_input.get("phase") != "followup":
+            raise ValueError("multi-turn case requires a followup review/gate phase")
+        if review_input.get("followup") != evaluator_case.get("followup"):
+            raise ValueError("review input followup differs from evaluator case")
+        conversation_thread_id = review_manifest.get("conversation_thread_id")
+        if not isinstance(conversation_thread_id, str) or not conversation_thread_id.strip():
+            raise ValueError("multi-turn result lacks same-thread continuity proof")
+        if review_input.get("conversation_thread_id") != conversation_thread_id:
+            raise ValueError("review input/manifest conversation thread mismatch")
+        if gate.get("conversation_thread_id") != conversation_thread_id:
+            raise ValueError("gate/review-manifest conversation thread mismatch")
+        if not isinstance(review_input.get("initial_candidate_final"), str):
+            raise ValueError("multi-turn review input lacks initial candidate answer")
+        initial_candidate_final_sha = _sha256_string(
+            review_manifest.get("initial_candidate_final_sha256"),
+            "review initial_candidate_final_sha256",
+        )
+        initial_source_trace_sha = _sha256_string(
+            review_manifest.get("initial_source_trace_sha256"),
+            "review initial_source_trace_sha256",
+        )
+        if gate.get("initial_candidate_final_sha256") != initial_candidate_final_sha:
+            raise ValueError("gate initial final digest differs from review manifest")
+        if gate.get("initial_source_trace_sha256") != initial_source_trace_sha:
+            raise ValueError("gate initial trace digest differs from review manifest")
+        if initial_source_trace_sha == source_trace_sha:
+            raise ValueError("multi-turn result reuses the same trace for initial and followup")
+        if review.get("update_behavior") == "not_applicable":
+            raise ValueError("multi-turn semantic review must evaluate update_behavior")
+    else:
+        if phase != "initial" or gate.get("phase") != "initial" or review_input.get("phase") != "initial":
+            raise ValueError("single-turn case requires initial review/gate phase")
+        if review.get("update_behavior") != "not_applicable":
+            raise ValueError("single-turn semantic review must use update_behavior=not_applicable")
+        if review_manifest.get("conversation_thread_id") is not None:
+            raise ValueError("single-turn result must not claim multi-turn continuity")
 
     semantic_outcomes = gate.get("semantic_outcomes")
     expected_outcomes = {
@@ -139,7 +225,7 @@ def assemble(plan_path: Path, ordinal: int, evaluator_case_path: Path,
         raise ValueError("semantic review behaviors must be an object")
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "valid_for_analysis": True,
         "run_id": attestation.get("run_id"),
         "job": {
@@ -147,7 +233,7 @@ def assemble(plan_path: Path, ordinal: int, evaluator_case_path: Path,
             "case_id": case_id,
             "condition": condition,
             "repeat": repeat,
-            "phase": gate.get("phase"),
+            "phase": phase,
         },
         "versions": attestation.get("versions"),
         "runner": {
@@ -155,10 +241,19 @@ def assemble(plan_path: Path, ordinal: int, evaluator_case_path: Path,
             "backend_version": attestation.get("boundary", {}).get("backend_version"),
             "profile_sha256": attestation.get("boundary", {}).get("profile_sha256"),
         },
+        "conversation": {
+            "thread_id": conversation_thread_id,
+            "initial_source_trace_sha256": initial_source_trace_sha,
+            "followup_source_trace_sha256": source_trace_sha if has_followup else None,
+        },
         "digests": {
             "eval_plan_sha256": plan_sha,
             "candidate_prompt_sha256": job.get("candidate_prompt_sha256"),
             "runtime_sha256": attested_runtime,
+            "review_input_sha256": actual_review_input_sha,
+            "review_manifest_sha256": actual_review_manifest_sha,
+            "candidate_final_sha256": candidate_final_sha,
+            "initial_candidate_final_sha256": initial_candidate_final_sha,
             "semantic_review_sha256": _sha(semantic_review_path),
             "gate_sha256": _sha(gate_path),
             "attestation_sha256": _sha(attestation_path),
@@ -178,7 +273,7 @@ def assemble(plan_path: Path, ordinal: int, evaluator_case_path: Path,
             "review_confidence": review.get("confidence"),
         },
         "limitations": attestation.get("limitations", []),
-        "scope": "validated record linkage and descriptive metrics; not a causal performance conclusion",
+        "scope": "validated plan-to-run-to-evidence-to-review linkage and descriptive metrics; not a causal performance conclusion",
     }
 
 
@@ -188,6 +283,7 @@ def main() -> int:
     parser.add_argument("--ordinal", type=int, required=True)
     parser.add_argument("--evaluator-case", type=Path, required=True)
     parser.add_argument("--attestation", type=Path, required=True)
+    parser.add_argument("--review-bundle", type=Path, required=True)
     parser.add_argument("--semantic-review", type=Path, required=True)
     parser.add_argument("--gate", type=Path, required=True)
     parser.add_argument("--allowed-system-skill", action="append", default=[])
@@ -202,6 +298,7 @@ def main() -> int:
             args.attestation,
             args.semantic_review,
             args.gate,
+            review_bundle_path=args.review_bundle,
             allowed_system_skills=set(args.allowed_system_skill),
             allow_plugins=args.allow_plugins,
         )
