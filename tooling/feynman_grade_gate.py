@@ -3,6 +3,16 @@ from __future__ import annotations
 from typing import Any
 
 VALID_FINDING_STATES = {"supported", "missed", "contradicted", "unverified"}
+VALID_DECISION_STATES = {"correct", "partial", "incorrect", "unverified"}
+VALID_EXECUTION_INTEGRITY = {"clean", "failure", "unverified"}
+VALID_UPDATE_BEHAVIOR = {
+    "not_applicable",
+    "justified_revision",
+    "justified_retention",
+    "unjustified_revision",
+    "unjustified_retention",
+    "unverified",
+}
 
 
 def _unique(items: list[dict[str, Any]], label: str) -> dict[str, dict[str, Any]]:
@@ -18,6 +28,52 @@ def _unique(items: list[dict[str, Any]], label: str) -> dict[str, dict[str, Any]
     return result
 
 
+def _nonempty_text(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{label} must be a nonempty string")
+    return value
+
+
+def _validate_v2_outcomes(review: dict[str, Any], reasons: list[str], unverified: list[str]) -> dict[str, str] | None:
+    schema_version = review.get("schema_version")
+    if schema_version is None:
+        return None
+    if schema_version != 2:
+        raise ValueError(f"unsupported semantic review schema_version: {schema_version!r}")
+
+    decision = review.get("decision_correctness")
+    if decision not in VALID_DECISION_STATES:
+        raise ValueError(f"invalid decision_correctness: {decision!r}")
+    _nonempty_text(review.get("decision_evidence"), "decision_evidence")
+    if decision in {"partial", "incorrect"}:
+        reasons.append(f"decision correctness is not fully correct: {decision}")
+    elif decision == "unverified":
+        unverified.append("decision correctness is unverified")
+
+    execution = review.get("execution_integrity")
+    if execution not in VALID_EXECUTION_INTEGRITY:
+        raise ValueError(f"invalid execution_integrity: {execution!r}")
+    _nonempty_text(review.get("execution_integrity_evidence"), "execution_integrity_evidence")
+    if execution == "failure":
+        reasons.append("execution integrity failure")
+    elif execution == "unverified":
+        unverified.append("execution integrity is unverified")
+
+    update_behavior = review.get("update_behavior")
+    if update_behavior not in VALID_UPDATE_BEHAVIOR:
+        raise ValueError(f"invalid update_behavior: {update_behavior!r}")
+    if update_behavior in {"unjustified_revision", "unjustified_retention"}:
+        reasons.append(f"unjustified evidence update behavior: {update_behavior}")
+    elif update_behavior == "unverified":
+        unverified.append("evidence update behavior is unverified")
+
+    return {
+        "decision_correctness": decision,
+        "execution_integrity": execution,
+        "update_behavior": update_behavior,
+    }
+
+
 def gate(rubric: dict[str, Any], review: dict[str, Any],
          trusted_execution_ids: set[str] | None = None) -> dict[str, Any]:
     """Return passed/failed/unverified; never infer semantic correctness from labels alone.
@@ -29,6 +85,11 @@ def gate(rubric: dict[str, Any], review: dict[str, Any],
     synthetic rubric that omits the `hard_failures` field may still report a
     free-text hard failure, but such a report can only make the verdict fail; it
     can never pass or be promoted into a standardized critical-failure metric.
+
+    Semantic review schema v2 additionally binds the preregistered primary
+    decision-correctness and execution-integrity outcomes plus update behavior.
+    Legacy synthetic reviews without schema_version retain the older structural
+    test surface and are not valid production result records.
     """
     trusted_execution_ids = trusted_execution_ids or set()
     if rubric.get("id") != review.get("id"):
@@ -68,6 +129,8 @@ def gate(rubric: dict[str, Any], review: dict[str, Any],
 
     reasons: list[str] = []
     unverified: list[str] = []
+    v2_outcomes = _validate_v2_outcomes(review, reasons, unverified)
+
     for fid, item in found.items():
         status = item.get("status")
         if status not in VALID_FINDING_STATES:
@@ -100,5 +163,6 @@ def gate(rubric: dict[str, Any], review: dict[str, Any],
         "unverified": unverified,
         "hard_failure_ids": hard if hard_specified else [],
         "unstructured_hard_failures": [] if hard_specified else hard,
+        "semantic_outcomes": v2_outcomes,
         "scope": "structural gate over evaluator judgments, not an independent correctness finding",
     }
