@@ -122,6 +122,7 @@ class EvalResultLinkageTests(unittest.TestCase):
 class EvalAggregateTests(unittest.TestCase):
     GENERIC_PROMPT_SHA = "1" * 64
     V05_PROMPT_SHA = "2" * 64
+    V05_RUNTIME_SHA = "3" * 64
 
     def _plan(self):
         return {
@@ -149,23 +150,33 @@ class EvalAggregateTests(unittest.TestCase):
     def _record(self, condition: str, *, decision: str, supported: int,
                 critical: bool = False, execution: str = "clean",
                 update_behavior: str = "not_applicable", model: str = "same-model",
-                cli: str = "same-cli", profile: str = "a" * 64):
-        ordinal = 1 if condition == "generic" else 2
+                cli: str = "same-cli", profile: str = "a" * 64,
+                runtime_sha: str | None = None, repeat: int = 1,
+                ordinal: int | None = None):
+        if ordinal is None:
+            ordinal = 1 if condition == "generic" else 2
         prompt_sha = self.GENERIC_PROMPT_SHA if condition == "generic" else self.V05_PROMPT_SHA
+        if runtime_sha is None and condition == "feynman-v05":
+            runtime_sha = self.V05_RUNTIME_SHA
+        if condition in {"baseline", "generic"}:
+            runtime_sha = None
         return {
             "schema_version": 1,
             "valid_for_analysis": True,
-            "run_id": f"run-{condition}",
+            "run_id": f"run-{condition}-r{repeat}",
             "job": {
                 "ordinal": ordinal,
                 "case_id": "case-1",
                 "condition": condition,
-                "repeat": 1,
+                "repeat": repeat,
                 "phase": "initial",
             },
             "versions": {"model": model, "codex_cli": cli},
             "runner": {"backend": "container", "backend_version": "1", "profile_sha256": profile},
-            "digests": {"candidate_prompt_sha256": prompt_sha},
+            "digests": {
+                "candidate_prompt_sha256": prompt_sha,
+                "runtime_sha256": runtime_sha,
+            },
             "metrics": {
                 "decision_correctness": decision,
                 "required_findings_supported": supported,
@@ -223,6 +234,34 @@ class EvalAggregateTests(unittest.TestCase):
         self.assertEqual(result["status"], "mixed-environment")
         self.assertFalse(result["environment_consistency"]["single_runner_profile"])
 
+    def test_mixed_runtime_within_condition_is_not_analysis_ready(self):
+        plan = {
+            "conditions": ["feynman-v05"],
+            "jobs": [
+                {
+                    "ordinal": 1, "case_id": "case-1", "condition": "feynman-v05",
+                    "repeat": 1, "has_followup": False,
+                    "candidate_prompt_sha256": self.V05_PROMPT_SHA,
+                },
+                {
+                    "ordinal": 2, "case_id": "case-1", "condition": "feynman-v05",
+                    "repeat": 2, "has_followup": False,
+                    "candidate_prompt_sha256": self.V05_PROMPT_SHA,
+                },
+            ],
+        }
+        first = self._record(
+            "feynman-v05", decision="correct", supported=2,
+            runtime_sha="3" * 64, repeat=1, ordinal=1,
+        )
+        second = self._record(
+            "feynman-v05", decision="correct", supported=2,
+            runtime_sha="4" * 64, repeat=2, ordinal=2,
+        )
+        result = aggregate(plan, [first, second])
+        self.assertEqual(result["status"], "mixed-environment")
+        self.assertFalse(result["environment_consistency"]["single_runtime_per_condition"])
+
     def test_unverified_primary_outcome_is_not_analysis_ready(self):
         generic = self._record("generic", decision="unverified", supported=2)
         v05 = self._record("feynman-v05", decision="correct", supported=2)
@@ -240,6 +279,12 @@ class EvalAggregateTests(unittest.TestCase):
     def test_wrong_ordinal_is_rejected(self):
         v05 = self._record("feynman-v05", decision="correct", supported=2)
         v05["job"]["ordinal"] = 999
+        with self.assertRaises(ValueError):
+            aggregate(self._plan(), [v05])
+
+    def test_missing_runtime_digest_for_skill_condition_is_rejected(self):
+        v05 = self._record("feynman-v05", decision="correct", supported=2)
+        v05["digests"]["runtime_sha256"] = None
         with self.assertRaises(ValueError):
             aggregate(self._plan(), [v05])
 
