@@ -179,6 +179,17 @@ def aggregate(plan: dict[str, Any], records: Iterable[dict[str, Any]]) -> dict[s
             raise ValueError(f"duplicate result job key: {key}")
         if key not in expected:
             raise ValueError(f"result does not correspond to frozen plan job: {key}")
+
+        planned_job = expected[key]
+        result_job = record["job"]
+        if result_job.get("ordinal") != planned_job.get("ordinal"):
+            raise ValueError(f"result ordinal differs from frozen plan job: {key}")
+        digests = record.get("digests")
+        if not isinstance(digests, dict):
+            raise ValueError("result has no digests object")
+        if digests.get("candidate_prompt_sha256") != planned_job.get("candidate_prompt_sha256"):
+            raise ValueError(f"result prompt digest differs from frozen plan job: {key}")
+
         observed[key] = record
         versions = record.get("versions")
         if not isinstance(versions, dict):
@@ -199,9 +210,49 @@ def aggregate(plan: dict[str, Any], records: Iterable[dict[str, Any]]) -> dict[s
     for key, record in observed.items():
         by_condition[key[1]].append(record)
 
+    environment_consistency = {
+        "models": sorted(models),
+        "codex_cli_versions": sorted(cli_versions),
+        "runner_profile_sha256": sorted(runner_profiles),
+        "single_model": len(models) <= 1,
+        "single_codex_cli_version": len(cli_versions) <= 1,
+        "single_runner_profile": len(runner_profiles) <= 1,
+    }
+    mixed_environment = not all((
+        environment_consistency["single_model"],
+        environment_consistency["single_codex_cli_version"],
+        environment_consistency["single_runner_profile"],
+    ))
+    unverified_primary = [
+        key for key, record in observed.items()
+        if record["metrics"]["decision_correctness"] == "unverified"
+        or record["metrics"]["execution_integrity"] == "unverified"
+        or record["metrics"]["update_behavior"] == "unverified"
+        or record["metrics"]["gate_verdict"] == "unverified"
+    ]
+
+    blocking_reasons: list[str] = []
+    if missing or extra:
+        blocking_reasons.append("frozen plan is incomplete or contains unexpected result jobs")
+    if mixed_environment:
+        blocking_reasons.append("model, Codex CLI version, or runner profile differs across result records")
+    if unverified_primary:
+        blocking_reasons.append("one or more primary semantic outcomes are unverified")
+
+    if missing or extra:
+        status = "incomplete"
+    elif mixed_environment:
+        status = "mixed-environment"
+    elif unverified_primary:
+        status = "unverified-outcomes"
+    else:
+        status = "analysis-ready"
+
     return {
         "schema_version": 1,
-        "status": "complete" if not missing and not extra else "incomplete",
+        "status": status,
+        "primary_comparison_ready": status == "analysis-ready",
+        "blocking_reasons": blocking_reasons,
         "expected_runs": len(expected),
         "observed_runs": len(observed),
         "missing_jobs": [
@@ -210,14 +261,10 @@ def aggregate(plan: dict[str, Any], records: Iterable[dict[str, Any]]) -> dict[s
         "extra_jobs": [
             {"case_id": c, "condition": k, "repeat": r, "phase": p} for c, k, r, p in extra
         ],
-        "environment_consistency": {
-            "models": sorted(models),
-            "codex_cli_versions": sorted(cli_versions),
-            "runner_profile_sha256": sorted(runner_profiles),
-            "single_model": len(models) <= 1,
-            "single_codex_cli_version": len(cli_versions) <= 1,
-            "single_runner_profile": len(runner_profiles) <= 1,
-        },
+        "unverified_primary_jobs": [
+            {"case_id": c, "condition": k, "repeat": r, "phase": p} for c, k, r, p in sorted(unverified_primary)
+        ],
+        "environment_consistency": environment_consistency,
         "conditions": {
             condition: _condition_summary(by_condition.get(condition, []))
             for condition in PRIMARY_CONDITIONS if condition in set(plan.get("conditions", []))
@@ -227,7 +274,7 @@ def aggregate(plan: dict[str, Any], records: Iterable[dict[str, Any]]) -> dict[s
             "legacy_clean_vs_feynman_v05": _paired(observed, "legacy-clean", "feynman-v05"),
             "baseline_vs_feynman_v05": _paired(observed, "baseline", "feynman-v05"),
         },
-        "scope": "descriptive preregistered metrics; incomplete/mixed-environment results must not be presented as final validation",
+        "scope": "descriptive preregistered metrics; only status=analysis-ready may be used for the primary comparison, and even then no significance or causal claim is implied",
     }
 
 
