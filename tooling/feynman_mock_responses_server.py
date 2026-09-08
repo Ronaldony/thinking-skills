@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Serve deterministic Responses API SSE for the remote-exec reference.
+"""Serve deterministic Responses API SSE for the remote-tool reference.
 
-The first response asks Codex to run one `exec_command`. The command writes a
-marker in the selected remote workspace, verifies that the tool process cannot
-reach the control-plane host/port, and verifies that secret-like environment
-keys were not propagated from the control plane. A later response is returned
-only after Codex feeds the matching tool output back with all expected markers.
+The mock conversation has three model requests:
+
+1. ask Codex to apply a patch that creates `remote-patch-proof.txt`;
+2. after the matching custom-tool output returns, ask Codex to execute a command;
+3. only after that command proves the patched file is visible in the selected
+   remote environment, verifies network denial and a clean auth environment, and
+   writes the exec marker, return the final assistant message.
 
 This is a test model server. It never calls an external model service and never
 needs a real credential.
@@ -22,8 +24,11 @@ import re
 import tempfile
 from typing import Any
 
-CALL_ID = "call-remote-exec-reference"
+PATCH_CALL_ID = "call-remote-patch-reference"
+EXEC_CALL_ID = "call-remote-exec-reference"
 FINAL_TEXT = "REMOTE_EXEC_REFERENCE_OK"
+PATCH_FILENAME = "remote-patch-proof.txt"
+PATCH_MARKER = "REMOTE_PATCH_OK"
 WORKSPACE_MARKER = "REMOTE_EXEC_OK"
 NETWORK_MARKER = "NETWORK_BLOCKED"
 AUTH_ENV_MARKER = "AUTH_ENV_CLEAN"
@@ -60,17 +65,45 @@ def _completed(response_id: str) -> dict[str, Any]:
     }
 
 
+def _patch_text() -> str:
+    return (
+        "*** Begin Patch\n"
+        f"*** Add File: {PATCH_FILENAME}\n"
+        f"+{PATCH_MARKER}\n"
+        "*** End Patch\n"
+    )
+
+
+def apply_patch_events() -> list[dict[str, Any]]:
+    response_id = "resp-remote-patch"
+    return [
+        _created(response_id),
+        {
+            "type": "response.output_item.done",
+            "item": {
+                "type": "custom_tool_call",
+                "call_id": PATCH_CALL_ID,
+                "name": "apply_patch",
+                "input": _patch_text(),
+            },
+        },
+        _completed(response_id),
+    ]
+
+
 def _tool_command(host: str, port: int) -> str:
     if HOST_PATTERN.fullmatch(host) is None:
         raise ValueError("tool network host contains unsupported characters")
     if not 1 <= port <= 65535:
         raise ValueError("tool network port must be in 1..65535")
     return f"""set -eu
+PATCH_VALUE="$(cat {PATCH_FILENAME})"
+test "$PATCH_VALUE" = '{PATCH_MARKER}'
+printf '%s\\n' "$PATCH_VALUE"
 printf '%s\\n' '{WORKSPACE_MARKER}' > remote-tool-proof.txt
 python3 - <<'PY'
 import os
 import re
-import sys
 pattern = re.compile(r'(?:TOKEN|SECRET|PASSWORD|CREDENTIAL|COOKIE|AUTH|API[_-]?KEY|ACCESS[_-]?KEY|PRIVATE[_-]?KEY)', re.I)
 bad = sorted(key for key in os.environ if pattern.search(key))
 if bad:
@@ -80,7 +113,6 @@ print({AUTH_ENV_MARKER!r})
 PY
 python3 - <<'PY'
 import socket
-import sys
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 sock.settimeout(0.5)
 try:
@@ -95,8 +127,8 @@ cat remote-tool-proof.txt
 """
 
 
-def function_call_events(host: str, port: int) -> list[dict[str, Any]]:
-    response_id = "resp-remote-tool"
+def exec_command_events(host: str, port: int) -> list[dict[str, Any]]:
+    response_id = "resp-remote-exec"
     arguments = json.dumps(
         {"cmd": _tool_command(host, port), "yield_time_ms": 1000},
         separators=(",", ":"),
@@ -107,7 +139,7 @@ def function_call_events(host: str, port: int) -> list[dict[str, Any]]:
             "type": "response.output_item.done",
             "item": {
                 "type": "function_call",
-                "call_id": CALL_ID,
+                "call_id": EXEC_CALL_ID,
                 "name": "exec_command",
                 "arguments": arguments,
             },
@@ -143,11 +175,11 @@ def _iter_nodes(value: Any):
             yield from _iter_nodes(child)
 
 
-def find_matching_tool_output(body: Any) -> str | None:
+def find_call_output(body: Any, *, call_id: str, output_type: str) -> str | None:
     for node in _iter_nodes(body):
         if not isinstance(node, dict):
             continue
-        if node.get("type") != "function_call_output" or node.get("call_id") != CALL_ID:
+        if node.get("type") != output_type or node.get("call_id") != call_id:
             continue
         output = node.get("output")
         if isinstance(output, str):
@@ -155,6 +187,14 @@ def find_matching_tool_output(body: Any) -> str | None:
         if output is not None:
             return json.dumps(output, ensure_ascii=False, sort_keys=True)
     return None
+
+
+def find_patch_output(body: Any) -> str | None:
+    return find_call_output(body, call_id=PATCH_CALL_ID, output_type="custom_tool_call_output")
+
+
+def find_exec_output(body: Any) -> str | None:
+    return find_call_output(body, call_id=EXEC_CALL_ID, output_type="function_call_output")
 
 
 def _atomic_json(path: Path, value: dict[str, Any]) -> None:
@@ -189,12 +229,14 @@ class ReferenceServer(ThreadingHTTPServer):
         _atomic_json(
             self.state_path,
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "requests": self.requests,
                 "validation_error": self.validation_error,
                 "final_text": FINAL_TEXT,
-                "call_id": CALL_ID,
-                "scope": "credential-free mock Responses control-plane reference",
+                "patch_call_id": PATCH_CALL_ID,
+                "exec_call_id": EXEC_CALL_ID,
+                "patch_filename": PATCH_FILENAME,
+                "scope": "credential-free mock Responses control-plane reference with remote apply_patch + exec",
             },
         )
 
@@ -252,32 +294,52 @@ class ReferenceHandler(BaseHTTPRequestHandler):
             self._json(400, {"error": "invalid json"})
             return
 
-        output = find_matching_tool_output(body)
+        patch_output = find_patch_output(body)
+        exec_output = find_exec_output(body)
         record = {
             "index": len(self.server.requests) + 1,
             "body_sha256": hashlib.sha256(raw).hexdigest(),
-            "has_matching_tool_output": output is not None,
-            "tool_output_sha256": hashlib.sha256(output.encode("utf-8")).hexdigest() if output is not None else None,
-            "tool_output_contains_workspace_marker": WORKSPACE_MARKER in output if output is not None else False,
-            "tool_output_contains_network_marker": NETWORK_MARKER in output if output is not None else False,
-            "tool_output_contains_auth_env_marker": AUTH_ENV_MARKER in output if output is not None else False,
+            "has_patch_output": patch_output is not None,
+            "patch_output_sha256": hashlib.sha256(patch_output.encode("utf-8")).hexdigest() if patch_output is not None else None,
+            "has_exec_output": exec_output is not None,
+            "exec_output_sha256": hashlib.sha256(exec_output.encode("utf-8")).hexdigest() if exec_output is not None else None,
+            "exec_output_contains_patch_marker": PATCH_MARKER in exec_output if exec_output is not None else False,
+            "exec_output_contains_workspace_marker": WORKSPACE_MARKER in exec_output if exec_output is not None else False,
+            "exec_output_contains_network_marker": NETWORK_MARKER in exec_output if exec_output is not None else False,
+            "exec_output_contains_auth_env_marker": AUTH_ENV_MARKER in exec_output if exec_output is not None else False,
         }
         self.server.requests.append(record)
+        request_no = len(self.server.requests)
 
-        if len(self.server.requests) == 1:
+        if request_no == 1:
             self.server.write_state()
-            self._sse(function_call_events(self.server.tool_network_host, self.server.server_port))
+            self._sse(apply_patch_events())
             return
 
-        required = (WORKSPACE_MARKER, NETWORK_MARKER, AUTH_ENV_MARKER)
-        if output is None or not all(marker in output for marker in required):
-            self.server.validation_error = "second model request lacks verified remote tool output markers"
+        if request_no == 2:
+            if patch_output is None:
+                self.server.validation_error = "second model request lacks matching remote apply_patch output"
+                self.server.write_state()
+                self._json(409, {"error": self.server.validation_error})
+                return
             self.server.write_state()
-            self._json(409, {"error": self.server.validation_error})
+            self._sse(exec_command_events(self.server.tool_network_host, self.server.server_port))
             return
 
+        if request_no == 3:
+            required = (PATCH_MARKER, WORKSPACE_MARKER, NETWORK_MARKER, AUTH_ENV_MARKER)
+            if exec_output is None or not all(marker in exec_output for marker in required):
+                self.server.validation_error = "third model request lacks verified remote exec output markers"
+                self.server.write_state()
+                self._json(409, {"error": self.server.validation_error})
+                return
+            self.server.write_state()
+            self._sse(final_events())
+            return
+
+        self.server.validation_error = "mock reference received more than three model requests"
         self.server.write_state()
-        self._sse(final_events())
+        self._json(409, {"error": self.server.validation_error})
 
 
 def main() -> int:
