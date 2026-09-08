@@ -128,7 +128,8 @@ class RemoteExecReferenceResultTests(unittest.TestCase):
 
         self.mock_state_path = self.base / "mock-state.json"
         self.mock_state = {
-            "schema_version": 2,
+            "schema_version": 3,
+            "scenario": "exec-only",
             "requests": [
                 {
                     "index": 1,
@@ -145,23 +146,11 @@ class RemoteExecReferenceResultTests(unittest.TestCase):
                 {
                     "index": 2,
                     "body_sha256": "4" * 64,
-                    "has_patch_output": True,
-                    "patch_output_sha256": "5" * 64,
-                    "has_exec_output": False,
-                    "exec_output_sha256": None,
-                    "exec_output_contains_patch_marker": False,
-                    "exec_output_contains_workspace_marker": False,
-                    "exec_output_contains_network_marker": False,
-                    "exec_output_contains_auth_env_marker": False,
-                },
-                {
-                    "index": 3,
-                    "body_sha256": "6" * 64,
-                    "has_patch_output": True,
-                    "patch_output_sha256": "5" * 64,
+                    "has_patch_output": False,
+                    "patch_output_sha256": None,
                     "has_exec_output": True,
                     "exec_output_sha256": "7" * 64,
-                    "exec_output_contains_patch_marker": True,
+                    "exec_output_contains_patch_marker": False,
                     "exec_output_contains_workspace_marker": True,
                     "exec_output_contains_network_marker": True,
                     "exec_output_contains_auth_env_marker": True,
@@ -169,37 +158,19 @@ class RemoteExecReferenceResultTests(unittest.TestCase):
             ],
             "validation_error": None,
             "final_text": "REMOTE_EXEC_REFERENCE_OK",
-            "patch_call_id": "call-remote-patch-reference",
+            "patch_call_id": None,
             "exec_call_id": "call-remote-exec-reference",
-            "patch_filename": "remote-patch-proof.txt",
-            "scope": "synthetic mock state",
+            "patch_filename": None,
+            "scope": "synthetic exec-only mock state",
         }
         self._write_mock_state()
 
         self.trace_path = self.base / "trace.jsonl"
-        command = "python3 -c 'print(1)' # target " + self.host + ":" + str(self.port)
-        events = [
-            {"type": "thread.started", "thread_id": "thread-reference"},
-            {"type": "item.completed", "item": {
-                "id": "cmd-1",
-                "type": "command_execution",
-                "command": command,
-                "aggregated_output": "REMOTE_PATCH_OK\nAUTH_ENV_CLEAN\nNETWORK_BLOCKED\nREMOTE_EXEC_OK\n",
-                "exit_code": 0,
-                "status": "completed",
-            }},
-            {"type": "item.completed", "item": {
-                "id": "msg-1", "type": "agent_message", "text": "REMOTE_EXEC_REFERENCE_OK"
-            }},
-        ]
-        self.trace_path.write_text(
-            "\n".join(json.dumps(event) for event in events) + "\n", encoding="utf-8"
-        )
+        self._write_trace(include_patch=False)
 
-        self.patch_proof_path = self.candidate / "remote-patch-proof.txt"
-        self.patch_proof_path.write_text("REMOTE_PATCH_OK\n", encoding="utf-8")
         self.proof_path = self.candidate / "remote-tool-proof.txt"
         self.proof_path.write_text("REMOTE_EXEC_OK\n", encoding="utf-8")
+        self.patch_proof_path = self.candidate / "remote-patch-proof.txt"
 
         self.inspect_path = self.base / "inspect.json"
         env_tokens = [
@@ -247,7 +218,31 @@ class RemoteExecReferenceResultTests(unittest.TestCase):
     def _write_mock_state(self):
         self.mock_state_path.write_text(json.dumps(self.mock_state) + "\n", encoding="utf-8")
 
-    def _assemble(self):
+    def _write_trace(self, *, include_patch: bool):
+        command = "python3 -c 'print(1)' # target " + self.host + ":" + str(self.port)
+        markers = []
+        if include_patch:
+            markers.append("REMOTE_PATCH_OK")
+        markers.extend(["AUTH_ENV_CLEAN", "NETWORK_BLOCKED", "REMOTE_EXEC_OK"])
+        events = [
+            {"type": "thread.started", "thread_id": "thread-reference"},
+            {"type": "item.completed", "item": {
+                "id": "cmd-1",
+                "type": "command_execution",
+                "command": command,
+                "aggregated_output": "\n".join(markers) + "\n",
+                "exit_code": 0,
+                "status": "completed",
+            }},
+            {"type": "item.completed", "item": {
+                "id": "msg-1", "type": "agent_message", "text": "REMOTE_EXEC_REFERENCE_OK"
+            }},
+        ]
+        self.trace_path.write_text(
+            "\n".join(json.dumps(event) for event in events) + "\n", encoding="utf-8"
+        )
+
+    def _assemble(self, *, patch: bool = False):
         return assemble(
             boundary_profile_path=self.profile_path,
             runner_job_path=self.job_path,
@@ -256,36 +251,88 @@ class RemoteExecReferenceResultTests(unittest.TestCase):
             mock_state_path=self.mock_state_path,
             codex_trace_path=self.trace_path,
             docker_inspect_path=self.inspect_path,
-            patch_proof_path=self.patch_proof_path,
+            patch_proof_path=self.patch_proof_path if patch else None,
             candidate_proof_path=self.proof_path,
             mock_server_program_path=self.mock_program,
             control_codex_version_path=self.control_version,
             tool_codex_version_path=self.tool_version,
         )
 
-    def test_valid_evidence_produces_content_bound_reference_result(self):
+    def _switch_to_patch_scenario(self):
+        self.mock_state = {
+            "schema_version": 3,
+            "scenario": "patch-then-exec",
+            "requests": [
+                {
+                    "index": 1, "body_sha256": "3" * 64,
+                    "has_patch_output": False, "patch_output_sha256": None,
+                    "has_exec_output": False, "exec_output_sha256": None,
+                    "exec_output_contains_patch_marker": False,
+                    "exec_output_contains_workspace_marker": False,
+                    "exec_output_contains_network_marker": False,
+                    "exec_output_contains_auth_env_marker": False,
+                },
+                {
+                    "index": 2, "body_sha256": "4" * 64,
+                    "has_patch_output": True, "patch_output_sha256": "5" * 64,
+                    "has_exec_output": False, "exec_output_sha256": None,
+                    "exec_output_contains_patch_marker": False,
+                    "exec_output_contains_workspace_marker": False,
+                    "exec_output_contains_network_marker": False,
+                    "exec_output_contains_auth_env_marker": False,
+                },
+                {
+                    "index": 3, "body_sha256": "6" * 64,
+                    "has_patch_output": True, "patch_output_sha256": "5" * 64,
+                    "has_exec_output": True, "exec_output_sha256": "7" * 64,
+                    "exec_output_contains_patch_marker": True,
+                    "exec_output_contains_workspace_marker": True,
+                    "exec_output_contains_network_marker": True,
+                    "exec_output_contains_auth_env_marker": True,
+                },
+            ],
+            "validation_error": None,
+            "final_text": "REMOTE_EXEC_REFERENCE_OK",
+            "patch_call_id": "call-remote-patch-reference",
+            "exec_call_id": "call-remote-exec-reference",
+            "patch_filename": "remote-patch-proof.txt",
+            "scope": "synthetic patch-then-exec state",
+        }
+        self._write_mock_state()
+        self._write_trace(include_patch=True)
+        self.patch_proof_path.write_text("REMOTE_PATCH_OK\n", encoding="utf-8")
+
+    def test_valid_exec_only_evidence_produces_content_bound_reference_result(self):
         result = self._assemble()
-        self.assertEqual(result["schema_version"], 2)
+        self.assertEqual(result["schema_version"], 3)
         self.assertEqual(result["verdict"], "mock-remote-tool-reference-passed")
-        self.assertEqual(result["assertions"]["model_requests"], 3)
-        self.assertTrue(result["assertions"]["apply_patch_round_trip"])
-        self.assertTrue(result["assertions"]["remote_patch_marker"])
+        self.assertEqual(result["scenario"], "exec-only")
+        self.assertEqual(result["assertions"]["model_requests"], 2)
+        self.assertFalse(result["assertions"]["apply_patch_round_trip"])
+        self.assertFalse(result["assertions"]["remote_patch_marker"])
         self.assertTrue(result["assertions"]["exec_output_round_trip"])
         self.assertTrue(result["assertions"]["tool_network_blocked"])
         self.assertTrue(result["assertions"]["auth_env_clean"])
         self.assertTrue(result["assertions"]["local_execution_disabled"])
+        self.assertIsNone(result["digests"]["patch_proof_sha256"])
         self.assertEqual(result["digests"]["boundary_profile_sha256"], self.profile_sha)
-        self.assertEqual(result["versions"]["control_codex"], "codex-cli synthetic")
 
-    def test_missing_patch_round_trip_is_rejected(self):
-        self.mock_state["requests"][1]["has_patch_output"] = False
-        self.mock_state["requests"][1]["patch_output_sha256"] = None
-        self._write_mock_state()
+    def test_patch_scenario_remains_supported_with_stronger_evidence(self):
+        self._switch_to_patch_scenario()
+        result = self._assemble(patch=True)
+        self.assertEqual(result["scenario"], "patch-then-exec")
+        self.assertEqual(result["assertions"]["model_requests"], 3)
+        self.assertTrue(result["assertions"]["apply_patch_round_trip"])
+        self.assertTrue(result["assertions"]["remote_patch_marker"])
+        self.assertIsNotNone(result["digests"]["patch_proof_sha256"])
+
+    def test_exec_only_rejects_supplied_patch_proof(self):
+        self.patch_proof_path.write_text("REMOTE_PATCH_OK\n", encoding="utf-8")
         with self.assertRaises(ValueError):
-            self._assemble()
+            self._assemble(patch=True)
 
     def test_tampered_exec_round_trip_is_rejected(self):
-        self.mock_state["requests"][2]["exec_output_contains_network_marker"] = False
+        self.mock_state["requests"][1]["exec_output_contains_network_marker"] = False
         self._write_mock_state()
         with self.assertRaises(ValueError):
             self._assemble()
@@ -301,10 +348,10 @@ class RemoteExecReferenceResultTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self._assemble()
 
-    def test_patch_proof_tampering_is_rejected(self):
-        self.patch_proof_path.write_text("LOCAL_PATCH_FAKE\n", encoding="utf-8")
+    def test_patch_scenario_requires_patch_proof(self):
+        self._switch_to_patch_scenario()
         with self.assertRaises(ValueError):
-            self._assemble()
+            self._assemble(patch=False)
 
     def test_candidate_proof_tampering_is_rejected(self):
         self.proof_path.write_text("LOCAL_FAKE\n", encoding="utf-8")
