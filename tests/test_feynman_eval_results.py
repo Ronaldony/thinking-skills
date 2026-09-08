@@ -11,10 +11,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
+from tooling.codex_exec_evidence import extract
+from tooling.feynman_apply_review import apply
 from tooling.feynman_condition_workspace import prepare_condition
 from tooling.feynman_eval_aggregate import aggregate
 from tooling.feynman_eval_plan import build_plan, write_plan
 from tooling.feynman_eval_result import assemble
+from tooling.feynman_review_bundle import assemble as assemble_review_bundle
 from test_feynman_runner_attestation import attestation
 
 
@@ -35,6 +38,19 @@ class EvalResultLinkageTests(unittest.TestCase):
         self.candidate = self.base / "candidate"
         self.evaluator = self.base / "evaluator"
         prepare_condition(ROOT, "mechanism-01", "baseline", self.candidate, self.evaluator)
+
+        trace = self.base / "trace.jsonl"
+        events = [
+            {"type": "thread.started", "thread_id": "thread-result"},
+            {"type": "item.completed", "item": {
+                "id": "msg-1", "type": "agent_message",
+                "text": "Efficiency needs defined work, time, errors and cost before concluding."}},
+        ]
+        trace.write_text("\n".join(json.dumps(event) for event in events) + "\n", encoding="utf-8")
+        self.evidence = self.base / "evidence"
+        extract(trace, self.evidence)
+        self.review_bundle = self.base / "review-bundle"
+        assemble_review_bundle(self.evaluator, self.evidence, self.review_bundle)
 
         self.review_path = self.base / "review.json"
         self.review = {
@@ -58,24 +74,8 @@ class EvalResultLinkageTests(unittest.TestCase):
         self.review_path.write_text(json.dumps(self.review), encoding="utf-8")
 
         self.gate_path = self.base / "gate.json"
-        self.gate = {
-            "schema_version": 2,
-            "case_id": "mechanism-01",
-            "phase": "initial",
-            "verdict": "passed",
-            "reasons": [],
-            "unverified": [],
-            "hard_failure_ids": [],
-            "semantic_outcomes": {
-                "decision_correctness": "correct",
-                "execution_integrity": "clean",
-                "update_behavior": "not_applicable",
-            },
-            "semantic_review_sha256": sha(self.review_path),
-            "review_input_sha256": "b" * 64,
-            "trusted_execution_ids": [],
-        }
-        self.gate_path.write_text(json.dumps(self.gate), encoding="utf-8")
+        apply(self.review_bundle, self.review_path, self.gate_path)
+        self.gate = json.loads(self.gate_path.read_text(encoding="utf-8"))
 
         self.attestation_path = self.base / "attestation.json"
         self.attestation = attestation("baseline")
@@ -86,36 +86,53 @@ class EvalResultLinkageTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_linked_baseline_result_is_analysis_ready(self):
-        result = assemble(
+    def _assemble(self):
+        return assemble(
             self.plan_path,
             self.job["ordinal"],
             self.evaluator / "case.json",
             self.attestation_path,
             self.review_path,
             self.gate_path,
+            review_bundle_path=self.review_bundle,
         )
+
+    def test_linked_baseline_result_is_analysis_ready(self):
+        result = self._assemble()
         self.assertTrue(result["valid_for_analysis"])
+        self.assertEqual(result["schema_version"], 2)
         self.assertEqual(result["metrics"]["decision_correctness"], "correct")
         self.assertEqual(result["metrics"]["required_finding_completion"], 1.0)
         self.assertEqual(result["job"]["condition"], "baseline")
+        self.assertEqual(result["digests"]["candidate_final_sha256"], self.gate["candidate_final_sha256"])
 
     def test_attestation_bound_to_different_plan_is_rejected(self):
         self.attestation["digests"]["eval_plan_sha256"] = "c" * 64
         self.attestation_path.write_text(json.dumps(self.attestation), encoding="utf-8")
         with self.assertRaises(ValueError):
-            assemble(
-                self.plan_path, self.job["ordinal"], self.evaluator / "case.json",
-                self.attestation_path, self.review_path, self.gate_path,
-            )
+            self._assemble()
 
     def test_gate_bound_to_different_semantic_review_is_rejected(self):
         self.gate["semantic_review_sha256"] = "d" * 64
         self.gate_path.write_text(json.dumps(self.gate), encoding="utf-8")
         with self.assertRaises(ValueError):
+            self._assemble()
+
+    def test_gate_bound_to_different_review_manifest_is_rejected(self):
+        self.gate["review_manifest_sha256"] = "e" * 64
+        self.gate_path.write_text(json.dumps(self.gate), encoding="utf-8")
+        with self.assertRaises(ValueError):
+            self._assemble()
+
+    def test_result_requires_review_bundle(self):
+        with self.assertRaises(ValueError):
             assemble(
-                self.plan_path, self.job["ordinal"], self.evaluator / "case.json",
-                self.attestation_path, self.review_path, self.gate_path,
+                self.plan_path,
+                self.job["ordinal"],
+                self.evaluator / "case.json",
+                self.attestation_path,
+                self.review_path,
+                self.gate_path,
             )
 
 
@@ -161,7 +178,7 @@ class EvalAggregateTests(unittest.TestCase):
         if condition in {"baseline", "generic"}:
             runtime_sha = None
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "valid_for_analysis": True,
             "run_id": f"run-{condition}-r{repeat}",
             "job": {
@@ -173,6 +190,7 @@ class EvalAggregateTests(unittest.TestCase):
             },
             "versions": {"model": model, "codex_cli": cli},
             "runner": {"backend": "container", "backend_version": "1", "profile_sha256": profile},
+            "conversation": {"thread_id": None, "initial_source_trace_sha256": None, "followup_source_trace_sha256": None},
             "digests": {
                 "candidate_prompt_sha256": prompt_sha,
                 "runtime_sha256": runtime_sha,
