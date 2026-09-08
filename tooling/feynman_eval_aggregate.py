@@ -53,8 +53,8 @@ def _result_key(record: dict[str, Any]) -> tuple[str, str, int, str]:
 
 
 def _validate_result(record: dict[str, Any]) -> None:
-    if record.get("schema_version") != 1 or record.get("valid_for_analysis") is not True:
-        raise ValueError("result is not marked analysis-ready")
+    if record.get("schema_version") != 2 or record.get("valid_for_analysis") is not True:
+        raise ValueError("result is not analysis-ready schema v2")
     _, condition, _, _ = _result_key(record)
     metrics = record.get("metrics")
     if not isinstance(metrics, dict):
