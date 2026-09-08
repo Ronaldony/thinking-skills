@@ -74,6 +74,45 @@ jobs:
           docker pull python:3.12-slim >/dev/null
           HOST_IP="$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')"
           test -n "$HOST_IP"
+          DOCKER_VERSION="$(docker version --format '{{.Server.Version}}')"
+          IMAGE_ID="$(docker image inspect python:3.12-slim --format '{{.Id}}')"
+          RUN_AS="$(id -u):$(id -g)"
+
+          python - "$ROOT/boundary-profile.json" "$DOCKER_VERSION" "$IMAGE_ID" "$RUN_AS" "$ROOT" <<'PY'
+          import json
+          import sys
+          output, docker_version, image_id, run_as, root = sys.argv[1:]
+          profile = {
+              "schema_version": 1,
+              "backend": "docker",
+              "backend_version": docker_version,
+              "image": "python:3.12-slim",
+              "image_id": image_id,
+              "network_mode": "none",
+              "read_only_root": True,
+              "no_new_privileges": True,
+              "capabilities": [],
+              "run_as": run_as,
+              "read_write_mounts": [
+                  f"{root}/candidate",
+                  f"{root}/candidate-home",
+                  f"{root}/codex-home",
+                  f"{root}/temp",
+              ],
+              "read_only_mounts": ["/probe/feynman_boundary_probe.py"],
+              "tmpfs_mounts": ["/tmp"],
+              "protected_roots_mounted": [],
+              "candidate_env_keys": [
+                  "CODEX_HOME", "HOME", "PATH", "PYTHONDONTWRITEBYTECODE", "TMPDIR"
+              ],
+              "scope": "GitHub Actions Docker reference canary profile; no model execution",
+          }
+          with open(output, "w", encoding="utf-8") as handle:
+              json.dump(profile, handle, ensure_ascii=False, indent=2, sort_keys=True)
+              handle.write("\n")
+          PY
+          PROFILE_SHA="$(sha256sum "$ROOT/boundary-profile.json" | awk '{print $1}')"
+          test "${#PROFILE_SHA}" -eq 64
 
           python - "$ROOT/network-port" <<'PY' &
           import socket
@@ -108,7 +147,7 @@ jobs:
             --cap-drop ALL \
             --security-opt no-new-privileges \
             --read-only \
-            --user "$(id -u):$(id -g)" \
+            --user "$RUN_AS" \
             --tmpfs /tmp:rw,nosuid,nodev \
             -v "$ROOT/candidate:$ROOT/candidate:rw" \
             -v "$ROOT/candidate-home:$ROOT/candidate-home:rw" \
@@ -124,6 +163,7 @@ jobs:
               PYTHONDONTWRITEBYTECODE=1 \
               python /probe/feynman_boundary_probe.py \
                 --run-id docker-reference \
+                --boundary-profile-sha256 "$PROFILE_SHA" \
                 --candidate-read "$ROOT/candidate/read-canary.txt" \
                 --candidate-read-marker candidate-marker \
                 --evaluator-read "$ROOT/evaluator/read-canary.txt" \
@@ -142,6 +182,7 @@ jobs:
           python tooling/feynman_boundary_probe_verify.py \
             --artifact "$ROOT/candidate/probe-artifact.json" \
             --expected-run-id docker-reference \
+            --boundary-profile-sha256 "$PROFILE_SHA" \
             --probe-program "$ROOT/harness/feynman_boundary_probe.py" \
             --candidate-read "$ROOT/candidate/read-canary.txt" \
             --candidate-read-marker candidate-marker \
@@ -163,19 +204,23 @@ jobs:
           test ! -e "$FORBIDDEN_SOURCE"
           test ! -e "$FORBIDDEN_HOME"
           grep -q '"verdict": "passed"' "$ROOT/probe-report.json"
-          python - "$ROOT/probe-report.json" <<'PY'
+          python - "$ROOT/probe-report.json" "$ROOT/boundary-profile.json" <<'PY'
           import hashlib
           import json
           import sys
-          path = sys.argv[1]
-          raw = open(path, "rb").read()
-          report = json.loads(raw)
+          report_path, profile_path = sys.argv[1:]
+          report_raw = open(report_path, "rb").read()
+          profile_raw = open(profile_path, "rb").read()
+          report = json.loads(report_raw)
+          profile_sha = hashlib.sha256(profile_raw).hexdigest()
           assert report["verdict"] == "passed"
           assert report["failed_probes"] == []
           assert report["not_required_probes"] == []
+          assert report["boundary_profile_sha256"] == profile_sha
           print(json.dumps({
               "docker_reference_boundary": "passed",
-              "probe_report_sha256": hashlib.sha256(raw).hexdigest(),
+              "boundary_profile_sha256": profile_sha,
+              "probe_report_sha256": hashlib.sha256(report_raw).hexdigest(),
               "scope": "reference Docker mount/network namespace canary only; no model execution",
           }, indent=2))
           PY
