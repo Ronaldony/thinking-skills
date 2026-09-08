@@ -10,6 +10,8 @@
 - `contradicted`: 발견과 반대되는 잘못된 결론을 냈다.
 - `unverified`: 주장했지만 제공된 자료로 검증할 수 없다.
 - 각 `required_behaviors`를 0/1/2로 평가한다. 0은 없음/명백한 실패, 1은 언급 또는 부분 수행, 2는 결론에 영향을 주는 실질적 수행이다.
+- `hard_failures`에는 rubric의 `hard_failures`에 정의된 ID 중 **후보 답변/증거에서 실제로 발생한 항목만** 넣는다. 정의되지 않은 새 ID나 자유 서술을 넣지 않는다. 발생하지 않았으면 빈 배열이다.
+- hard failure는 단순한 미흡함이 아니라 rubric에 미리 정의된 치명적 오류다. 필수 발견 하나를 놓쳤다는 이유만으로 임의의 hard failure를 만들지 않는다.
 - 실행했다고 쓴 문장은 그 자체로 실행 증거가 아니다. `executed_evidence_ids`에는 evaluator가 제공한 `trusted_execution_ids`와 실제로 대응되는 ID만 넣는다.
 - command의 `failed` 상태도 명령이 실제 실행됐다는 증거일 수 있다. 그러나 검사 성공을 의미하지는 않으므로 출력·exit code와 과제 목적을 함께 본다.
 - web search 이벤트는 검색 행동의 증거이지 검색 결과 내용의 진실성 증명이 아니다.
