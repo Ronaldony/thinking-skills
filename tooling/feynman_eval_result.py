@@ -2,8 +2,9 @@
 """Assemble one analysis-ready Feynman evaluation result record.
 
 This joins a frozen eval-plan job, evaluator-side condition record, externally
-validated runner attestation, evaluator review bundle, semantic review, and
-structural gate output. It does not run a model or judge correctness itself.
+validated runner attestation + verified boundary-probe report, evaluator review
+bundle, semantic review, and structural gate output. It does not run a model or
+judge correctness itself.
 """
 from __future__ import annotations
 
@@ -56,6 +57,7 @@ def _job(plan: dict[str, Any], ordinal: int) -> dict[str, Any]:
 def assemble(plan_path: Path, ordinal: int, evaluator_case_path: Path,
              attestation_path: Path, semantic_review_path: Path, gate_path: Path,
              *, review_bundle_path: Path | None = None,
+             probe_report_path: Path | None = None,
              allowed_system_skills: set[str] | None = None,
              allow_plugins: bool = False) -> dict[str, Any]:
     plan_path = plan_path.resolve()
@@ -65,7 +67,10 @@ def assemble(plan_path: Path, ordinal: int, evaluator_case_path: Path,
     gate_path = gate_path.resolve()
     if review_bundle_path is None:
         raise ValueError("analysis-ready result requires the evaluator review bundle")
+    if probe_report_path is None:
+        raise ValueError("analysis-ready result requires a verified boundary probe report")
     review_bundle_path = review_bundle_path.resolve()
+    probe_report_path = probe_report_path.resolve()
     review_input_path = review_bundle_path / "review-input.json"
     review_manifest_path = review_bundle_path / "review-manifest.json"
 
@@ -73,6 +78,7 @@ def assemble(plan_path: Path, ordinal: int, evaluator_case_path: Path,
     job = _job(plan, ordinal)
     evaluator_case = _load(evaluator_case_path)
     attestation = _load(attestation_path)
+    probe_report = _load(probe_report_path)
     review_input = _load(review_input_path)
     review_manifest = _load(review_manifest_path)
     review = _load(semantic_review_path)
@@ -89,13 +95,16 @@ def assemble(plan_path: Path, ordinal: int, evaluator_case_path: Path,
         raise ValueError("job has invalid repeat")
 
     plan_sha = _sha(plan_path)
+    probe_report_sha = _sha(probe_report_path)
     attestation_result = validate_attestation(
         attestation,
         allow_plugins=allow_plugins,
         allowed_system_skills=allowed_system_skills or set(),
+        probe_report=probe_report,
+        probe_report_sha256=probe_report_sha,
     )
-    if attestation_result.get("verdict") != "contract-valid":
-        raise ValueError("runner attestation is not contract-valid")
+    if attestation_result.get("verdict") != "contract-valid" or attestation_result.get("probe_report_bound") is not True:
+        raise ValueError("runner attestation is not bound to a valid boundary probe report")
     if attestation.get("case_id") != case_id or attestation.get("condition_id") != condition:
         raise ValueError("runner attestation case/condition does not match eval-plan job")
     digests = attestation.get("digests")
@@ -105,6 +114,8 @@ def assemble(plan_path: Path, ordinal: int, evaluator_case_path: Path,
         raise ValueError("runner attestation is not bound to this eval plan")
     if digests.get("candidate_prompt_sha256") != job.get("candidate_prompt_sha256"):
         raise ValueError("runner candidate prompt digest does not match eval-plan job")
+    if digests.get("probe_report_sha256") != probe_report_sha:
+        raise ValueError("runner attestation boundary report digest mismatch")
 
     if evaluator_case.get("case_id") != case_id or evaluator_case.get("condition_id") != condition:
         raise ValueError("evaluator condition record does not match eval-plan job")
@@ -127,8 +138,6 @@ def assemble(plan_path: Path, ordinal: int, evaluator_case_path: Path,
         if required_commit is not None and runtime_manifest.get("source_commit") != required_commit:
             raise ValueError("legacy runtime source commit differs from preregistered commit")
 
-    # Rebind semantic judging to the actual evaluator review package. Without this,
-    # a hand-edited gate file could point at a different candidate/evidence bundle.
     actual_review_input_sha = _sha(review_input_path)
     actual_review_manifest_sha = _sha(review_manifest_path)
     if review_manifest.get("case_id") != case_id or review_input.get("case_id") != case_id:
@@ -211,8 +220,6 @@ def assemble(plan_path: Path, ordinal: int, evaluator_case_path: Path,
         if review_manifest.get("conversation_thread_id") is not None:
             raise ValueError("single-turn result must not claim multi-turn continuity")
 
-    # The saved gate is an artifact, not a trusted authority. Recompute it from
-    # the semantic review, evaluator rubric, and review-manifest trusted IDs.
     recomputed = recompute_gate(evaluator_case["rubric"], review, set(trusted_ids))
     for field in ("verdict", "reasons", "unverified", "hard_failure_ids", "semantic_outcomes"):
         if gate.get(field) != recomputed.get(field):
@@ -265,6 +272,7 @@ def assemble(plan_path: Path, ordinal: int, evaluator_case_path: Path,
             "eval_plan_sha256": plan_sha,
             "candidate_prompt_sha256": job.get("candidate_prompt_sha256"),
             "runtime_sha256": attested_runtime,
+            "probe_report_sha256": probe_report_sha,
             "review_input_sha256": actual_review_input_sha,
             "review_manifest_sha256": actual_review_manifest_sha,
             "candidate_final_sha256": candidate_final_sha,
@@ -288,7 +296,7 @@ def assemble(plan_path: Path, ordinal: int, evaluator_case_path: Path,
             "review_confidence": review.get("confidence"),
         },
         "limitations": attestation.get("limitations", []),
-        "scope": "validated plan-to-run-to-evidence-to-review linkage and descriptive metrics; not a causal performance conclusion",
+        "scope": "validated boundary canaries plus plan-to-run-to-evidence-to-review linkage; not a causal performance conclusion",
     }
 
 
@@ -298,6 +306,7 @@ def main() -> int:
     parser.add_argument("--ordinal", type=int, required=True)
     parser.add_argument("--evaluator-case", type=Path, required=True)
     parser.add_argument("--attestation", type=Path, required=True)
+    parser.add_argument("--probe-report", type=Path, required=True)
     parser.add_argument("--review-bundle", type=Path, required=True)
     parser.add_argument("--semantic-review", type=Path, required=True)
     parser.add_argument("--gate", type=Path, required=True)
@@ -314,6 +323,7 @@ def main() -> int:
             args.semantic_review,
             args.gate,
             review_bundle_path=args.review_bundle,
+            probe_report_path=args.probe_report,
             allowed_system_skills=set(args.allowed_system_skill),
             allow_plugins=args.allow_plugins,
         )
