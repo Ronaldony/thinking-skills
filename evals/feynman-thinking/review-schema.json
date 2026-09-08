@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Feynman public-development semantic review",
+  "type": "object",
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "status": {"type": "string", "enum": ["supported", "missed", "contradicted", "unverified"]},
+          "evidence": {"type": "string"}
+        },
+        "required": ["id", "status", "evidence"],
+        "additionalProperties": false
+      }
+    },
+    "behaviors": {
+      "type": "object",
+      "additionalProperties": {"type": "integer", "minimum": 0, "maximum": 2}
+    },
+    "hard_failures": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "executed_evidence_ids": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "summary": {"type": "string"},
+    "confidence": {"type": "string", "enum": ["high", "medium", "low"]}
+  },
+  "required": ["id", "findings", "behaviors", "hard_failures", "executed_evidence_ids", "summary", "confidence"],
+  "additionalProperties": false
+}
