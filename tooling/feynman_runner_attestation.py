@@ -94,10 +94,12 @@ def validate(attestation: dict[str, Any], *, allow_plugins: bool = False,
     p = {name: _absolute(paths.get(name), f"paths.{name}") for name in (
         "candidate_dir", "evaluator_dir", "source_repo", "ephemeral_home",
         "codex_home", "temp_dir", "real_home")}
-    for protected in ("evaluator_dir", "source_repo", "real_home"):
-        for candidate_owned in ("candidate_dir", "ephemeral_home", "codex_home", "temp_dir"):
-            if _overlap(p[protected], p[candidate_owned]):
-                raise ValueError(f"protected path overlaps candidate-owned path: {protected} / {candidate_owned}")
+    for protected_name in ("evaluator_dir", "source_repo", "real_home"):
+        for candidate_name in ("candidate_dir", "ephemeral_home", "codex_home", "temp_dir"):
+            if _overlap(p[protected_name], p[candidate_name]):
+                raise ValueError(
+                    f"protected path overlaps candidate-owned path: {protected_name} / {candidate_name}"
+                )
 
     filesystem = _object(attestation.get("filesystem"), "filesystem")
     readable = [_absolute(x, "candidate_readable_data_roots[]") for x in
@@ -117,18 +119,20 @@ def validate(attestation: dict[str, Any], *, allow_plugins: bool = False,
     if not all(any(_contains(root, target) for root in forbidden_write) for target in protected):
         raise ValueError("forbidden_write_roots must cover evaluator_dir, source_repo, and real_home")
 
-    allowed_data_anchors = [p["candidate_dir"], p["ephemeral_home"], p["codex_home"], p["temp_dir"]]
+    candidate_anchors = [p["candidate_dir"], p["ephemeral_home"], p["codex_home"], p["temp_dir"]]
     for root in readable:
-        if not any(_contains(anchor, root) for anchor in allowed_data_anchors):
+        if not any(_contains(anchor, root) for anchor in candidate_anchors):
             raise ValueError(f"candidate readable data root is outside candidate-owned anchors: {root}")
     for root in writable:
-        if not any(_contains(anchor, root) for anchor in allowed_data_anchors):
+        if not any(_contains(anchor, root) for anchor in candidate_anchors):
             raise ValueError(f"candidate writable root is outside candidate-owned anchors: {root}")
 
+    # Fail closed on either containment direction. A runtime root inside a protected
+    # directory leaks data just as surely as a broad runtime root containing it.
     for exposed_root in readable + writable + platform_roots:
         for target in protected:
-            if _contains(exposed_root, target):
-                raise ValueError(f"exposed root contains protected path: {exposed_root} -> {target}")
+            if _overlap(exposed_root, target):
+                raise ValueError(f"exposed root overlaps protected path: {exposed_root} <-> {target}")
     for runtime_root in platform_roots:
         if runtime_root == Path(runtime_root.anchor):
             raise ValueError(f"platform runtime root may not expose filesystem root: {runtime_root}")
@@ -137,11 +141,14 @@ def validate(attestation: dict[str, Any], *, allow_plugins: bool = False,
     requires_network = network.get("case_requires_tool_network")
     if not isinstance(requires_network, bool):
         raise ValueError("case_requires_tool_network must be boolean")
-    if network.get("tool_network") not in {"blocked", "restricted", "open"}:
+    tool_network = network.get("tool_network")
+    if tool_network not in {"blocked", "restricted", "open"}:
         raise ValueError("invalid tool_network")
-    _strings(network.get("allowed_tool_destinations"), "allowed_tool_destinations")
+    allowed_destinations = _strings(network.get("allowed_tool_destinations"), "allowed_tool_destinations")
+    if tool_network == "blocked" and allowed_destinations:
+        raise ValueError("blocked tool network must not declare allowed_tool_destinations")
     if not requires_network:
-        if network.get("tool_network") != "blocked":
+        if tool_network != "blocked":
             raise ValueError("closed-network case requires tool_network=blocked")
         if network.get("control_plane_separate_from_tool_network") is not True:
             raise ValueError("closed-network case requires control-plane/tool-network separation")
@@ -190,8 +197,8 @@ def validate(attestation: dict[str, Any], *, allow_plugins: bool = False,
     elif runtime_sha is not None:
         raise ValueError("no-skill condition must use runtime_sha256=null")
 
-    if not isinstance(attestation.get("limitations"), list) or not all(
-        isinstance(x, str) for x in attestation["limitations"]):
+    limitations = attestation.get("limitations")
+    if not isinstance(limitations, list) or not all(isinstance(x, str) for x in limitations):
         raise ValueError("limitations must be a list of strings")
 
     return {
