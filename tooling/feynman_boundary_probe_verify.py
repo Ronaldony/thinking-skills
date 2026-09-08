@@ -2,7 +2,7 @@
 """Verify a boundary-probe artifact from outside the candidate sandbox.
 
 The verifier checks synthetic canary files after the probe ran, rejects missing
-canaries as non-evidence, and emits normalized per-probe records that can be
+host fixtures as non-evidence, and emits normalized per-probe records that can be
 bound into runner attestation. It verifies observations; it does not prove that
 the external runner itself is honest.
 """
@@ -187,6 +187,8 @@ def verify(*, artifact_path: Path, expected_run_id: str, probe_program: Path,
         if not isinstance(obs, dict):
             raise ValueError(f"missing protected read observation: {obs_name}")
         _expected_path(obs, path, probe_name)
+        # Host existence proves that ENOENT inside a mount namespace represents
+        # invisibility, not a forgotten canary fixture.
         host = _regular_marker(path, marker, probe_name)
         passed = obs.get("succeeded") is False and obs.get("denied") is True
         probes[probe_name] = _probe(probe_name, passed, source_sha, obs, host)
@@ -213,10 +215,18 @@ def verify(*, artifact_path: Path, expected_run_id: str, probe_program: Path,
         if not isinstance(obs, dict):
             raise ValueError("forbidden write observation must be object")
         _expected_path(obs, path, "forbidden_write")
+        parent = path.parent
+        parent_ready = parent.exists() and parent.is_dir() and not parent.is_symlink()
+        if not parent_ready:
+            raise ValueError(f"forbidden write host parent must exist as a real directory: {parent}")
         absent = not path.exists() and not path.is_symlink()
         denied = obs.get("succeeded") is False and obs.get("denied") is True
         forbidden_ok = forbidden_ok and absent and denied
-        forbidden_checks.append({"path": str(path.absolute()), "absent_after_probe": absent})
+        forbidden_checks.append({
+            "path": str(path.absolute()),
+            "host_parent_exists": parent_ready,
+            "absent_after_probe": absent,
+        })
     probes["forbidden_write_denied"] = _probe(
         "forbidden_write_denied", forbidden_ok, source_sha, forbidden_obs, forbidden_checks
     )
