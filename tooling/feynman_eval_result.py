@@ -15,8 +15,10 @@ import re
 from typing import Any
 
 try:
+    from .feynman_grade_gate import gate as recompute_gate
     from .feynman_runner_attestation import validate as validate_attestation
 except ImportError:
+    from feynman_grade_gate import gate as recompute_gate
     from feynman_runner_attestation import validate as validate_attestation
 
 PRIMARY_CONDITIONS = {"baseline", "generic", "legacy-clean", "feynman-v05"}
@@ -149,6 +151,12 @@ def assemble(plan_path: Path, ordinal: int, evaluator_case_path: Path,
     if gate.get("semantic_review_sha256") != _sha(semantic_review_path):
         raise ValueError("gate output is not bound to this semantic review")
 
+    trusted_ids = review_manifest.get("trusted_execution_ids", [])
+    if not isinstance(trusted_ids, list) or not all(isinstance(item, str) for item in trusted_ids):
+        raise ValueError("review manifest trusted_execution_ids must be strings")
+    if gate.get("trusted_execution_ids") != trusted_ids:
+        raise ValueError("gate trusted execution IDs differ from review manifest")
+
     candidate_final_sha = _sha256_string(
         review_manifest.get("candidate_final_sha256"), "review candidate_final_sha256"
     )
@@ -202,6 +210,13 @@ def assemble(plan_path: Path, ordinal: int, evaluator_case_path: Path,
             raise ValueError("single-turn semantic review must use update_behavior=not_applicable")
         if review_manifest.get("conversation_thread_id") is not None:
             raise ValueError("single-turn result must not claim multi-turn continuity")
+
+    # The saved gate is an artifact, not a trusted authority. Recompute it from
+    # the semantic review, evaluator rubric, and review-manifest trusted IDs.
+    recomputed = recompute_gate(evaluator_case["rubric"], review, set(trusted_ids))
+    for field in ("verdict", "reasons", "unverified", "hard_failure_ids", "semantic_outcomes"):
+        if gate.get(field) != recomputed.get(field):
+            raise ValueError(f"saved gate differs from recomputed gate field: {field}")
 
     semantic_outcomes = gate.get("semantic_outcomes")
     expected_outcomes = {
