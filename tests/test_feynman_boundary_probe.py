@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -68,9 +69,16 @@ class BoundaryProbeTests(unittest.TestCase):
         if secret_key:
             env_keys.append(secret_key)
         program_sha = sha(self.probe_program)
-        def denied(path: Path):
-            return {"path": str(path.absolute()), "succeeded": False, "denied": True,
-                    "error": {"type": "PermissionError", "errno": 13, "message": "denied"}}
+
+        def denied(path: Path, *, err: int = errno.EACCES):
+            error_type = "FileNotFoundError" if err == errno.ENOENT else "PermissionError"
+            return {
+                "path": str(path.absolute()),
+                "succeeded": False,
+                "denied": True,
+                "error": {"type": error_type, "errno": err, "message": "blocked"},
+            }
+
         return {
             "schema_version": 1,
             "run_id": "run-boundary",
@@ -142,6 +150,17 @@ class BoundaryProbeTests(unittest.TestCase):
         self.assertEqual(set(report["probes"]), BOUNDARY_PROBES)
         self.assertTrue(all(item["passed"] for item in report["probes"].values()))
 
+    def test_mount_namespace_hidden_paths_can_pass_when_host_fixtures_exist(self):
+        artifact = self._artifact()
+        for obs in artifact["observations"]["protected_reads"].values():
+            obs["error"] = {"type": "FileNotFoundError", "errno": errno.ENOENT, "message": "hidden"}
+            obs["denied"] = True
+        for obs in artifact["observations"]["forbidden_writes"]:
+            obs["error"] = {"type": "FileNotFoundError", "errno": errno.ENOENT, "message": "hidden"}
+            obs["denied"] = True
+        report = self._verify(self._write_artifact(artifact))
+        self.assertEqual(report["verdict"], "passed")
+
     def test_accessible_protected_file_is_not_misclassified_as_denied(self):
         artifact = self._artifact()
         artifact["observations"]["protected_reads"]["evaluator"].update({
@@ -155,6 +174,36 @@ class BoundaryProbeTests(unittest.TestCase):
         self.source_read.unlink()
         with self.assertRaises(ValueError):
             self._verify(self._write_artifact(self._artifact()))
+
+    def test_missing_forbidden_write_host_parent_is_rejected(self):
+        missing = self.base / "missing-host-parent/forbidden.txt"
+        artifact = self._artifact()
+        artifact["observations"]["forbidden_writes"] = [{
+            "path": str(missing.absolute()),
+            "succeeded": False,
+            "denied": True,
+            "error": {"type": "FileNotFoundError", "errno": errno.ENOENT, "message": "hidden"},
+        }]
+        path = self._write_artifact(artifact)
+        with self.assertRaises(ValueError):
+            verify(
+                artifact_path=path,
+                expected_run_id="run-boundary",
+                probe_program=self.probe_program,
+                candidate_read=self.candidate_read,
+                candidate_read_marker=self.markers["candidate"],
+                evaluator_read=self.evaluator_read,
+                evaluator_read_marker=self.markers["evaluator"],
+                source_read=self.source_read,
+                source_read_marker=self.markers["source"],
+                real_home_read=self.real_home_read,
+                real_home_read_marker=self.markers["real_home"],
+                candidate_write=self.candidate_write,
+                candidate_write_marker=self.markers["candidate_write"],
+                forbidden_writes=[missing],
+                network_reference=self.network_reference,
+                require_network_denied=True,
+            )
 
     def test_secret_like_environment_key_fails_report(self):
         report = self._verify(self._write_artifact(self._artifact(secret_key="OPENAI_API_KEY")))
@@ -188,6 +237,25 @@ class BoundaryProbeTests(unittest.TestCase):
                 network_reference=None,
                 require_network_denied=True,
             )
+
+    def test_probe_marks_enoent_as_blocked_for_namespace_hiding(self):
+        missing_root = self.base / "namespace-hidden"
+        with patch.dict(os.environ, {"HOME": str(self.base / "home"), "PATH": "/usr/bin", "TMPDIR": str(self.base)}, clear=True):
+            artifact = run_probe(
+                run_id="namespace-run",
+                candidate_read=self.candidate_read,
+                candidate_read_marker=self.markers["candidate"],
+                evaluator_read=missing_root / "evaluator/read.txt",
+                source_read=missing_root / "source/read.txt",
+                real_home_read=missing_root / "home/read.txt",
+                candidate_write=self.base / "live-write.txt",
+                candidate_write_marker="live",
+                forbidden_writes=[missing_root / "source/forbidden.txt"],
+                forbidden_write_marker="blocked",
+            )
+        self.assertTrue(artifact["observations"]["protected_reads"]["evaluator"]["denied"])
+        self.assertEqual(artifact["observations"]["protected_reads"]["evaluator"]["error"]["errno"], errno.ENOENT)
+        self.assertTrue(artifact["observations"]["forbidden_writes"][0]["denied"])
 
     def test_running_probe_without_external_boundary_does_not_fake_success(self):
         candidate_write = self.base / "live-candidate-write.txt"
