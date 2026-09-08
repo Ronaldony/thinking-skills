@@ -55,7 +55,23 @@
         "allowed_tool_destinations": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
       },
       "required": ["case_requires_tool_network", "tool_network", "control_plane_separate_from_tool_network", "allowed_tool_destinations"],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {"properties": {"tool_network": {"const": "blocked"}}, "required": ["tool_network"]},
+          "then": {"properties": {"allowed_tool_destinations": {"maxItems": 0}}}
+        },
+        {
+          "if": {"properties": {"case_requires_tool_network": {"const": false}}, "required": ["case_requires_tool_network"]},
+          "then": {
+            "properties": {
+              "tool_network": {"const": "blocked"},
+              "control_plane_separate_from_tool_network": {"const": true},
+              "allowed_tool_destinations": {"maxItems": 0}
+            }
+          }
+        }
+      ]
     },
     "environment": {
       "type": "object",
