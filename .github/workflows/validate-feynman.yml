@@ -33,6 +33,152 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Validate public development cases and rubrics
         run: python tooling/feynman_eval_data.py --base evals/feynman-thinking
+      - name: Exercise Docker external-boundary canary reference profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/feynman-docker-boundary
+          rm -rf "$ROOT"
+          mkdir -p \
+            "$ROOT/candidate" \
+            "$ROOT/evaluator" \
+            "$ROOT/harness" \
+            "$ROOT/candidate-home" \
+            "$ROOT/codex-home" \
+            "$ROOT/temp" \
+            "$ROOT/net"
+
+          SOURCE_CANARY="$GITHUB_WORKSPACE/.feynman-source-read-canary"
+          REAL_HOME_CANARY="$HOME/.feynman-real-home-read-canary"
+          FORBIDDEN_SOURCE="$GITHUB_WORKSPACE/.feynman-forbidden-write"
+          FORBIDDEN_HOME="$HOME/.feynman-forbidden-write"
+          FORBIDDEN_EVALUATOR="$ROOT/evaluator/forbidden-write.txt"
+          SERVER_PID=""
+
+          cleanup() {
+            if [ -n "$SERVER_PID" ]; then
+              kill "$SERVER_PID" 2>/dev/null || true
+            fi
+            rm -f "$SOURCE_CANARY" "$REAL_HOME_CANARY" "$FORBIDDEN_SOURCE" "$FORBIDDEN_HOME"
+          }
+          trap cleanup EXIT
+
+          printf %s candidate-marker > "$ROOT/candidate/read-canary.txt"
+          printf %s evaluator-marker > "$ROOT/evaluator/read-canary.txt"
+          printf %s source-marker > "$SOURCE_CANARY"
+          printf %s real-home-marker > "$REAL_HOME_CANARY"
+          rm -f "$ROOT/candidate/write-canary.txt" "$FORBIDDEN_EVALUATOR" "$FORBIDDEN_SOURCE" "$FORBIDDEN_HOME"
+          cp tooling/feynman_boundary_probe.py "$ROOT/harness/feynman_boundary_probe.py"
+
+          docker version >/dev/null
+          docker pull python:3.12-slim >/dev/null
+          HOST_IP="$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')"
+          test -n "$HOST_IP"
+
+          python - "$ROOT/network-port" <<'PY' &
+          import socket
+          import sys
+          path = sys.argv[1]
+          sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+          sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+          sock.bind(("0.0.0.0", 0))
+          sock.listen(16)
+          with open(path, "w", encoding="utf-8") as handle:
+              handle.write(str(sock.getsockname()[1]))
+              handle.flush()
+          while True:
+              conn, _ = sock.accept()
+              conn.close()
+          PY
+          SERVER_PID=$!
+          for _ in $(seq 1 50); do
+            [ -s "$ROOT/network-port" ] && break
+            sleep 0.1
+          done
+          test -s "$ROOT/network-port"
+          PORT="$(cat "$ROOT/network-port")"
+
+          python tooling/feynman_network_reference.py \
+            --host "$HOST_IP" \
+            --port "$PORT" \
+            --output "$ROOT/network-reference.json"
+
+          docker run --rm \
+            --network none \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --read-only \
+            --user "$(id -u):$(id -g)" \
+            --tmpfs /tmp:rw,nosuid,nodev \
+            -v "$ROOT/candidate:$ROOT/candidate:rw" \
+            -v "$ROOT/candidate-home:$ROOT/candidate-home:rw" \
+            -v "$ROOT/codex-home:$ROOT/codex-home:rw" \
+            -v "$ROOT/temp:$ROOT/temp:rw" \
+            -v "$ROOT/harness/feynman_boundary_probe.py:/probe/feynman_boundary_probe.py:ro" \
+            python:3.12-slim \
+            env -i \
+              HOME="$ROOT/candidate-home" \
+              CODEX_HOME="$ROOT/codex-home" \
+              PATH=/usr/local/bin:/usr/bin:/bin \
+              TMPDIR="$ROOT/temp" \
+              PYTHONDONTWRITEBYTECODE=1 \
+              python /probe/feynman_boundary_probe.py \
+                --run-id docker-reference \
+                --candidate-read "$ROOT/candidate/read-canary.txt" \
+                --candidate-read-marker candidate-marker \
+                --evaluator-read "$ROOT/evaluator/read-canary.txt" \
+                --source-read "$SOURCE_CANARY" \
+                --real-home-read "$REAL_HOME_CANARY" \
+                --candidate-write "$ROOT/candidate/write-canary.txt" \
+                --candidate-write-marker candidate-write-marker \
+                --forbidden-write "$FORBIDDEN_EVALUATOR" \
+                --forbidden-write "$FORBIDDEN_SOURCE" \
+                --forbidden-write "$FORBIDDEN_HOME" \
+                --forbidden-write-marker should-not-write \
+                --network-host "$HOST_IP" \
+                --network-port "$PORT" \
+                --output "$ROOT/candidate/probe-artifact.json"
+
+          python tooling/feynman_boundary_probe_verify.py \
+            --artifact "$ROOT/candidate/probe-artifact.json" \
+            --expected-run-id docker-reference \
+            --probe-program "$ROOT/harness/feynman_boundary_probe.py" \
+            --candidate-read "$ROOT/candidate/read-canary.txt" \
+            --candidate-read-marker candidate-marker \
+            --evaluator-read "$ROOT/evaluator/read-canary.txt" \
+            --evaluator-read-marker evaluator-marker \
+            --source-read "$SOURCE_CANARY" \
+            --source-read-marker source-marker \
+            --real-home-read "$REAL_HOME_CANARY" \
+            --real-home-read-marker real-home-marker \
+            --candidate-write "$ROOT/candidate/write-canary.txt" \
+            --candidate-write-marker candidate-write-marker \
+            --forbidden-write "$FORBIDDEN_EVALUATOR" \
+            --forbidden-write "$FORBIDDEN_SOURCE" \
+            --forbidden-write "$FORBIDDEN_HOME" \
+            --network-reference "$ROOT/network-reference.json" \
+            --output "$ROOT/probe-report.json"
+
+          test ! -e "$FORBIDDEN_EVALUATOR"
+          test ! -e "$FORBIDDEN_SOURCE"
+          test ! -e "$FORBIDDEN_HOME"
+          grep -q '"verdict": "passed"' "$ROOT/probe-report.json"
+          python - "$ROOT/probe-report.json" <<'PY'
+          import hashlib
+          import json
+          import sys
+          path = sys.argv[1]
+          raw = open(path, "rb").read()
+          report = json.loads(raw)
+          assert report["verdict"] == "passed"
+          assert report["failed_probes"] == []
+          assert report["not_required_probes"] == []
+          print(json.dumps({
+              "docker_reference_boundary": "passed",
+              "probe_report_sha256": hashlib.sha256(raw).hexdigest(),
+              "scope": "reference Docker mount/network namespace canary only; no model execution",
+          }, indent=2))
+          PY
       - name: Reproduce audited legacy decision paths
         run: python audit/legacy_probes.py
       - name: Build allowlisted runtime
