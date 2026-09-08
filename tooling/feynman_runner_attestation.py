@@ -3,8 +3,8 @@
 
 A valid result means the attestation is internally consistent with the evaluation
 contract. It does NOT prove the external runner or its probe artifacts are honest.
-When a verified boundary-probe report is supplied, its bytes and normalized probe
-records are bound to the attestation.
+When a verified boundary-probe report is supplied, its bytes, boundary profile,
+and normalized probe records are bound to the attestation.
 """
 from __future__ import annotations
 
@@ -103,6 +103,9 @@ def _bind_probe_report(attestation: dict[str, Any], report: dict[str, Any],
         raise ValueError("boundary probe report bytes do not match attestation digest")
     if report.get("run_id") != attestation.get("run_id"):
         raise ValueError("boundary probe report run_id mismatch")
+    boundary = _object(attestation.get("boundary"), "boundary")
+    if report.get("boundary_profile_sha256") != boundary.get("profile_sha256"):
+        raise ValueError("boundary probe report profile digest differs from attestation")
     if report.get("verdict") != "passed":
         raise ValueError("boundary probe report is not fully passed for required probes")
     report_probes = _object(report.get("probes"), "boundary probe report.probes")
