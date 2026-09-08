@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Assemble one analysis-ready Feynman evaluation result record.
 
-This joins a frozen eval-plan job, evaluator-side condition record, externally
-validated runner attestation + verified boundary-probe report, evaluator review
-bundle, semantic review, and structural gate output. It does not run a model or
-judge correctness itself.
+This joins a frozen eval-plan job, evaluator-side condition record, validated
+boundary-profile manifest, runner attestation + verified boundary-probe report,
+evaluator review bundle, semantic review, and structural gate output. It does
+not run a model or judge correctness itself.
 """
 from __future__ import annotations
 
@@ -16,9 +16,11 @@ import re
 from typing import Any
 
 try:
+    from .feynman_boundary_profile import validate_profile_file
     from .feynman_grade_gate import gate as recompute_gate
     from .feynman_runner_attestation import validate as validate_attestation
 except ImportError:
+    from feynman_boundary_profile import validate_profile_file
     from feynman_grade_gate import gate as recompute_gate
     from feynman_runner_attestation import validate as validate_attestation
 
@@ -54,10 +56,41 @@ def _job(plan: dict[str, Any], ordinal: int) -> dict[str, Any]:
     return matches[0]
 
 
+def _bind_boundary_profile(profile: dict[str, Any], profile_sha: str,
+                           attestation: dict[str, Any], probe_report: dict[str, Any]) -> None:
+    boundary = attestation.get("boundary")
+    network = attestation.get("network")
+    environment = attestation.get("environment")
+    if not isinstance(boundary, dict) or not isinstance(network, dict) or not isinstance(environment, dict):
+        raise ValueError("attestation lacks boundary/network/environment objects")
+    if boundary.get("profile_sha256") != profile_sha:
+        raise ValueError("boundary profile raw digest differs from runner attestation")
+    if probe_report.get("boundary_profile_sha256") != profile_sha:
+        raise ValueError("boundary profile raw digest differs from verified probe report")
+    if profile.get("backend") != boundary.get("backend"):
+        raise ValueError("boundary profile backend differs from runner attestation")
+    if profile.get("backend_version") != boundary.get("backend_version"):
+        raise ValueError("boundary profile backend version differs from runner attestation")
+
+    network_mode = profile.get("network_mode")
+    tool_network = network.get("tool_network")
+    expected_tool_network = {"none": "blocked", "restricted": "restricted", "open": "open"}.get(network_mode)
+    if expected_tool_network is None or tool_network != expected_tool_network:
+        raise ValueError("boundary profile network mode differs from runner attestation")
+
+    profile_env = profile.get("candidate_env_keys")
+    attested_env = environment.get("candidate_env_keys")
+    if not isinstance(profile_env, list) or not isinstance(attested_env, list):
+        raise ValueError("boundary profile/attestation candidate env keys must be lists")
+    if sorted(profile_env) != sorted(attested_env):
+        raise ValueError("boundary profile candidate env keys differ from runner attestation")
+
+
 def assemble(plan_path: Path, ordinal: int, evaluator_case_path: Path,
              attestation_path: Path, semantic_review_path: Path, gate_path: Path,
              *, review_bundle_path: Path | None = None,
              probe_report_path: Path | None = None,
+             boundary_profile_path: Path | None = None,
              allowed_system_skills: set[str] | None = None,
              allow_plugins: bool = False) -> dict[str, Any]:
     plan_path = plan_path.resolve()
@@ -69,8 +102,11 @@ def assemble(plan_path: Path, ordinal: int, evaluator_case_path: Path,
         raise ValueError("analysis-ready result requires the evaluator review bundle")
     if probe_report_path is None:
         raise ValueError("analysis-ready result requires a verified boundary probe report")
+    if boundary_profile_path is None:
+        raise ValueError("analysis-ready result requires the original boundary profile manifest")
     review_bundle_path = review_bundle_path.resolve()
     probe_report_path = probe_report_path.resolve()
+    boundary_profile_path = boundary_profile_path.resolve()
     review_input_path = review_bundle_path / "review-input.json"
     review_manifest_path = review_bundle_path / "review-manifest.json"
 
@@ -79,6 +115,7 @@ def assemble(plan_path: Path, ordinal: int, evaluator_case_path: Path,
     evaluator_case = _load(evaluator_case_path)
     attestation = _load(attestation_path)
     probe_report = _load(probe_report_path)
+    boundary_profile, boundary_profile_sha, _ = validate_profile_file(boundary_profile_path)
     review_input = _load(review_input_path)
     review_manifest = _load(review_manifest_path)
     review = _load(semantic_review_path)
@@ -96,6 +133,7 @@ def assemble(plan_path: Path, ordinal: int, evaluator_case_path: Path,
 
     plan_sha = _sha(plan_path)
     probe_report_sha = _sha(probe_report_path)
+    _bind_boundary_profile(boundary_profile, boundary_profile_sha, attestation, probe_report)
     attestation_result = validate_attestation(
         attestation,
         allow_plugins=allow_plugins,
@@ -261,7 +299,10 @@ def assemble(plan_path: Path, ordinal: int, evaluator_case_path: Path,
         "runner": {
             "backend": attestation.get("boundary", {}).get("backend"),
             "backend_version": attestation.get("boundary", {}).get("backend_version"),
-            "profile_sha256": attestation.get("boundary", {}).get("profile_sha256"),
+            "profile_sha256": boundary_profile_sha,
+            "image": boundary_profile.get("image"),
+            "image_id": boundary_profile.get("image_id"),
+            "network_mode": boundary_profile.get("network_mode"),
         },
         "conversation": {
             "thread_id": conversation_thread_id,
@@ -272,6 +313,7 @@ def assemble(plan_path: Path, ordinal: int, evaluator_case_path: Path,
             "eval_plan_sha256": plan_sha,
             "candidate_prompt_sha256": job.get("candidate_prompt_sha256"),
             "runtime_sha256": attested_runtime,
+            "boundary_profile_sha256": boundary_profile_sha,
             "probe_report_sha256": probe_report_sha,
             "review_input_sha256": actual_review_input_sha,
             "review_manifest_sha256": actual_review_manifest_sha,
@@ -296,7 +338,7 @@ def assemble(plan_path: Path, ordinal: int, evaluator_case_path: Path,
             "review_confidence": review.get("confidence"),
         },
         "limitations": attestation.get("limitations", []),
-        "scope": "validated boundary canaries plus plan-to-run-to-evidence-to-review linkage; not a causal performance conclusion",
+        "scope": "validated boundary profile/canaries plus plan-to-run-to-evidence-to-review linkage; not a causal performance conclusion",
     }
 
 
@@ -306,6 +348,7 @@ def main() -> int:
     parser.add_argument("--ordinal", type=int, required=True)
     parser.add_argument("--evaluator-case", type=Path, required=True)
     parser.add_argument("--attestation", type=Path, required=True)
+    parser.add_argument("--boundary-profile", type=Path, required=True)
     parser.add_argument("--probe-report", type=Path, required=True)
     parser.add_argument("--review-bundle", type=Path, required=True)
     parser.add_argument("--semantic-review", type=Path, required=True)
@@ -324,6 +367,7 @@ def main() -> int:
             args.gate,
             review_bundle_path=args.review_bundle,
             probe_report_path=args.probe_report,
+            boundary_profile_path=args.boundary_profile,
             allowed_system_skills=set(args.allowed_system_skill),
             allow_plugins=args.allow_plugins,
         )
@@ -331,7 +375,7 @@ def main() -> int:
             raise FileExistsError(f"refusing to overwrite: {args.output}")
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    except (ValueError, OSError, json.JSONDecodeError) as exc:
+    except (ValueError, OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         parser.exit(2, f"error: {exc}\n")
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
