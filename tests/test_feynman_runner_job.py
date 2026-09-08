@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from copy import deepcopy
 import json
 from pathlib import Path
 import sys
@@ -63,7 +62,7 @@ class RunnerJobTests(unittest.TestCase):
         prepare_condition(ROOT, "mechanism-01", condition, candidate, evaluator)
         return plan, plan_path, candidate, evaluator
 
-    def _build(self, condition: str):
+    def _build(self, condition: str, **kwargs):
         plan, plan_path, candidate, evaluator = self._prepare(condition)
         result = build_job(
             plan_path=plan_path,
@@ -80,21 +79,47 @@ class RunnerJobTests(unittest.TestCase):
             codex_home=self.base / f"codex-{condition}",
             temp_dir=self.base / f"temp-{condition}",
             real_home=self.base / "real-user-home",
+            **kwargs,
         )
         return result, plan, plan_path, candidate, evaluator
 
-    def test_baseline_job_contains_no_skill_or_credentials(self):
+    def test_baseline_job_contains_no_skill_or_candidate_credentials(self):
         result, _, _, _, _ = self._build("baseline")
+        self.assertEqual(result["schema_version"], 2)
         self.assertEqual(result["job"]["condition_id"], "baseline")
         self.assertEqual(result["skills"]["expected_candidate_skills"], [])
         self.assertIsNone(result["skills"]["runtime_sha256"])
         self.assertEqual(result["network"]["tool_network"], "blocked")
         self.assertEqual(result["authentication"], {
-            "mode": "external-broker",
+            "mode": "control-plane-only",
+            "control_plane_credential_source": "environment",
+            "control_plane_credential_env_key": "OPENAI_API_KEY",
             "candidate_tool_auth_env_keys": [],
             "candidate_readable_credential_files": [],
             "credential_command_arguments": [],
         })
+        self.assertNotIn("OPENAI_API_KEY", result["boundary"]["candidate_env_keys"])
+
+    def test_custom_control_plane_env_key_records_name_only(self):
+        result, _, _, _, _ = self._build(
+            "baseline", control_plane_credential_env_key="MODEL_SERVICE_TOKEN"
+        )
+        self.assertEqual(
+            result["authentication"]["control_plane_credential_env_key"],
+            "MODEL_SERVICE_TOKEN",
+        )
+        raw = json.dumps(result)
+        self.assertNotIn("credential_value", raw)
+
+    def test_invalid_control_plane_env_key_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self._build("baseline", control_plane_credential_env_key="BAD-KEY")
+
+    def test_control_plane_key_exposed_by_profile_is_rejected(self):
+        self.profile["candidate_env_keys"].append("OPENAI_API_KEY")
+        self._write_profile()
+        with self.assertRaises(ValueError):
+            self._build("baseline")
 
     def test_v05_job_binds_runtime_digest(self):
         result, _, _, _, _ = self._build("feynman-v05")
