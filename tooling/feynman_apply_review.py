@@ -51,14 +51,16 @@ def apply(review_bundle: Path, review_path: Path, output_path: Path) -> dict[str
         raise ValueError("trusted_execution_ids must be a list of strings")
 
     result = gate(rubric, review, set(trusted_ids))
+    semantic_outcomes = result.get("semantic_outcomes")
     output = {
-        "schema_version": 1,
+        "schema_version": 2 if semantic_outcomes is not None else 1,
         "case_id": review_input.get("case_id"),
         "phase": review_input.get("phase"),
         "verdict": result["verdict"],
         "reasons": result["reasons"],
         "unverified": result["unverified"],
         "hard_failure_ids": result.get("hard_failure_ids", []),
+        "semantic_outcomes": semantic_outcomes,
         "semantic_review_sha256": hashlib.sha256(review_path.resolve().read_bytes()).hexdigest(),
         "review_input_sha256": actual_input_sha,
         "trusted_execution_ids": trusted_ids,
