@@ -89,6 +89,13 @@ def _validate_result(record: dict[str, Any]) -> None:
         raise ValueError("result has no digests object")
     if not _valid_sha(digests.get("probe_report_sha256")):
         raise ValueError("analysis result requires a SHA-256 boundary probe report digest")
+    profile_sha = digests.get("boundary_profile_sha256")
+    if not _valid_sha(profile_sha):
+        raise ValueError("analysis result requires a SHA-256 boundary profile digest")
+    runner = record.get("runner")
+    if not isinstance(runner, dict) or runner.get("profile_sha256") != profile_sha:
+        raise ValueError("analysis result boundary profile digest differs from runner profile")
+
     runtime_sha = digests.get("runtime_sha256")
     if condition in SKILL_CONDITIONS:
         if not _valid_sha(runtime_sha):
@@ -217,8 +224,8 @@ def aggregate(plan: dict[str, Any], records: Iterable[dict[str, Any]]) -> dict[s
         models.add(model)
         cli_versions.add(cli)
         runner = record.get("runner")
-        if not isinstance(runner, dict) or not isinstance(runner.get("profile_sha256"), str):
-            raise ValueError("result has no runner profile")
+        if not isinstance(runner, dict) or not _valid_sha(runner.get("profile_sha256")):
+            raise ValueError("result has no valid runner profile")
         runner_profiles.add(runner["profile_sha256"])
         runtimes_by_condition[key[1]].add(digests.get("runtime_sha256"))
 
@@ -301,7 +308,7 @@ def aggregate(plan: dict[str, Any], records: Iterable[dict[str, Any]]) -> dict[s
             "legacy_clean_vs_feynman_v05": _paired(observed, "legacy-clean", "feynman-v05"),
             "baseline_vs_feynman_v05": _paired(observed, "baseline", "feynman-v05"),
         },
-        "scope": "descriptive preregistered metrics over results that already bind verified boundary-probe reports; only status=analysis-ready may be used for the primary comparison, and even then no significance or causal claim is implied",
+        "scope": "descriptive preregistered metrics over results that bind preserved boundary-profile manifests and verified boundary-probe reports; only status=analysis-ready may be used for the primary comparison, and even then no significance or causal claim is implied",
     }
 
 
