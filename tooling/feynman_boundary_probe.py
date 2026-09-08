@@ -22,11 +22,7 @@ SECRET_KEY_PATTERN = re.compile(
     r"(?:TOKEN|SECRET|PASSWORD|CREDENTIAL|COOKIE|AUTH|API[_-]?KEY|ACCESS[_-]?KEY|PRIVATE[_-]?KEY)",
     re.IGNORECASE,
 )
-# A protected host canary may be blocked by permissions or hidden entirely by a
-# mount namespace. ENOENT/ENOTDIR count only provisionally here: the evaluator-
-# side verifier must separately prove that the host canary (or host parent for a
-# forbidden write) really exists, preventing a missing fixture from becoming a
-# false pass.
+SHA_PATTERN = re.compile(r"[0-9a-f]{64}")
 BLOCKED_ERRNOS = {errno.EACCES, errno.EPERM, errno.EROFS, errno.ENOENT, errno.ENOTDIR}
 
 
@@ -36,6 +32,12 @@ def _sha_bytes(data: bytes) -> str:
 
 def _program_sha() -> str:
     return _sha_bytes(Path(__file__).read_bytes())
+
+
+def _require_sha(value: str, label: str) -> str:
+    if SHA_PATTERN.fullmatch(value) is None:
+        raise ValueError(f"{label} must be lowercase SHA-256")
+    return value
 
 
 def _error(exc: OSError) -> dict[str, Any]:
@@ -95,7 +97,8 @@ def _network(host: str | None, port: int | None, timeout: float) -> dict[str, An
     return record
 
 
-def run_probe(*, run_id: str, candidate_read: Path, candidate_read_marker: str,
+def run_probe(*, run_id: str, boundary_profile_sha256: str,
+              candidate_read: Path, candidate_read_marker: str,
               evaluator_read: Path, source_read: Path, real_home_read: Path,
               candidate_write: Path, candidate_write_marker: str,
               forbidden_writes: list[Path], forbidden_write_marker: str,
@@ -103,12 +106,14 @@ def run_probe(*, run_id: str, candidate_read: Path, candidate_read_marker: str,
               network_timeout: float = 1.5) -> dict[str, Any]:
     if not run_id.strip():
         raise ValueError("run_id must be nonempty")
+    _require_sha(boundary_profile_sha256, "boundary_profile_sha256")
     if not forbidden_writes:
         raise ValueError("at least one forbidden write path is required")
     env_keys = sorted(os.environ)
     return {
         "schema_version": 1,
         "run_id": run_id,
+        "boundary_profile_sha256": boundary_profile_sha256,
         "probe_program_sha256": _program_sha(),
         "observations": {
             "candidate_read": _read(candidate_read, candidate_read_marker),
@@ -132,6 +137,7 @@ def run_probe(*, run_id: str, candidate_read: Path, candidate_read_marker: str,
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-id", required=True)
+    parser.add_argument("--boundary-profile-sha256", required=True)
     parser.add_argument("--candidate-read", type=Path, required=True)
     parser.add_argument("--candidate-read-marker", required=True)
     parser.add_argument("--evaluator-read", type=Path, required=True)
@@ -151,6 +157,7 @@ def main() -> int:
             raise ValueError("network host and port must be supplied together")
         result = run_probe(
             run_id=args.run_id,
+            boundary_profile_sha256=args.boundary_profile_sha256,
             candidate_read=args.candidate_read,
             candidate_read_marker=args.candidate_read_marker,
             evaluator_read=args.evaluator_read,
@@ -170,7 +177,11 @@ def main() -> int:
         args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     except (ValueError, OSError) as exc:
         parser.exit(2, f"error: {exc}\n")
-    print(json.dumps({"run_id": result["run_id"], "probe_program_sha256": result["probe_program_sha256"]}, indent=2))
+    print(json.dumps({
+        "run_id": result["run_id"],
+        "boundary_profile_sha256": result["boundary_profile_sha256"],
+        "probe_program_sha256": result["probe_program_sha256"],
+    }, indent=2))
     return 0
 
 
