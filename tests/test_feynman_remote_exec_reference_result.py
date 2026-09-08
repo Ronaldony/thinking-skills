@@ -62,7 +62,7 @@ class RemoteExecReferenceResultTests(unittest.TestCase):
 
         self.job_path = self.base / "runner-job.json"
         self.job = {
-            "schema_version": 1,
+            "schema_version": 2,
             "run_id": "synthetic-reference",
             "job": {
                 "ordinal": 1,
@@ -95,7 +95,9 @@ class RemoteExecReferenceResultTests(unittest.TestCase):
                 "control_plane_separate_from_tool_network": True,
             },
             "authentication": {
-                "mode": "external-broker",
+                "mode": "control-plane-only",
+                "control_plane_credential_source": "environment",
+                "control_plane_credential_env_key": "OPENAI_API_KEY",
                 "candidate_tool_auth_env_keys": [],
                 "candidate_readable_credential_files": [],
                 "credential_command_arguments": [],
