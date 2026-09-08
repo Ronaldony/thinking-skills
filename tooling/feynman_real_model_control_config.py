@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Generate/validate the control-plane Codex config for a real-model smoke run.
 
-The output names the control-plane credential environment variable but never
-contains its value. Candidate tool commands still execute through the canonical
-remote `exec-server` environment and receive an explicit `inherit = "none"`
-shell environment.
+The output names the control-plane credential environment variable declared by
+runner-job schema v2 but never contains its value. Candidate tool commands still
+execute through the canonical remote `exec-server` environment and receive an
+explicit `inherit = "none"` shell environment.
 """
 from __future__ import annotations
 
@@ -26,11 +26,21 @@ except ImportError:
 PROVIDER_ID = "openai-api"
 PROVIDER_NAME = "OpenAI API"
 PROVIDER_BASE_URL = "https://api.openai.com/v1"
-PROVIDER_ENV_KEY = "OPENAI_API_KEY"
+PROVIDER_ENV_KEY = "OPENAI_API_KEY"  # default runner-job v2 key; not a credential value
 
 
 def _q(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
+
+
+def _credential_env_key(job: dict[str, Any]) -> str:
+    auth = job.get("authentication")
+    if not isinstance(auth, dict):
+        raise ValueError("runner job has no authentication object")
+    value = auth.get("control_plane_credential_env_key")
+    if not isinstance(value, str) or not value:
+        raise ValueError("runner job has no control-plane credential env key")
+    return value
 
 
 def build_document(job: dict[str, Any], profile: dict[str, Any], profile_sha: str) -> dict[str, Any]:
@@ -42,6 +52,7 @@ def build_document(job: dict[str, Any], profile: dict[str, Any], profile_sha: st
         raise ValueError("runner job model must be nonempty")
     if model.startswith("mock-"):
         raise ValueError("real model control config may not use a mock model id")
+    credential_env_key = _credential_env_key(job)
     paths = job["paths"]
     return {
         "model": model,
@@ -52,7 +63,7 @@ def build_document(job: dict[str, Any], profile: dict[str, Any], profile_sha: st
             PROVIDER_ID: {
                 "name": PROVIDER_NAME,
                 "base_url": PROVIDER_BASE_URL,
-                "env_key": PROVIDER_ENV_KEY,
+                "env_key": credential_env_key,
                 "wire_api": "responses",
             }
         },
@@ -100,13 +111,16 @@ def validate_document(document: dict[str, Any], job: dict[str, Any], profile: di
     raw_text = json.dumps(document, ensure_ascii=False, sort_keys=True)
     if "Bearer " in raw_text or "sk-" in raw_text:
         raise ValueError("control config appears to contain credential material")
+    credential_env_key = _credential_env_key(job)
     return {
         "verdict": "real-model-control-config-valid",
         "model": document["model"],
         "provider": PROVIDER_ID,
         "provider_base_url": PROVIDER_BASE_URL,
-        "credential_env_key_name": PROVIDER_ENV_KEY,
+        "credential_env_key_name": credential_env_key,
         "credential_value_stored": False,
+        "authentication_mode": "control-plane-only",
+        "credential_source": "environment",
         "tool_shell_inherit": "none",
         "tool_shell_env_keys": sorted(document["shell_environment_policy"]["set"]),
         "boundary_profile_sha256": profile_sha,
