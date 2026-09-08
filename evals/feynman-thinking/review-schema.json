@@ -22,8 +22,10 @@
       "additionalProperties": {"type": "integer", "minimum": 0, "maximum": 2}
     },
     "hard_failures": {
+      "description": "IDs from rubric.hard_failures that are actually present in the candidate response/evidence.",
       "type": "array",
-      "items": {"type": "string"}
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
     },
     "executed_evidence_ids": {
       "type": "array",
