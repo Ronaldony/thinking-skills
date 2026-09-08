@@ -4,7 +4,6 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import sys
-import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,8 +31,9 @@ class RealSmokePlanTests(unittest.TestCase):
         self.assertEqual(self.spec["conditions"], EXPECTED_CONDITIONS)
         self.assertEqual(self.spec["repeats"], 1)
         joined = " ".join(self.spec["prohibited_claims"]).lower()
-        self.assertIn("performance", joined)
+        self.assertIn("skill effect", joined)
         self.assertIn("held-out", joined)
+        self.assertIn("behaviorally validated", joined)
 
     def test_plan_contains_exactly_two_expected_jobs(self):
         plan = build_smoke_plan(ROOT, SPEC_PATH)
