@@ -90,3 +90,62 @@
   - tool command trace의 `aggregated_output` 형식이 current Codex 0.153.4에서 validator 예상과 다를 가능성.
   - apply-patch compatibility는 의도적으로 미해결 상태로 유지.
   - 실제 credential/model service는 여전히 사용하지 않음.
+
+---
+
+## LOG-003 — exec-only remote model/tool split 실제 E2E 성공
+
+- **시각(KST)**: 2026-09-08 20:47
+- **검증 대상 head**: `11e4d8f5c713f4588b70f510b894592e5d526db0`
+- **목적**: host-side mock model/Codex control plane과 network-disabled Docker remote exec-server 사이의 도구 실행 분리를 실제 GitHub runner에서 검증한다.
+- **GitHub Actions 결과**:
+  - `validate-feynman-remote-exec-reference` run #35, run id `34222374937`: **success**.
+  - 같은 head에서 `validate-feynman`, `validate-feynman-docker-reference`, `validate-feynman-codex-reference`도 모두 **success**.
+  - remote-exec contract unit tests는 **47개 통과**.
+  - control-plane Codex와 tool-boundary Codex 버전은 모두 `codex-cli 0.153.4`.
+- **실제 artifact 확인**:
+  - artifact id: `10054284915`
+  - artifact zip digest: `sha256:8f08dae3b2f21e1ecacbf2793fbf76324c82bc8bdd5dc0242c1c06c6f8c63964`
+  - `reference-result.json`:
+    - `schema_version=3`
+    - `verdict=mock-remote-tool-reference-passed`
+    - `scenario=exec-only`
+    - model requests = 2
+    - `exec_output_round_trip=true`
+    - `workspace_marker=true`
+    - `tool_network_blocked=true`
+    - `auth_env_clean=true`
+    - `command_execution_observed=true`
+    - `final_agent_message_observed=true`
+    - `docker_inspect_matches_profile=true`
+    - `local_execution_disabled=true`
+    - `apply_patch_round_trip=false` / patch proof digest `null` — 의도된 exec-only 범위.
+  - `codex-trace.jsonl`:
+    - 하나의 nonempty thread id: `01a080d6-efce-7840-a7be-9afccfd36b6c`
+    - `command_execution`이 `completed`, `exit_code=0`.
+    - 실제 aggregated output: `AUTH_ENV_CLEAN`, `NETWORK_BLOCKED`, `REMOTE_EXEC_OK`.
+    - 최종 agent message: `REMOTE_EXEC_REFERENCE_OK`.
+  - `tool-container-inspect-check.json`:
+    - `verdict=docker-inspect-matches-profile`.
+    - `network_mode=none`.
+    - rw mount는 candidate / candidate-home / tool-codex-home / tool-temp 네 곳만 존재.
+    - candidate env key는 `CODEX_HOME`, `HOME`, `PATH`, `PYTHONDONTWRITEBYTECODE`, `TMPDIR`.
+  - `candidate/remote-tool-proof.txt`: 정확히 `REMOTE_EXEC_OK`.
+- **주요 digest**:
+  - boundary profile: `fc4064a9114926e601da6020b999bb4623b345110585b1de4733fee549861f11`
+  - runner job: `848439e21a37e9756aa62981adb1d238dec9667997f77fded26420937eb61db6`
+  - remote environment: `41ada289238bcfde4d6b0e556e054dbf625b6338477fa7785cdcdbfccd2ca03a`
+  - network reference: `8ab470cb881a427aa8d1a7a2361ecaf50c5173faf5c4d8139bc3c6a7b5937451`
+  - mock state: `1149649371fb983afc3437b9198f64e39e74163614a97166ec50e10979932080`
+  - Codex trace: `20e8d5a7e56531c01e19be45ec784d515cae7e8113b00e9a737b7896d1dbdc56`
+  - Docker inspect: `f0672519aa4f60eeb8c8dc1292df8280322cabc1026dc77232f68bd2bc92d12b`
+  - candidate proof: `b95df8af34190814b55f57d5b20a58233422cd160c380c49acb8d9e116ac397d`
+- **결론**:
+  - credential-free mock model control plane에서 Codex가 local execution을 사용하지 않고 stdio remote exec-server를 통해 실제 command를 실행하고 결과를 다시 model loop에 전달하는 경로가 확인됐다.
+  - tool boundary의 network 차단과 auth-like env 비노출도 동일 command에서 확인됐다.
+  - 이 결과는 실제 OpenAI/model-service 인증 안전성이나 Feynman skill 성능을 증명하지 않는다.
+- **다음 작업**: current Codex 0.153.4에서 remote `apply_patch`가 어떤 tool representation/route를 요구하는지 소스와 실제 reference를 분리 조사한다. exec-only 녹색 상태는 유지한다.
+- **남은 위험**:
+  - 실제 credential을 가진 control plane의 end-to-end 검증은 미실행.
+  - `apply_patch` custom-tool remote compatibility 미해결.
+  - 실제 baseline/generic/legacy/v0.5 행동 비교는 미실행.
