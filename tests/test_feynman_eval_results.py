@@ -77,8 +77,39 @@ class EvalResultLinkageTests(unittest.TestCase):
         apply(self.review_bundle, self.review_path, self.gate_path)
         self.gate = json.loads(self.gate_path.read_text(encoding="utf-8"))
 
+        self.boundary_profile_path = self.base / "boundary-profile.json"
+        self.boundary_profile = {
+            "schema_version": 1,
+            "backend": "docker",
+            "backend_version": "28.0.4",
+            "image": "python:3.12-slim",
+            "image_id": "sha256:" + "6" * 64,
+            "network_mode": "none",
+            "read_only_root": True,
+            "no_new_privileges": True,
+            "capabilities": [],
+            "run_as": "1000:1000",
+            "read_write_mounts": [
+                "/isolated/candidate", "/isolated/home", "/isolated/codex-home", "/isolated/tmp"
+            ],
+            "read_only_mounts": ["/probe/feynman_boundary_probe.py"],
+            "tmpfs_mounts": ["/tmp"],
+            "protected_roots_mounted": [],
+            "candidate_env_keys": ["HOME", "CODEX_HOME", "PATH", "TMPDIR"],
+            "scope": "synthetic analysis-result boundary profile",
+        }
+        self.boundary_profile_path.write_text(
+            json.dumps(self.boundary_profile, sort_keys=True), encoding="utf-8"
+        )
+        profile_sha = sha(self.boundary_profile_path)
+
         self.attestation_path = self.base / "attestation.json"
         self.attestation = attestation("baseline")
+        self.attestation["boundary"].update({
+            "backend": "docker",
+            "backend_version": "28.0.4",
+            "profile_sha256": profile_sha,
+        })
         self.attestation["digests"]["eval_plan_sha256"] = sha(self.plan_path)
         self.attestation["digests"]["candidate_prompt_sha256"] = self.job["candidate_prompt_sha256"]
 
@@ -101,6 +132,7 @@ class EvalResultLinkageTests(unittest.TestCase):
             self.gate_path,
             review_bundle_path=self.review_bundle,
             probe_report_path=self.probe_report_path,
+            boundary_profile_path=self.boundary_profile_path,
         )
 
     def test_linked_baseline_result_is_analysis_ready(self):
@@ -112,6 +144,9 @@ class EvalResultLinkageTests(unittest.TestCase):
         self.assertEqual(result["job"]["condition"], "baseline")
         self.assertEqual(result["digests"]["candidate_final_sha256"], self.gate["candidate_final_sha256"])
         self.assertEqual(result["digests"]["probe_report_sha256"], sha(self.probe_report_path))
+        self.assertEqual(result["digests"]["boundary_profile_sha256"], sha(self.boundary_profile_path))
+        self.assertEqual(result["runner"]["profile_sha256"], sha(self.boundary_profile_path))
+        self.assertEqual(result["runner"]["image_id"], self.boundary_profile["image_id"])
 
     def test_attestation_bound_to_different_plan_is_rejected(self):
         self.attestation["digests"]["eval_plan_sha256"] = "c" * 64
@@ -137,6 +172,14 @@ class EvalResultLinkageTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self._assemble()
 
+    def test_tampered_boundary_profile_is_rejected(self):
+        self.boundary_profile["image_id"] = "sha256:" + "7" * 64
+        self.boundary_profile_path.write_text(
+            json.dumps(self.boundary_profile, sort_keys=True), encoding="utf-8"
+        )
+        with self.assertRaises(ValueError):
+            self._assemble()
+
     def test_result_requires_review_bundle(self):
         with self.assertRaises(ValueError):
             assemble(
@@ -147,6 +190,7 @@ class EvalResultLinkageTests(unittest.TestCase):
                 self.review_path,
                 self.gate_path,
                 probe_report_path=self.probe_report_path,
+                boundary_profile_path=self.boundary_profile_path,
             )
 
     def test_result_requires_probe_report(self):
@@ -159,6 +203,20 @@ class EvalResultLinkageTests(unittest.TestCase):
                 self.review_path,
                 self.gate_path,
                 review_bundle_path=self.review_bundle,
+                boundary_profile_path=self.boundary_profile_path,
+            )
+
+    def test_result_requires_boundary_profile(self):
+        with self.assertRaises(ValueError):
+            assemble(
+                self.plan_path,
+                self.job["ordinal"],
+                self.evaluator / "case.json",
+                self.attestation_path,
+                self.review_path,
+                self.gate_path,
+                review_bundle_path=self.review_bundle,
+                probe_report_path=self.probe_report_path,
             )
 
 
@@ -215,11 +273,19 @@ class EvalAggregateTests(unittest.TestCase):
                 "phase": "initial",
             },
             "versions": {"model": model, "codex_cli": cli},
-            "runner": {"backend": "container", "backend_version": "1", "profile_sha256": profile},
+            "runner": {
+                "backend": "docker",
+                "backend_version": "1",
+                "profile_sha256": profile,
+                "image": "python:3.12-slim",
+                "image_id": "sha256:" + "6" * 64,
+                "network_mode": "none",
+            },
             "conversation": {"thread_id": None, "initial_source_trace_sha256": None, "followup_source_trace_sha256": None},
             "digests": {
                 "candidate_prompt_sha256": prompt_sha,
                 "runtime_sha256": runtime_sha,
+                "boundary_profile_sha256": profile,
                 "probe_report_sha256": "9" * 64,
             },
             "metrics": {
@@ -318,6 +384,12 @@ class EvalAggregateTests(unittest.TestCase):
     def test_wrong_prompt_digest_is_rejected(self):
         generic = self._record("generic", decision="correct", supported=2)
         generic["digests"]["candidate_prompt_sha256"] = "f" * 64
+        with self.assertRaises(ValueError):
+            aggregate(self._plan(), [generic])
+
+    def test_wrong_boundary_profile_digest_is_rejected(self):
+        generic = self._record("generic", decision="correct", supported=2)
+        generic["digests"]["boundary_profile_sha256"] = "f" * 64
         with self.assertRaises(ValueError):
             aggregate(self._plan(), [generic])
 
