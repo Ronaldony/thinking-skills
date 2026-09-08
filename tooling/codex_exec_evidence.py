@@ -25,12 +25,14 @@ def _safe_text_file(output_dir: Path, ordinal: int, kind: str, text: str) -> dic
     stored = encoded[:MAX_STORED_EVIDENCE_BYTES]
     if truncated:
         stored = stored.decode("utf-8", errors="replace").encode("utf-8")
+    stored_sha = hashlib.sha256(stored).hexdigest()
     filename = f"{ordinal:04d}-{kind}.txt"
     path = output_dir / filename
     path.write_bytes(stored)
     return {
         "file": filename,
         "sha256": full_sha,
+        "stored_sha256": stored_sha,
         "original_bytes": len(encoded),
         "stored_bytes": len(stored),
         "truncated": truncated,
