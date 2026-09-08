@@ -24,8 +24,11 @@ def gate(rubric: dict[str, Any], review: dict[str, Any],
 
     trusted_execution_ids must be supplied by the evaluator from verified tool logs,
     not by the candidate. This helper does not parse or authenticate logs itself.
-    Hard failures are case-predefined IDs in the rubric; the semantic reviewer may
-    only report which of those predefined failures actually occurred.
+
+    Production/public-development rubrics predefine hard-failure IDs. A legacy
+    synthetic rubric that omits the `hard_failures` field may still report a
+    free-text hard failure, but such a report can only make the verdict fail; it
+    can never pass or be promoted into a standardized critical-failure metric.
     """
     trusted_execution_ids = trusted_execution_ids or set()
     if rubric.get("id") != review.get("id"):
@@ -45,15 +48,17 @@ def gate(rubric: dict[str, Any], review: dict[str, Any],
         if type(score) is not int or score not in {0, 1, 2}:
             raise ValueError("required scores must be integer 0/1/2, not NA or boolean")
 
+    hard_specified = "hard_failures" in rubric
     hard_definitions = _unique(rubric.get("hard_failures", []), "rubric hard failure")
     hard = review.get("hard_failures", [])
     if (not isinstance(hard, list)
             or not all(isinstance(x, str) and x for x in hard)
             or len(set(hard)) != len(hard)):
-        raise ValueError("hard_failures must be unique nonempty string IDs")
-    unknown_hard = sorted(set(hard) - set(hard_definitions))
-    if unknown_hard:
-        raise ValueError("semantic review reported undefined hard failure IDs: " + ", ".join(unknown_hard))
+        raise ValueError("hard_failures must be unique nonempty strings")
+    if hard_specified:
+        unknown_hard = sorted(set(hard) - set(hard_definitions))
+        if unknown_hard:
+            raise ValueError("semantic review reported undefined hard failure IDs: " + ", ".join(unknown_hard))
 
     claimed = review.get("executed_evidence_ids", [])
     if (not isinstance(claimed, list)
@@ -74,10 +79,13 @@ def gate(rubric: dict[str, Any], review: dict[str, Any],
             unverified.append(f"finding lacks reviewed evidence: {fid}")
 
     reasons.extend(f"required behavior below 2: {key}" for key, score in behavior.items() if score < 2)
-    for hard_id in hard:
-        text = hard_definitions[hard_id].get("text")
-        detail = f": {text}" if isinstance(text, str) and text.strip() else ""
-        reasons.append(f"hard failure {hard_id}{detail}")
+    if hard_specified:
+        for hard_id in hard:
+            text = hard_definitions[hard_id].get("text")
+            detail = f": {text}" if isinstance(text, str) and text.strip() else ""
+            reasons.append(f"hard failure {hard_id}{detail}")
+    else:
+        reasons.extend(f"legacy unstructured hard failure: {item}" for item in hard)
 
     unsupported = set(claimed) - trusted_execution_ids
     if unsupported:
@@ -90,6 +98,7 @@ def gate(rubric: dict[str, Any], review: dict[str, Any],
         "verdict": verdict,
         "reasons": reasons,
         "unverified": unverified,
-        "hard_failure_ids": hard,
+        "hard_failure_ids": hard if hard_specified else [],
+        "unstructured_hard_failures": [] if hard_specified else hard,
         "scope": "structural gate over evaluator judgments, not an independent correctness finding",
     }
