@@ -26,17 +26,33 @@
 
 ## 현재 구현된 평가 파이프라인
 
-다음 도구는 평가의 **격리와 증거 전달 경로**를 검증하기 위한 기반이다. candidate 모델 runner와 semantic judge 모델 runner 자체는 아직 별도 구현 대상이다.
+다음 도구는 평가의 **격리, 증거 전달, 결과 연결과 집계 경로**를 검증하기 위한 기반이다. candidate 모델 runner와 semantic judge 모델 runner 자체는 아직 별도 구현 대상이다.
 
 1. `tooling/feynman_eval_workspace.py`는 한 사례의 후보 작업공간과 평가자 디렉터리를 별도로 만든다. 후보에는 초기 prompt, 해당 fixture, 선택한 런타임 스킬만 들어간다. evaluator 쪽에는 원 prompt, rubric, follow-up, runtime digest와 evaluator assets가 남는다. 후보/평가 디렉터리는 소스 저장소 밖에 있어야 하고 fixture symlink는 거부한다.
 2. `tooling/feynman_eval_preflight.py`는 후보 내부 예상 스킬 집합과 사용자/CODEX_HOME/상위 경로의 `SKILL.md` 오염을 검사한다. 이 검사는 filesystem skill root만 다루며 plugin/system skill의 부재를 증명하지 않는다.
-3. 실제 후보 프로세스는 **후보 디렉터리만 볼 수 있는 별도 OS/컨테이너 샌드박스**에서 실행해야 한다. workspace/preflight 도구 자체는 그런 보안 경계를 제공하지 않는다.
-4. `tooling/codex_exec_evidence.py`는 `codex exec --json` JSONL에서 완료된 command/MCP/web-search/file-change 항목과 최종 메시지만 평가자 증거 번들로 축약한다. reasoning 항목은 복사하지 않는다. command는 `completed`와 `failed` 모두 “실행됨”의 증거가 될 수 있지만, 성공 여부는 status/exit code를 별도로 본다. 저장된 증거 파일은 별도 SHA-256으로 다시 검증할 수 있다.
-5. `tooling/feynman_review_bundle.py`는 evaluator case와 evidence bundle을 결합해 `review-input.json`, judge guidance, review schema를 evaluator-only 패키지로 만든다. 저장 증거의 해시가 맞지 않으면 의미 채점 전에 거부한다. multi-turn 사례는 실제 follow-up을 전달한 평가 단계에서만 `--include-followup`을 사용한다.
-6. 의미 평가자는 review bundle을 읽고 `review-schema.json`에 맞는 JSON을 만든다. 후보가 주장한 실행 여부를 그대로 신뢰하지 않고 evaluator의 trusted execution ID와 실제 output을 본다. `judge-prompt.md`는 공개 개발용 지침이다.
-7. `tooling/feynman_apply_review.py`는 review bundle의 hash linkage를 다시 확인한 뒤 외부 의미 판정과 trusted execution ID를 `feynman_grade_gate.py`에 전달한다. gate는 필수 발견, 필수 행동, hard failure와 execution linkage의 구조적 합격 조건만 적용하며 자체적으로 정답을 판단하지 않는다.
+3. 실제 후보 프로세스는 **후보 디렉터리만 볼 수 있는 별도 OS/컨테이너 샌드박스**에서 실행해야 한다. workspace/preflight 도구 자체는 그런 보안 경계를 제공하지 않는다. 외부 runner는 `runner-attestation.schema.json`과 `tooling/feynman_runner_attestation.py`의 fail-closed 계약을 만족해야 한다.
+4. `tooling/codex_exec_evidence.py`는 `codex exec --json` JSONL에서 완료된 command/MCP/web-search/file-change 항목과 최종 메시지만 평가자 증거 번들로 축약한다. reasoning 항목은 복사하지 않는다. command는 `completed`와 `failed` 모두 “실행됨”의 증거가 될 수 있지만, 성공 여부는 status/exit code를 별도로 본다. 저장된 증거 파일과 최종 답변은 SHA-256으로 evidence index에 결속된다.
+5. `tooling/feynman_review_bundle.py`는 evaluator case와 evidence bundle을 결합해 `review-input.json`, judge guidance, review schema를 evaluator-only 패키지로 만든다. 최종 답변·저장 증거·trusted execution ID의 연결이 맞지 않으면 의미 채점 전에 거부한다. multi-turn 사례는 실제 follow-up을 전달한 평가 단계에서만 `--include-followup`을 사용한다.
+6. 의미 평가자는 review bundle을 읽고 `review-schema.json` **v2**에 맞는 JSON을 만든다. 후보가 주장한 실행 여부를 그대로 신뢰하지 않고 evaluator의 trusted execution ID와 실제 output을 본다. v2는 `decision_correctness`, `execution_integrity`, `update_behavior`를 별도 필드로 남긴다. `judge-prompt.md`는 공개 개발용 지침이다.
+7. `tooling/feynman_apply_review.py`는 review bundle의 hash linkage를 다시 확인한 뒤 외부 의미 판정과 trusted execution ID를 `feynman_grade_gate.py`에 전달한다. gate는 필수 발견·필수 행동·사전정의 hard failure·execution linkage와 v2 primary outcome의 구조적 합격 조건을 적용하며 자체적으로 정답을 판단하지 않는다.
+8. `tooling/feynman_eval_result.py`는 frozen plan job, evaluator-side condition record, 외부 runner attestation, semantic review v2와 gate output을 하나의 **analysis-ready result record**로 결속한다. case/condition/ordinal, prompt digest, plan digest, runtime digest와 legacy source commit이 다르면 거부한다.
+9. `tooling/feynman_eval_aggregate.py`는 frozen plan에 존재하는 analysis-ready record만 집계한다. 누락·중복·계획 밖 결과를 숨기지 않고, model/Codex CLI/runner profile이 섞이거나 primary outcome이 unverified면 `primary_comparison_ready=false`로 둔다. paired difference는 기술 통계일 뿐 유의성이나 인과 효과를 주장하지 않는다.
+10. `tooling/feynman_eval_data.py`는 공개 개발 `cases.jsonl`과 evaluator-only `rubrics.jsonl`의 ID 대응, 누출 금지, control category, execution fixture, behavior ID와 hard-failure 정의를 구조적으로 검사한다.
 
-현재 Codex `exec` JSON 이벤트의 `command_execution`, `mcp_tool_call`, `web_search` 등 타입은 OpenAI Codex SDK의 공개 item 정의를 호환 목표로 삼는다. CLI/프로토콜 버전이 바뀌면 고정된 평가 결과 집합에 조용히 섞지 말고 parser와 fixture를 먼저 갱신한다.
+현재 Codex `exec` JSON 이벤트의 `command_execution`, `mcp_tool_call`, `web_search` 등 타입은 OpenAI Codex의 공개 `exec --json` item 구조를 호환 목표로 삼는다. CLI/프로토콜 버전이 바뀌면 고정된 평가 결과 집합에 조용히 섞지 말고 parser와 fixture를 먼저 갱신한다.
+
+## 공개 개발 루브릭의 고정 항목
+
+현재 18개 공개 사례에는 총 **20개의 case-specific hard failure 정의**가 있다. 이는 사전등록 Primary 지표인 `critical_failure_rate`의 분모·판정 기준이 의미 평가자마다 달라지는 것을 줄이기 위한 것이다. 평가자는 rubric에 없는 새 hard-failure ID를 만들 수 없다. 단순한 부분 점수나 필수 발견 누락을 임의로 치명적 실패로 승격하지 않는다.
+
+`review-schema.json` v2의 Primary 관련 필드는 다음과 같다.
+
+- `decision_correctness`: `correct / partial / incorrect / unverified`
+- `execution_integrity`: `clean / failure / unverified`
+- `update_behavior`: `not_applicable / justified_revision / justified_retention / unjustified_revision / unjustified_retention / unverified`
+- `hard_failures`: 해당 사례 rubric에 미리 정의된 ID 중 실제 발생한 항목만 기록
+
+이 필드들은 필수 발견 점수의 평균으로 자동 생성하지 않는다. 의미 평가자가 과제의 실제 목표와 검토 가능한 증거를 보고 별도로 판정한다.
 
 ## 무엇을 채점하는가
 
@@ -50,4 +66,11 @@
 
 점수 평균과 함께 사례별 paired difference, 불확실성 구간, 치명적 실패, 거짓 실행 주장, 불필요한 거절/보류, 토큰·시간·도구 비용을 공개한다. 이름 제거·연산 제거 실험은 기능 기여도를 보는 것이며 역사적 인물의 고유한 내면 사고를 입증하는 실험이 아니다.
 
-구조·격리 검사를 모두 통과하고, 미리 정한 핵심 과제에서 일반 지침 대비 실제 이득이 있으며, 치명적 실패와 과도한 보류가 악화되지 않을 때만 채택을 검토한다. 유한한 시험에서 치명적 실패가 0건이어도 실패 확률이 0이라고 주장하지 않는다. 이득이 없으면 루프를 줄이거나 일반 스킬로 이동한다.
+집계 결과는 최소한 다음 상태를 구분한다.
+
+- `analysis-ready`: frozen plan이 완전하고 model/CLI/runner profile이 일치하며 Primary 의미 결과에 `unverified`가 없다.
+- `incomplete`: frozen plan의 run이 누락되었거나 예상하지 않은 job이 있다.
+- `mixed-environment`: 결과는 모두 있으나 model, Codex CLI 버전 또는 runner profile이 섞였다.
+- `unverified-outcomes`: run은 완전하고 환경도 일치하지만 Primary 의미 판정이 검증되지 않은 항목이 있다.
+
+`analysis-ready`는 **분석 가능한 데이터 집합**이라는 뜻일 뿐, v0.5가 더 좋다는 뜻이 아니다. 구조·격리 검사를 모두 통과하고, 미리 정한 핵심 과제에서 일반 지침 대비 실제 이득이 있으며, 치명적 실패와 과도한 보류가 악화되지 않을 때만 채택을 검토한다. 유한한 시험에서 치명적 실패가 0건이어도 실패 확률이 0이라고 주장하지 않는다. 이득이 없으면 루프를 줄이거나 일반 스킬로 이동한다.
