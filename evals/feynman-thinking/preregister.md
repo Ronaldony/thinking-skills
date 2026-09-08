@@ -44,19 +44,36 @@
 - 후보에는 해당 condition-specific prompt, 필요한 fixture, 해당 조건의 런타임만 제공한다.
 - evaluator rubric, judge prompt, 이전 답변·등급, 다른 조건의 런타임은 후보가 읽을 수 없어야 한다.
 - `tooling/feynman_eval_workspace.py`의 파일 분리, `tooling/feynman_condition_workspace.py`의 조건 설치, `tooling/feynman_eval_preflight.py`의 skill-root 검사를 통과해야 한다.
-- 실제 후보 프로세스는 별도 OS/컨테이너 경계에서 candidate dir만 읽을 수 있어야 한다. 현재 저장소는 이 경계를 아직 구현하지 않았다.
+- 실제 후보 프로세스는 별도 OS/컨테이너 경계에서 실행한다. 저장소에는 Docker/Codex/remote-exec/remote-patch/synthetic-auth **reference**가 구현돼 있지만, reference 성공을 행동 run의 증거로 재사용하지 않는다. 각 실제 run은 자신의 boundary profile/probe/attestation을 보존해야 한다.
 - HOME과 CODEX_HOME은 평가 전용 빈 디렉터리로 고정한다. `$HOME/.agents/skills`, `$CODEX_HOME/skills`, 후보 상위 디렉터리의 `.agents/skills`에서 추가 스킬이 발견되면 해당 run은 무효다.
 - 내장/system skill과 플러그인 노출은 버전별로 기록하고 모든 조건에 동일하게 유지하거나, 가능하면 명시적으로 비활성화한다. 통제가 불가능하면 한계로 보고한다.
 - 외부 웹이 과제 수행에 불필요하면 차단한다. 필요한 경우 모든 조건에 같은 정책을 쓰고 공개 정답 검색 가능성을 별도 위험으로 기록한다.
 - 모델 식별자, Codex 버전, 시스템 지시, sandbox, 도구 목록/권한, 시간 제한, 최대 출력, runtime digest, cases/conditions digest를 run metadata에 저장한다.
-- 인증 자격증명을 평가 workspace로 복사하는 것을 격리 방법으로 사용하지 않는다. 실제 runner는 별도의 허용된 인증 경로를 사용해야 한다.
+- 모델 credential은 **control-plane-only**로만 사용한다. 현재 검증된 source는 environment이며 runner job에는 env-key 이름만 기록한다. candidate tool env/file/argv에는 credential material을 제공하지 않는다.
+- control-plane credential env-key 이름이 candidate env allowlist에 나타나는 run은 무효다.
+
+### pre-run / post-run lineage 필수 조건
+
+각 실제 run은 모델 실행 전에 `runner-job.json` schema v2를 동결한다. 실행 뒤에는 `runner-attestation.json` schema v2와 verified probe report를 만들고 `runner-job-link.json` schema v2를 생성한다.
+
+`runner-job-link`는 다음을 pre-run job과 post-run attestation 사이에서 직접 일치시킨다.
+
+- run/case/condition
+- model/Codex version
+- candidate/evaluator/source/HOME/CODEX_HOME/temp paths
+- boundary profile/backend/network
+- control-plane authentication mode/source/env-key 이름
+- expected skill set
+- plan/prompt/runtime/probe digests
+
+link가 없거나 재계산한 link와 저장된 link가 다르면 해당 run은 analysis-ready가 아니다.
 
 ## 5. 반복과 실행 순서
 
 - 동일 모델 스냅샷 안에서 case × condition 순서를 무작위화하고 seed를 고정·기록한다. `feynman_eval_plan.py`는 동일 입력·seed에 동일 job order를 만들어야 하며 회귀 테스트로 고정한다.
 - 공개 개발 단계에서 반복 수 5는 harness 안정성 확인에만 사용할 수 있으며 충분한 통계 검정력을 자동 보장하지 않는다.
 - final 반복 수와 최소 실질 효과 크기는 **final 답변을 열기 전에**, 별도 pilot의 분산과 비용을 보고 정해 이 문서에 추가한다.
-- 모델/CLI/스킬/conditions 버전이 바뀐 실행을 같은 모집단에 조용히 합치지 않는다.
+- 모델/CLI/스킬/conditions/boundary/authentication profile 버전이 바뀐 실행을 같은 모집단에 조용히 합치지 않는다.
 
 ## 6. 주요 결과 변수
 
@@ -79,18 +96,31 @@
 
 하나의 종합 점수로 모든 실패를 숨기지 않는다. 특히 hard failure와 실행 진실성은 평균 품질 점수와 별도 보고한다.
 
-## 7. 채점 절차
+## 7. 채점·결과 생성 절차
 
 - 조건명과 skill source metadata를 제외한 candidate final + evaluator evidence bundle을 채점한다. 후보가 답변 안에서 스킬 이름을 자발적으로 언급해 조건을 유추할 가능성은 남으므로 완전한 블라인드라고 과장하지 않는다.
 - `codex_exec_evidence.py`는 reasoning을 복사하지 않고 완료된 도구/실행 사건과 final만 축약한다. 저장된 evidence bytes는 별도 hash로 검증한다. 이 번들은 행동 증거이지 의미적 정답 판정 자체가 아니다.
 - `feynman_review_bundle.py`가 원 prompt, rubric, candidate final, 검증된 evidence만 evaluator-only 입력으로 묶는다.
-- 의미 평가자는 `judge-prompt.md`와 rubric을 사용하고, `feynman_apply_review.py`가 review bundle hash와 trusted execution linkage를 확인한 뒤 `feynman_grade_gate.py`를 적용한다.
+- 의미 평가자는 `judge-prompt.md`와 rubric을 사용하고 `review-schema.json` v2를 출력한다.
+- `feynman_apply_review.py`가 review bundle hash와 trusted execution linkage를 확인한 뒤 `feynman_grade_gate.py`를 적용한다.
+- `feynman_eval_result.py`는 raw runner job과 raw runner-job-link를 다시 요구하고 link를 재계산한 뒤에만 **analysis-result schema v3**를 만든다. 형식 정본은 `analysis-result.schema.json`이다.
+- `feynman_eval_aggregate.py`는 schema-v3 result만 primary aggregation 입력으로 허용한다. historical schema-v2 result는 canonical primary comparison에 넣지 않는다.
 - 모델 보조 채점만으로 결론내리지 않는다. 최소한 주요 오류·조건 차이가 큰 사례는 조건 블라인드 사람 검토를 수행한다.
 - 평가자 간 불일치, 채점 수정, 제외 run은 이유와 함께 보존한다.
 
-## 8. 채택 판정 원칙
+## 8. 유효 run / 채택 판정 원칙
 
-`v0.5`를 “행동적으로 검증됨”으로 승격하려면 다음을 모두 만족해야 한다.
+run이 primary analysis에 들어가려면 최소 다음을 만족해야 한다.
+
+- frozen plan의 exact job과 대응
+- pre-run runner-job schema v2 존재
+- verified boundary profile/probe/attestation 존재
+- recomputable runner-job-link schema v2 존재
+- evidence/review/gate linkage 통과
+- analysis-result schema v3
+- canonical aggregator가 `valid_for_analysis=true`로 인정
+
+`v0.5`를 “행동적으로 검증됨”으로 승격하려면 추가로 다음을 모두 만족해야 한다.
 
 - 구조·격리 preflight에서 무효 run이 분석에 포함되지 않는다.
 - primary 결과에서 generic 대비 실질적인 개선의 방향이 일관되고, 불확실성 구간을 함께 보고한다.
@@ -103,3 +133,5 @@
 ## 9. 결과 공개 규칙
 
 좋아진 항목과 나빠진 항목을 모두 보고한다. 평균뿐 아니라 사례별 paired difference, 분산/불확실성, 최악 실패, 제외 사유, 실제 비용을 공개한다. 파인만의 이름이나 역사적 근거는 성능 결과를 대체하지 않는다.
+
+`analysis-ready`는 **lineage와 primary 분석 요건을 충족한 데이터**라는 뜻이지 스킬 개선을 의미하지 않는다. model/Codex/runner/runtime/control-plane authentication profile이 섞이면 `mixed-environment`, frozen job이 빠지면 `incomplete`, primary 의미 결과가 미검증이면 `unverified-outcomes`로 차단한다.
