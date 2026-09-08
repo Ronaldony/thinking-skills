@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Build a fail-closed external model-runner job spec from frozen evaluation inputs.
 
-The job spec contains no credential values and requires an `external-broker`
-authentication mode. It does not launch Codex or a model; an external runner must
-consume the spec, enforce the referenced boundary profile, and later produce the
-verified probe report + runner attestation chain.
+The job spec contains no credential values. Runner-job schema v2 records only the
+verified authentication architecture: the host-side model control plane owns a
+credential supplied by one named environment variable, while candidate tools
+must receive no auth env keys/files/argv credentials. It does not launch Codex or
+a model; an external runner must consume the spec, enforce the referenced
+boundary profile, and later produce the verified probe report + runner
+attestation chain.
 """
 from __future__ import annotations
 
@@ -23,6 +26,8 @@ except ImportError:
 PRIMARY_CONDITIONS = {"baseline", "generic", "legacy-clean", "feynman-v05"}
 SKILL_CONDITIONS = {"legacy-clean", "feynman-v05"}
 SHA_PATTERN = re.compile(r"[0-9a-f]{64}")
+ENV_KEY_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+DEFAULT_CONTROL_PLANE_CREDENTIAL_ENV_KEY = "OPENAI_API_KEY"
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -73,9 +78,12 @@ def build_job(*, plan_path: Path, ordinal: int, evaluator_case_path: Path,
               candidate_dir: Path, evaluator_dir: Path, source_repo: Path,
               ephemeral_home: Path, codex_home: Path, temp_dir: Path, real_home: Path,
               case_requires_tool_network: bool = False,
-              allowed_tool_destinations: list[str] | None = None) -> dict[str, Any]:
+              allowed_tool_destinations: list[str] | None = None,
+              control_plane_credential_env_key: str = DEFAULT_CONTROL_PLANE_CREDENTIAL_ENV_KEY) -> dict[str, Any]:
     if not run_id.strip() or not model.strip() or not codex_cli.strip():
         raise ValueError("run_id, model, and codex_cli must be nonempty")
+    if not isinstance(control_plane_credential_env_key, str) or ENV_KEY_PATTERN.fullmatch(control_plane_credential_env_key) is None:
+        raise ValueError("control-plane credential env key must be a valid environment variable name")
     allowed_tool_destinations = allowed_tool_destinations or []
     if len(set(allowed_tool_destinations)) != len(allowed_tool_destinations):
         raise ValueError("allowed tool destinations must not contain duplicates")
@@ -156,9 +164,11 @@ def build_job(*, plan_path: Path, ordinal: int, evaluator_case_path: Path,
     profile_env_keys = profile.get("candidate_env_keys")
     if not isinstance(profile_env_keys, list) or not profile_env_keys:
         raise ValueError("boundary profile has no candidate env-key allowlist")
+    if control_plane_credential_env_key in profile_env_keys:
+        raise ValueError("control-plane credential env key must not be exposed to candidate tools")
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "run_id": run_id,
         "job": {
             "ordinal": ordinal,
@@ -183,7 +193,9 @@ def build_job(*, plan_path: Path, ordinal: int, evaluator_case_path: Path,
             "control_plane_separate_from_tool_network": True,
         },
         "authentication": {
-            "mode": "external-broker",
+            "mode": "control-plane-only",
+            "control_plane_credential_source": "environment",
+            "control_plane_credential_env_key": control_plane_credential_env_key,
             "candidate_tool_auth_env_keys": [],
             "candidate_readable_credential_files": [],
             "credential_command_arguments": [],
@@ -199,7 +211,8 @@ def build_job(*, plan_path: Path, ordinal: int, evaluator_case_path: Path,
             "runtime_sha256": runtime_sha,
         },
         "scope": (
-            "immutable external model-runner job contract; contains no credential values and does not launch the model"
+            "immutable external model-runner job contract; credential values stay in the host-side "
+            "model control plane and are excluded from candidate tools"
         ),
     }
 
@@ -222,6 +235,11 @@ def main() -> int:
     parser.add_argument("--real-home", type=Path, required=True)
     parser.add_argument("--case-requires-tool-network", action="store_true")
     parser.add_argument("--allowed-tool-destination", action="append", default=[])
+    parser.add_argument(
+        "--control-plane-credential-env-key",
+        default=DEFAULT_CONTROL_PLANE_CREDENTIAL_ENV_KEY,
+        help="name only; credential value is never written to runner-job.json",
+    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
@@ -242,6 +260,7 @@ def main() -> int:
             real_home=args.real_home,
             case_requires_tool_network=args.case_requires_tool_network,
             allowed_tool_destinations=args.allowed_tool_destination,
+            control_plane_credential_env_key=args.control_plane_credential_env_key,
         )
         if args.output.exists() or args.output.is_symlink():
             raise FileExistsError(f"refusing to overwrite: {args.output}")
