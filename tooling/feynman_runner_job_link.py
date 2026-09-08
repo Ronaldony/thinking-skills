@@ -4,7 +4,8 @@
 This creates an evaluator-side immutable linkage record. It does not launch a
 model and does not prove the external boundary is honest; it ensures that the job
 planned before execution and the attestation recorded after execution describe
-the same run, model, paths, profile, network policy, skills and digests.
+the same run, model, paths, profile, network policy, authentication architecture,
+skills and digests.
 """
 from __future__ import annotations
 
@@ -47,7 +48,7 @@ def bind(*, runner_job_path: Path, boundary_profile_path: Path,
     attestation_path = attestation_path.resolve()
 
     job = _load(runner_job_path)
-    validate_job_files(runner_job_path, boundary_profile_path)
+    job_validation = validate_job_files(runner_job_path, boundary_profile_path)
     _, profile_sha, _ = validate_profile_file(boundary_profile_path)
     report = _load(probe_report_path)
     report_sha = _sha(probe_report_path)
@@ -59,6 +60,8 @@ def bind(*, runner_job_path: Path, boundary_profile_path: Path,
         probe_report=report,
         probe_report_sha256=report_sha,
     )
+    if job_validation.get("verdict") != "runner-job-valid":
+        raise ValueError("runner job is not valid")
     if attestation_result.get("verdict") != "contract-valid" or attestation_result.get("probe_report_bound") is not True:
         raise ValueError("runner attestation is not bound to a valid boundary report")
 
@@ -67,6 +70,7 @@ def bind(*, runner_job_path: Path, boundary_profile_path: Path,
     job_paths = job["paths"]
     job_boundary = job["boundary"]
     job_network = job["network"]
+    job_auth = job["authentication"]
     job_skills = job["skills"]
     job_digests = job["digests"]
 
@@ -113,6 +117,25 @@ def bind(*, runner_job_path: Path, boundary_profile_path: Path,
     if job_skills.get("expected_candidate_skills") != attested_environment.get("expected_candidate_skills"):
         raise ValueError("runner-job/attestation expected skill-set mismatch")
 
+    auth_pairs = {
+        "mode": "control_plane_auth_mode",
+        "control_plane_credential_source": "control_plane_credential_source",
+        "control_plane_credential_env_key": "control_plane_credential_env_key",
+    }
+    for job_field, attestation_field in auth_pairs.items():
+        if job_auth.get(job_field) != attested_environment.get(attestation_field):
+            raise ValueError(
+                f"runner-job/attestation authentication mismatch: {job_field}/{attestation_field}"
+            )
+    if attested_environment.get("api_auth_exposed_to_candidate_tools") is not False:
+        raise ValueError("attestation claims candidate tool auth exposure")
+    if job_auth.get("candidate_tool_auth_env_keys") != []:
+        raise ValueError("runner job contains candidate tool auth env keys")
+    if job_auth.get("candidate_readable_credential_files") != []:
+        raise ValueError("runner job contains candidate-readable credential files")
+    if job_auth.get("credential_command_arguments") != []:
+        raise ValueError("runner job contains credential command arguments")
+
     attested_digests = attestation.get("digests")
     if not isinstance(attested_digests, dict):
         raise ValueError("attestation has no digests object")
@@ -122,8 +145,9 @@ def bind(*, runner_job_path: Path, boundary_profile_path: Path,
     if attested_digests.get("probe_report_sha256") != report_sha:
         raise ValueError("attestation does not bind supplied probe report bytes")
 
+    credential_key = job_auth["control_plane_credential_env_key"]
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "verdict": "runner-job-attestation-bound",
         "run_id": job["run_id"],
         "case_id": job_info["case_id"],
@@ -137,7 +161,10 @@ def bind(*, runner_job_path: Path, boundary_profile_path: Path,
         "runtime_sha256": job_digests["runtime_sha256"],
         "model": job_versions["model"],
         "codex_cli": job_versions["codex_cli"],
-        "scope": "evaluator-side linkage between pre-execution runner job and post-execution verified attestation",
+        "authentication_mode": "control-plane-only",
+        "control_plane_credential_source": "environment",
+        "control_plane_credential_env_key": credential_key,
+        "scope": "evaluator-side linkage between pre-execution runner job and post-execution verified attestation, including authentication architecture",
     }
 
 
