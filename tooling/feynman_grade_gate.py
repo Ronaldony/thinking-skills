@@ -4,6 +4,7 @@ from typing import Any
 
 VALID_FINDING_STATES = {"supported", "missed", "contradicted", "unverified"}
 
+
 def _unique(items: list[dict[str, Any]], label: str) -> dict[str, dict[str, Any]]:
     result: dict[str, dict[str, Any]] = {}
     if not isinstance(items, list):
@@ -16,12 +17,15 @@ def _unique(items: list[dict[str, Any]], label: str) -> dict[str, dict[str, Any]
         result[item["id"]] = item
     return result
 
+
 def gate(rubric: dict[str, Any], review: dict[str, Any],
          trusted_execution_ids: set[str] | None = None) -> dict[str, Any]:
     """Return passed/failed/unverified; never infer semantic correctness from labels alone.
 
     trusted_execution_ids must be supplied by the evaluator from verified tool logs,
     not by the candidate. This helper does not parse or authenticate logs itself.
+    Hard failures are case-predefined IDs in the rubric; the semantic reviewer may
+    only report which of those predefined failures actually occurred.
     """
     trusted_execution_ids = trusted_execution_ids or set()
     if rubric.get("id") != review.get("id"):
@@ -30,6 +34,7 @@ def gate(rubric: dict[str, Any], review: dict[str, Any],
     found = _unique(review["findings"], "review finding")
     if set(expected) != set(found):
         raise ValueError("missing or unexpected finding ids")
+
     required = rubric["required_behaviors"]
     if not isinstance(required, list) or len(set(required)) != len(required):
         raise ValueError("required behavior ids must be unique")
@@ -39,12 +44,23 @@ def gate(rubric: dict[str, Any], review: dict[str, Any],
     for score in behavior.values():
         if type(score) is not int or score not in {0, 1, 2}:
             raise ValueError("required scores must be integer 0/1/2, not NA or boolean")
+
+    hard_definitions = _unique(rubric.get("hard_failures", []), "rubric hard failure")
     hard = review.get("hard_failures", [])
-    if not isinstance(hard, list) or not all(isinstance(x, str) for x in hard):
-        raise ValueError("hard_failures must be a list of strings")
+    if (not isinstance(hard, list)
+            or not all(isinstance(x, str) and x for x in hard)
+            or len(set(hard)) != len(hard)):
+        raise ValueError("hard_failures must be unique nonempty string IDs")
+    unknown_hard = sorted(set(hard) - set(hard_definitions))
+    if unknown_hard:
+        raise ValueError("semantic review reported undefined hard failure IDs: " + ", ".join(unknown_hard))
+
     claimed = review.get("executed_evidence_ids", [])
-    if not isinstance(claimed, list) or not all(isinstance(x, str) for x in claimed):
-        raise ValueError("executed_evidence_ids must be a list of strings")
+    if (not isinstance(claimed, list)
+            or not all(isinstance(x, str) and x for x in claimed)
+            or len(set(claimed)) != len(claimed)):
+        raise ValueError("executed_evidence_ids must be unique nonempty strings")
+
     reasons: list[str] = []
     unverified: list[str] = []
     for fid, item in found.items():
@@ -56,13 +72,24 @@ def gate(rubric: dict[str, Any], review: dict[str, Any],
         evidence = item.get("evidence")
         if status == "unverified" or not isinstance(evidence, str) or not evidence.strip():
             unverified.append(f"finding lacks reviewed evidence: {fid}")
+
     reasons.extend(f"required behavior below 2: {key}" for key, score in behavior.items() if score < 2)
-    reasons.extend(f"hard failure: {x}" for x in hard if x.strip())
+    for hard_id in hard:
+        text = hard_definitions[hard_id].get("text")
+        detail = f": {text}" if isinstance(text, str) and text.strip() else ""
+        reasons.append(f"hard failure {hard_id}{detail}")
+
     unsupported = set(claimed) - trusted_execution_ids
     if unsupported:
         reasons.append("execution claims lack trusted matching records: " + ", ".join(sorted(unsupported)))
     if rubric.get("requires_execution") and not (set(claimed) & trusted_execution_ids):
         unverified.append("required execution evidence is absent")
+
     verdict = "failed" if reasons else "unverified" if unverified else "passed"
-    return {"verdict": verdict, "reasons": reasons, "unverified": unverified,
-            "scope": "structural gate over evaluator judgments, not an independent correctness finding"}
+    return {
+        "verdict": verdict,
+        "reasons": reasons,
+        "unverified": unverified,
+        "hard_failure_ids": hard,
+        "scope": "structural gate over evaluator judgments, not an independent correctness finding",
+    }
