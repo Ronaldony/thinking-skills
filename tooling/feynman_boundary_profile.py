@@ -78,7 +78,11 @@ def validate_profile(profile: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("protected roots must not be mounted into the candidate boundary")
 
     rw_mounts = _strings(profile.get("read_write_mounts"), "read_write_mounts", allow_empty=False)
-    ro_mounts = _strings(profile.get("read_only_mounts"), "read_only_mounts", allow_empty=False)
+    # A production tool boundary may need no separate read-only bind mounts when
+    # the runtime is entirely inside the content-addressed image. Keep the field
+    # explicit for auditability, but do not force an artificial mount merely to
+    # satisfy the profile shape.
+    ro_mounts = _strings(profile.get("read_only_mounts"), "read_only_mounts")
     tmpfs_mounts = _strings(profile.get("tmpfs_mounts"), "tmpfs_mounts", allow_empty=False)
     for label, values in (
         ("read_write_mounts", rw_mounts),
