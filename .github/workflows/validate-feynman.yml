@@ -1,0 +1,43 @@
+name: validate-feynman
+
+on:
+  push:
+    paths:
+      - 'skills/feynman-thinking/**'
+      - 'evals/feynman-thinking/**'
+      - 'tooling/**'
+      - 'audit/**'
+      - 'tests/**'
+      - '.github/workflows/validate-feynman.yml'
+  pull_request:
+    paths:
+      - 'skills/feynman-thinking/**'
+      - 'evals/feynman-thinking/**'
+      - 'tooling/**'
+      - 'audit/**'
+      - 'tests/**'
+      - '.github/workflows/validate-feynman.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  structural-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Reproduce audited legacy decision paths
+        run: python audit/legacy_probes.py
+      - name: Build allowlisted runtime
+        run: python tooling/feynman_package.py --root . --output /tmp/feynman-preview
+      - name: Assert evaluator assets are absent from runtime
+        run: |
+          test -f /tmp/feynman-preview/feynman-thinking/SKILL.md
+          test ! -e /tmp/feynman-preview/feynman-thinking/evals
+          test ! -e /tmp/feynman-preview/feynman-thinking/.git
+          test -f /tmp/feynman-preview/runtime-manifest.json
