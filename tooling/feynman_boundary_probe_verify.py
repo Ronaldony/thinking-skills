@@ -19,6 +19,7 @@ SECRET_KEY_PATTERN = re.compile(
     r"(?:TOKEN|SECRET|PASSWORD|CREDENTIAL|COOKIE|AUTH|API[_-]?KEY|ACCESS[_-]?KEY|PRIVATE[_-]?KEY)",
     re.IGNORECASE,
 )
+SHA_PATTERN = re.compile(r"[0-9a-f]{64}")
 BOUNDARY_PROBES = {
     "candidate_read",
     "evaluator_read_denied",
@@ -49,6 +50,10 @@ def _canonical_sha(value: Any) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def _valid_sha(value: Any) -> bool:
+    return isinstance(value, str) and SHA_PATTERN.fullmatch(value) is not None
+
+
 def _regular_marker(path: Path, marker: str, label: str) -> dict[str, Any]:
     if path.is_symlink() or not path.is_file():
         raise ValueError(f"{label} canary must exist as a regular file: {path}")
@@ -77,6 +82,58 @@ def _probe(name: str, passed: bool, source_sha: str, observation: Any,
         "artifact_sha256": _canonical_sha(evidence),
         "method": f"boundary-probe+evaluator-postcheck:v1:{name}",
     }
+
+
+def validate_report(report: dict[str, Any]) -> dict[str, Any]:
+    """Validate the normalized evaluator-side report shape and self-consistency."""
+    if report.get("schema_version") != 1:
+        raise ValueError("unsupported boundary probe report schema_version")
+    if not isinstance(report.get("run_id"), str) or not report["run_id"].strip():
+        raise ValueError("boundary probe report run_id must be nonempty")
+    if report.get("verdict") not in {"passed", "failed"}:
+        raise ValueError("boundary probe report verdict must be passed/failed")
+    for field in ("source_artifact_sha256", "probe_program_sha256"):
+        if not _valid_sha(report.get(field)):
+            raise ValueError(f"boundary probe report {field} must be SHA-256")
+    network_sha = report.get("network_reference_sha256")
+    if network_sha is not None and not _valid_sha(network_sha):
+        raise ValueError("boundary probe report network_reference_sha256 must be SHA-256 or null")
+    env_keys = report.get("observed_env_keys")
+    if not isinstance(env_keys, list) or not all(isinstance(x, str) and x for x in env_keys):
+        raise ValueError("boundary probe report observed_env_keys must be nonempty strings")
+    if len(set(env_keys)) != len(env_keys):
+        raise ValueError("boundary probe report observed_env_keys contain duplicates")
+
+    probes = report.get("probes")
+    if not isinstance(probes, dict) or set(probes) != BOUNDARY_PROBES:
+        raise ValueError("boundary probe report has missing or unexpected probe IDs")
+    for name, item in probes.items():
+        if not isinstance(item, dict):
+            raise ValueError(f"boundary probe report {name} must be object")
+        if type(item.get("passed")) is not bool:
+            raise ValueError(f"boundary probe report {name}.passed must be boolean")
+        if not _valid_sha(item.get("artifact_sha256")):
+            raise ValueError(f"boundary probe report {name}.artifact_sha256 must be SHA-256")
+        method = item.get("method")
+        if not isinstance(method, str) or not method.strip():
+            raise ValueError(f"boundary probe report {name}.method must be nonempty")
+
+    not_required = report.get("not_required_probes", [])
+    if not isinstance(not_required, list) or not all(isinstance(x, str) for x in not_required):
+        raise ValueError("not_required_probes must be a list of probe IDs")
+    if len(set(not_required)) != len(not_required) or not set(not_required) <= BOUNDARY_PROBES:
+        raise ValueError("not_required_probes contains duplicate or unknown IDs")
+    failed_expected = sorted(
+        name for name, item in probes.items()
+        if item["passed"] is not True and name not in set(not_required)
+    )
+    failed_observed = report.get("failed_probes")
+    if not isinstance(failed_observed, list) or failed_observed != failed_expected:
+        raise ValueError("failed_probes does not match normalized probe states")
+    expected_verdict = "passed" if not failed_expected else "failed"
+    if report.get("verdict") != expected_verdict:
+        raise ValueError("boundary probe report verdict differs from probe states")
+    return report
 
 
 def verify(*, artifact_path: Path, expected_run_id: str, probe_program: Path,
@@ -183,8 +240,9 @@ def verify(*, artifact_path: Path, expected_run_id: str, probe_program: Path,
     if not isinstance(network_obs, dict):
         raise ValueError("missing network observation")
     network_host_check: dict[str, Any] = {"required": require_network_denied}
-    network_ok = not require_network_denied
+    network_ok = False
     network_reference_sha: str | None = None
+    not_required: list[str] = []
     if require_network_denied:
         if network_reference is None:
             raise ValueError("network-denial verification requires a control-plane network reference")
@@ -203,18 +261,22 @@ def verify(*, artifact_path: Path, expected_run_id: str, probe_program: Path,
             and network_obs.get("connected") is False
             and isinstance(network_obs.get("error"), dict)
         )
+    else:
+        not_required.append("tool_network_denied")
     probes["tool_network_denied"] = _probe(
         "tool_network_denied", network_ok, source_sha, network_obs, network_host_check
     )
 
     if set(probes) != BOUNDARY_PROBES:
         raise AssertionError("internal boundary probe set mismatch")
-    failed = sorted(name for name, value in probes.items() if value["passed"] is not True)
-    return {
+    failed = sorted(name for name, value in probes.items()
+                    if value["passed"] is not True and name not in set(not_required))
+    report = {
         "schema_version": 1,
         "run_id": expected_run_id,
         "verdict": "passed" if not failed else "failed",
         "failed_probes": failed,
+        "not_required_probes": not_required,
         "source_artifact_sha256": source_sha,
         "probe_program_sha256": program_sha,
         "network_reference_sha256": network_reference_sha,
@@ -222,6 +284,7 @@ def verify(*, artifact_path: Path, expected_run_id: str, probe_program: Path,
         "probes": probes,
         "scope": "evaluator-side verification of synthetic boundary canaries; not cryptographic proof of runner honesty",
     }
+    return validate_report(report)
 
 
 def main() -> int:
