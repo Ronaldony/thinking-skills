@@ -3,10 +3,13 @@
 
 A valid result means the attestation is internally consistent with the evaluation
 contract. It does NOT prove the external runner or its probe artifacts are honest.
+When a verified boundary-probe report is supplied, its bytes and normalized probe
+records are bound to the attestation.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -27,6 +30,16 @@ REQUIRED_PROBES = {
     "forbidden_write_denied",
     "ambient_skill_preflight",
     "secret_env_scan",
+}
+BOUNDARY_REPORT_PROBES = {
+    "candidate_read",
+    "evaluator_read_denied",
+    "source_read_denied",
+    "real_home_read_denied",
+    "candidate_write",
+    "forbidden_write_denied",
+    "secret_env_scan",
+    "tool_network_denied",
 }
 
 
@@ -61,19 +74,47 @@ def _overlap(a: Path, b: Path) -> bool:
     return _contains(a, b) or _contains(b, a)
 
 
+def _sha256(value: Any, label: str) -> str:
+    if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
+        raise ValueError(f"{label} must be SHA-256")
+    return value
+
+
 def _require_probe(probes: dict[str, Any], name: str) -> None:
     probe = _object(probes.get(name), f"probe {name}")
     if probe.get("passed") is not True:
         raise ValueError(f"required probe did not pass: {name}")
-    sha = probe.get("artifact_sha256")
-    if not isinstance(sha, str) or re.fullmatch(r"[0-9a-f]{64}", sha) is None:
-        raise ValueError(f"probe {name} has invalid artifact_sha256")
+    _sha256(probe.get("artifact_sha256"), f"probe {name}.artifact_sha256")
     if not isinstance(probe.get("method"), str) or not probe["method"].strip():
         raise ValueError(f"probe {name} has no method")
 
 
+def _bind_probe_report(attestation: dict[str, Any], report: dict[str, Any],
+                       report_sha256: str, env_keys: list[str],
+                       probes: dict[str, Any]) -> None:
+    expected_sha = _object(attestation.get("digests"), "digests").get("probe_report_sha256")
+    if report_sha256 != expected_sha:
+        raise ValueError("boundary probe report bytes do not match attestation digest")
+    if report.get("schema_version") != 1 or report.get("run_id") != attestation.get("run_id"):
+        raise ValueError("boundary probe report schema/run_id mismatch")
+    if report.get("verdict") != "passed" or report.get("failed_probes") not in ([], None):
+        raise ValueError("boundary probe report is not fully passed")
+    report_probes = _object(report.get("probes"), "boundary probe report.probes")
+    if set(report_probes) != BOUNDARY_REPORT_PROBES:
+        raise ValueError("boundary probe report has missing or unexpected probe IDs")
+    for name in BOUNDARY_REPORT_PROBES:
+        report_probe = _object(report_probes.get(name), f"boundary probe report {name}")
+        if report_probe != probes.get(name):
+            raise ValueError(f"attestation probe differs from verified boundary report: {name}")
+    observed_env_keys = report.get("observed_env_keys")
+    if not isinstance(observed_env_keys, list) or sorted(observed_env_keys) != sorted(env_keys):
+        raise ValueError("attested candidate environment keys differ from boundary probe observation")
+
+
 def validate(attestation: dict[str, Any], *, allow_plugins: bool = False,
-             allowed_system_skills: set[str] | None = None) -> dict[str, Any]:
+             allowed_system_skills: set[str] | None = None,
+             probe_report: dict[str, Any] | None = None,
+             probe_report_sha256: str | None = None) -> dict[str, Any]:
     allowed_system_skills = allowed_system_skills or set()
     if attestation.get("schema_version") != 1:
         raise ValueError("unsupported schema_version")
@@ -87,8 +128,7 @@ def validate(attestation: dict[str, Any], *, allow_plugins: bool = False,
     for field in ("backend", "backend_version", "platform", "kernel"):
         if not isinstance(boundary.get(field), str) or not boundary[field].strip():
             raise ValueError(f"boundary.{field} must be nonempty")
-    if re.fullmatch(r"[0-9a-f]{64}", str(boundary.get("profile_sha256", ""))) is None:
-        raise ValueError("boundary.profile_sha256 must be SHA-256")
+    _sha256(boundary.get("profile_sha256"), "boundary.profile_sha256")
 
     paths = _object(attestation.get("paths"), "paths")
     p = {name: _absolute(paths.get(name), f"paths.{name}") for name in (
@@ -127,8 +167,6 @@ def validate(attestation: dict[str, Any], *, allow_plugins: bool = False,
         if not any(_contains(anchor, root) for anchor in candidate_anchors):
             raise ValueError(f"candidate writable root is outside candidate-owned anchors: {root}")
 
-    # Fail closed on either containment direction. A runtime root inside a protected
-    # directory leaks data just as surely as a broad runtime root containing it.
     for exposed_root in readable + writable + platform_roots:
         for target in protected:
             if _overlap(exposed_root, target):
@@ -187,15 +225,19 @@ def validate(attestation: dict[str, Any], *, allow_plugins: bool = False,
             raise ValueError(f"versions.{field} must be nonempty")
 
     digests = _object(attestation.get("digests"), "digests")
-    for field in ("eval_plan_sha256", "candidate_prompt_sha256"):
-        if re.fullmatch(r"[0-9a-f]{64}", str(digests.get(field, ""))) is None:
-            raise ValueError(f"digests.{field} must be SHA-256")
+    for field in ("eval_plan_sha256", "candidate_prompt_sha256", "probe_report_sha256"):
+        _sha256(digests.get(field), f"digests.{field}")
     runtime_sha = digests.get("runtime_sha256")
     if condition in SKILL_CONDITIONS:
-        if not isinstance(runtime_sha, str) or re.fullmatch(r"[0-9a-f]{64}", runtime_sha) is None:
-            raise ValueError("skill condition requires runtime_sha256")
+        _sha256(runtime_sha, "digests.runtime_sha256")
     elif runtime_sha is not None:
         raise ValueError("no-skill condition must use runtime_sha256=null")
+
+    if (probe_report is None) != (probe_report_sha256 is None):
+        raise ValueError("probe_report and probe_report_sha256 must be supplied together")
+    if probe_report is not None:
+        _sha256(probe_report_sha256, "probe_report_sha256")
+        _bind_probe_report(attestation, probe_report, probe_report_sha256, env_keys, probes)
 
     limitations = attestation.get("limitations")
     if not isinstance(limitations, list) or not all(isinstance(x, str) for x in limitations):
@@ -208,6 +250,7 @@ def validate(attestation: dict[str, Any], *, allow_plugins: bool = False,
         "condition_id": condition,
         "backend": boundary["backend"],
         "profile_sha256": boundary["profile_sha256"],
+        "probe_report_bound": probe_report is not None,
         "scope": "structural consistency of runner attestation; not cryptographic proof of sandbox honesty",
     }
 
@@ -215,6 +258,7 @@ def validate(attestation: dict[str, Any], *, allow_plugins: bool = False,
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--attestation", type=Path, required=True)
+    parser.add_argument("--probe-report", type=Path)
     parser.add_argument("--allow-plugins", action="store_true")
     parser.add_argument("--allowed-system-skill", action="append", default=[])
     args = parser.parse_args()
@@ -224,8 +268,22 @@ def main() -> int:
         value = json.loads(args.attestation.read_text(encoding="utf-8"))
         if not isinstance(value, dict):
             raise ValueError("attestation root must be an object")
-        result = validate(value, allow_plugins=args.allow_plugins,
-                          allowed_system_skills=set(args.allowed_system_skill))
+        probe_report = None
+        probe_report_sha = None
+        if args.probe_report is not None:
+            if args.probe_report.is_symlink() or not args.probe_report.is_file():
+                raise ValueError("probe report must be a regular file")
+            probe_report = json.loads(args.probe_report.read_text(encoding="utf-8"))
+            if not isinstance(probe_report, dict):
+                raise ValueError("probe report root must be an object")
+            probe_report_sha = hashlib.sha256(args.probe_report.read_bytes()).hexdigest()
+        result = validate(
+            value,
+            allow_plugins=args.allow_plugins,
+            allowed_system_skills=set(args.allowed_system_skill),
+            probe_report=probe_report,
+            probe_report_sha256=probe_report_sha,
+        )
     except (ValueError, OSError, json.JSONDecodeError) as exc:
         parser.exit(2, f"error: {exc}\n")
     print(json.dumps(result, ensure_ascii=False, indent=2))
