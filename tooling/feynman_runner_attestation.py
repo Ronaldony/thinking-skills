@@ -15,6 +15,11 @@ from pathlib import Path
 import re
 from typing import Any
 
+try:
+    from .feynman_boundary_probe_verify import validate_report as validate_boundary_report
+except ImportError:
+    from feynman_boundary_probe_verify import validate_report as validate_boundary_report
+
 SECRET_KEY_PATTERN = re.compile(
     r"(?:TOKEN|SECRET|PASSWORD|CREDENTIAL|COOKIE|AUTH|API[_-]?KEY|ACCESS[_-]?KEY|PRIVATE[_-]?KEY)",
     re.IGNORECASE,
@@ -92,13 +97,14 @@ def _require_probe(probes: dict[str, Any], name: str) -> None:
 def _bind_probe_report(attestation: dict[str, Any], report: dict[str, Any],
                        report_sha256: str, env_keys: list[str],
                        probes: dict[str, Any]) -> None:
+    validate_boundary_report(report)
     expected_sha = _object(attestation.get("digests"), "digests").get("probe_report_sha256")
     if report_sha256 != expected_sha:
         raise ValueError("boundary probe report bytes do not match attestation digest")
-    if report.get("schema_version") != 1 or report.get("run_id") != attestation.get("run_id"):
-        raise ValueError("boundary probe report schema/run_id mismatch")
-    if report.get("verdict") != "passed" or report.get("failed_probes") not in ([], None):
-        raise ValueError("boundary probe report is not fully passed")
+    if report.get("run_id") != attestation.get("run_id"):
+        raise ValueError("boundary probe report run_id mismatch")
+    if report.get("verdict") != "passed":
+        raise ValueError("boundary probe report is not fully passed for required probes")
     report_probes = _object(report.get("probes"), "boundary probe report.probes")
     if set(report_probes) != BOUNDARY_REPORT_PROBES:
         raise ValueError("boundary probe report has missing or unexpected probe IDs")
@@ -109,6 +115,17 @@ def _bind_probe_report(attestation: dict[str, Any], report: dict[str, Any],
     observed_env_keys = report.get("observed_env_keys")
     if not isinstance(observed_env_keys, list) or sorted(observed_env_keys) != sorted(env_keys):
         raise ValueError("attested candidate environment keys differ from boundary probe observation")
+
+    requires_network = _object(attestation.get("network"), "network").get("case_requires_tool_network")
+    not_required = set(report.get("not_required_probes", []))
+    if requires_network:
+        if "tool_network_denied" not in not_required:
+            raise ValueError("network-required case must mark tool_network_denied as not-required")
+    else:
+        if not_required:
+            raise ValueError("closed-network case may not mark required boundary probes as not-required")
+        if report.get("network_reference_sha256") is None:
+            raise ValueError("closed-network boundary report requires a control-plane network reference")
 
 
 def validate(attestation: dict[str, Any], *, allow_plugins: bool = False,
