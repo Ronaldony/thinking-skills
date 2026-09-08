@@ -27,11 +27,12 @@ class RemoteExecReferenceResultTests(unittest.TestCase):
         self.temp_dir = self.base / "temp"
         self.source = self.base / "source"
         self.real_home = self.base / "real-home"
+        self.control_codex_home = self.real_home / ".codex"
         for path in (
             self.candidate, self.evaluator, self.home, self.codex_home,
-            self.temp_dir, self.source, self.real_home,
+            self.temp_dir, self.source, self.real_home, self.control_codex_home,
         ):
-            path.mkdir(parents=True)
+            path.mkdir(parents=True, exist_ok=True)
 
         self.profile_path = self.base / "profile.json"
         self.profile = {
@@ -62,7 +63,7 @@ class RemoteExecReferenceResultTests(unittest.TestCase):
 
         self.job_path = self.base / "runner-job.json"
         self.job = {
-            "schema_version": 2,
+            "schema_version": 3,
             "run_id": "synthetic-reference",
             "job": {
                 "ordinal": 1,
@@ -80,6 +81,7 @@ class RemoteExecReferenceResultTests(unittest.TestCase):
                 "codex_home": str(self.codex_home.resolve()),
                 "temp_dir": str(self.temp_dir.resolve()),
                 "real_home": str(self.real_home.resolve()),
+                "control_codex_home": str(self.control_codex_home.resolve()),
             },
             "boundary": {
                 "profile_sha256": self.profile_sha,
@@ -95,12 +97,13 @@ class RemoteExecReferenceResultTests(unittest.TestCase):
                 "control_plane_separate_from_tool_network": True,
             },
             "authentication": {
-                "mode": "control-plane-only",
-                "control_plane_credential_source": "environment",
-                "control_plane_credential_env_key": "OPENAI_API_KEY",
+                "mode": "chatgpt-subscription",
+                "control_plane_auth_source": "codex-session",
+                "api_key_auth_allowed": False,
+                "candidate_auth_exposed": False,
                 "candidate_tool_auth_env_keys": [],
-                "candidate_readable_credential_files": [],
-                "credential_command_arguments": [],
+                "candidate_readable_auth_paths": [],
+                "auth_command_arguments": [],
             },
             "skills": {"expected_candidate_skills": [], "runtime_sha256": None},
             "digests": {
@@ -109,7 +112,7 @@ class RemoteExecReferenceResultTests(unittest.TestCase):
                 "boundary_profile_sha256": self.profile_sha,
                 "runtime_sha256": None,
             },
-            "scope": "synthetic runner job",
+            "scope": "synthetic subscription runner job",
         }
         self.job_path.write_text(json.dumps(self.job, indent=2) + "\n", encoding="utf-8")
 
@@ -134,24 +137,18 @@ class RemoteExecReferenceResultTests(unittest.TestCase):
             "scenario": "exec-only",
             "requests": [
                 {
-                    "index": 1,
-                    "body_sha256": "3" * 64,
-                    "has_patch_output": False,
-                    "patch_output_sha256": None,
-                    "has_exec_output": False,
-                    "exec_output_sha256": None,
+                    "index": 1, "body_sha256": "3" * 64,
+                    "has_patch_output": False, "patch_output_sha256": None,
+                    "has_exec_output": False, "exec_output_sha256": None,
                     "exec_output_contains_patch_marker": False,
                     "exec_output_contains_workspace_marker": False,
                     "exec_output_contains_network_marker": False,
                     "exec_output_contains_auth_env_marker": False,
                 },
                 {
-                    "index": 2,
-                    "body_sha256": "4" * 64,
-                    "has_patch_output": False,
-                    "patch_output_sha256": None,
-                    "has_exec_output": True,
-                    "exec_output_sha256": "7" * 64,
+                    "index": 2, "body_sha256": "4" * 64,
+                    "has_patch_output": False, "patch_output_sha256": None,
+                    "has_exec_output": True, "exec_output_sha256": "7" * 64,
                     "exec_output_contains_patch_marker": False,
                     "exec_output_contains_workspace_marker": True,
                     "exec_output_contains_network_marker": True,
@@ -196,14 +193,9 @@ class RemoteExecReferenceResultTests(unittest.TestCase):
                 "Cmd": ["env", "-i", *env_tokens, "codex", "exec-server", "--listen", "stdio"],
             },
             "HostConfig": {
-                "NetworkMode": "none",
-                "ReadonlyRootfs": True,
-                "Privileged": False,
-                "CapDrop": ["ALL"],
-                "SecurityOpt": ["no-new-privileges"],
-                "Tmpfs": {"/tmp": "rw,nosuid,nodev"},
-                "Devices": [],
-                "DeviceRequests": [],
+                "NetworkMode": "none", "ReadonlyRootfs": True, "Privileged": False,
+                "CapDrop": ["ALL"], "SecurityOpt": ["no-new-privileges"],
+                "Tmpfs": {"/tmp": "rw,nosuid,nodev"}, "Devices": [], "DeviceRequests": [],
             },
             "Mounts": mounts,
         }]) + "\n", encoding="utf-8")
@@ -229,20 +221,14 @@ class RemoteExecReferenceResultTests(unittest.TestCase):
         events = [
             {"type": "thread.started", "thread_id": "thread-reference"},
             {"type": "item.completed", "item": {
-                "id": "cmd-1",
-                "type": "command_execution",
-                "command": command,
-                "aggregated_output": "\n".join(markers) + "\n",
-                "exit_code": 0,
-                "status": "completed",
+                "id": "cmd-1", "type": "command_execution", "command": command,
+                "aggregated_output": "\n".join(markers) + "\n", "exit_code": 0, "status": "completed",
             }},
             {"type": "item.completed", "item": {
                 "id": "msg-1", "type": "agent_message", "text": "REMOTE_EXEC_REFERENCE_OK"
             }},
         ]
-        self.trace_path.write_text(
-            "\n".join(json.dumps(event) for event in events) + "\n", encoding="utf-8"
-        )
+        self.trace_path.write_text("\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8")
 
     def _assemble(self, *, patch: bool = False):
         return assemble(
@@ -265,33 +251,18 @@ class RemoteExecReferenceResultTests(unittest.TestCase):
             "schema_version": 3,
             "scenario": "patch-then-exec",
             "requests": [
-                {
-                    "index": 1, "body_sha256": "3" * 64,
-                    "has_patch_output": False, "patch_output_sha256": None,
-                    "has_exec_output": False, "exec_output_sha256": None,
-                    "exec_output_contains_patch_marker": False,
-                    "exec_output_contains_workspace_marker": False,
-                    "exec_output_contains_network_marker": False,
-                    "exec_output_contains_auth_env_marker": False,
-                },
-                {
-                    "index": 2, "body_sha256": "4" * 64,
-                    "has_patch_output": True, "patch_output_sha256": "5" * 64,
-                    "has_exec_output": False, "exec_output_sha256": None,
-                    "exec_output_contains_patch_marker": False,
-                    "exec_output_contains_workspace_marker": False,
-                    "exec_output_contains_network_marker": False,
-                    "exec_output_contains_auth_env_marker": False,
-                },
-                {
-                    "index": 3, "body_sha256": "6" * 64,
-                    "has_patch_output": True, "patch_output_sha256": "5" * 64,
-                    "has_exec_output": True, "exec_output_sha256": "7" * 64,
-                    "exec_output_contains_patch_marker": True,
-                    "exec_output_contains_workspace_marker": True,
-                    "exec_output_contains_network_marker": True,
-                    "exec_output_contains_auth_env_marker": True,
-                },
+                {"index": 1, "body_sha256": "3" * 64, "has_patch_output": False, "patch_output_sha256": None,
+                 "has_exec_output": False, "exec_output_sha256": None, "exec_output_contains_patch_marker": False,
+                 "exec_output_contains_workspace_marker": False, "exec_output_contains_network_marker": False,
+                 "exec_output_contains_auth_env_marker": False},
+                {"index": 2, "body_sha256": "4" * 64, "has_patch_output": True, "patch_output_sha256": "5" * 64,
+                 "has_exec_output": False, "exec_output_sha256": None, "exec_output_contains_patch_marker": False,
+                 "exec_output_contains_workspace_marker": False, "exec_output_contains_network_marker": False,
+                 "exec_output_contains_auth_env_marker": False},
+                {"index": 3, "body_sha256": "6" * 64, "has_patch_output": True, "patch_output_sha256": "5" * 64,
+                 "has_exec_output": True, "exec_output_sha256": "7" * 64, "exec_output_contains_patch_marker": True,
+                 "exec_output_contains_workspace_marker": True, "exec_output_contains_network_marker": True,
+                 "exec_output_contains_auth_env_marker": True},
             ],
             "validation_error": None,
             "final_text": "REMOTE_EXEC_REFERENCE_OK",
@@ -330,35 +301,30 @@ class RemoteExecReferenceResultTests(unittest.TestCase):
 
     def test_exec_only_rejects_supplied_patch_proof(self):
         self.patch_proof_path.write_text("REMOTE_PATCH_OK\n", encoding="utf-8")
-        with self.assertRaises(ValueError):
-            self._assemble(patch=True)
+        with self.assertRaises(ValueError): self._assemble(patch=True)
 
     def test_tampered_exec_round_trip_is_rejected(self):
         self.mock_state["requests"][1]["exec_output_contains_network_marker"] = False
         self._write_mock_state()
-        with self.assertRaises(ValueError):
-            self._assemble()
+        with self.assertRaises(ValueError): self._assemble()
 
     def test_trace_not_bound_to_network_reference_is_rejected(self):
-        text = self.trace_path.read_text(encoding="utf-8").replace(self.host, "127.0.0.9")
-        self.trace_path.write_text(text, encoding="utf-8")
-        with self.assertRaises(ValueError):
-            self._assemble()
+        self.trace_path.write_text(
+            self.trace_path.read_text(encoding="utf-8").replace(self.host, "127.0.0.9"), encoding="utf-8"
+        )
+        with self.assertRaises(ValueError): self._assemble()
 
     def test_control_tool_codex_version_mismatch_is_rejected(self):
         self.tool_version.write_text("codex-cli other\n", encoding="utf-8")
-        with self.assertRaises(ValueError):
-            self._assemble()
+        with self.assertRaises(ValueError): self._assemble()
 
     def test_patch_scenario_requires_patch_proof(self):
         self._switch_to_patch_scenario()
-        with self.assertRaises(ValueError):
-            self._assemble(patch=False)
+        with self.assertRaises(ValueError): self._assemble(patch=False)
 
     def test_candidate_proof_tampering_is_rejected(self):
         self.proof_path.write_text("LOCAL_FAKE\n", encoding="utf-8")
-        with self.assertRaises(ValueError):
-            self._assemble()
+        with self.assertRaises(ValueError): self._assemble()
 
 
 if __name__ == "__main__":

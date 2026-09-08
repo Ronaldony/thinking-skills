@@ -18,6 +18,13 @@ class RunnerJobLinkTests(unittest.TestCase):
           "tmpfs_mounts":["/tmp"],"protected_roots_mounted":[],"candidate_env_keys":["HOME","CODEX_HOME","PATH","TMPDIR"],"scope":"test"}
         self.pp=b/"profile.json";self.pp.write_text(json.dumps(self.profile,sort_keys=True),encoding="utf-8");ps=sha(self.pp)
         self.att=attestation();self.att["paths"]=deepcopy(paths);self.att["boundary"].update({"backend":"docker","backend_version":"1","profile_sha256":ps})
+        self.att["filesystem"]={
+          "candidate_readable_data_roots":[paths[x] for x in ("candidate_dir","ephemeral_home","codex_home","temp_dir")],
+          "candidate_writable_roots":[paths[x] for x in ("candidate_dir","ephemeral_home","codex_home","temp_dir")],
+          "platform_runtime_roots":["/usr","/lib"],
+          "forbidden_read_roots":[paths["evaluator_dir"],paths["source_repo"],paths["real_home"]],
+          "forbidden_write_roots":[paths["evaluator_dir"],paths["source_repo"],paths["real_home"]],
+        }
         self.report=boundary_report(self.att);self.rp=b/"report.json";self.rp.write_text(json.dumps(self.report),encoding="utf-8")
         self.att["digests"]["probe_report_sha256"]=sha(self.rp);self.ap=b/"att.json";self.ap.write_text(json.dumps(self.att),encoding="utf-8")
         self.job={"schema_version":3,"run_id":self.att["run_id"],"job":{"ordinal":1,"case_id":self.att["case_id"],"condition_id":"baseline","repeat":1,"has_followup":False},
