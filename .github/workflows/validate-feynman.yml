@@ -51,6 +51,14 @@ jobs:
           test -f /tmp/feynman-evaluator/case.json
           test -f /tmp/feynman-evaluator/review-schema.json
           ! grep -R -q 'required_findings' /tmp/feynman-candidate
+      - name: Reject unexpected skill roots before evaluation
+        run: |
+          mkdir -p /tmp/feynman-home /tmp/feynman-codex-home
+          python tooling/feynman_eval_preflight.py \
+            --candidate-dir /tmp/feynman-candidate \
+            --expected-skill feynman-thinking \
+            --home /tmp/feynman-home \
+            --codex-home /tmp/feynman-codex-home
       - name: Exercise reasoning-free evidence extraction
         run: |
           cat > /tmp/feynman-trace.jsonl <<'EOF'
