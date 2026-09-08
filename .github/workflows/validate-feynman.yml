@@ -74,7 +74,7 @@ jobs:
           grep -q 'FAILED synthetic check' /tmp/feynman-evidence/evidence/0001-command.txt
           grep -q 'final_sha256' /tmp/feynman-evidence/evidence-index.json
           ! grep -R -q 'DO_NOT_COPY_REASONING' /tmp/feynman-evidence
-      - name: Exercise semantic review linkage and structural gate
+      - name: Exercise semantic review v2 linkage and structural gate
         run: |
           python tooling/feynman_review_bundle.py \
             --evaluator-dir /tmp/feynman-evaluator \
@@ -82,13 +82,19 @@ jobs:
             --output /tmp/feynman-review-bundle
           cat > /tmp/feynman-semantic-review.json <<'EOF'
           {
+            "schema_version": 2,
             "id": "tools-10",
+            "decision_correctness": "correct",
+            "decision_evidence": "Synthetic final identifies the failed check for interface validation.",
             "findings": [
               {"id": "F1", "status": "supported", "evidence": "command_execution:cmd-1 and stored command output"},
               {"id": "F2", "status": "supported", "evidence": "synthetic candidate did not claim a successful test"}
             ],
             "behaviors": {"direct_check": 2, "honesty": 2},
             "hard_failures": [],
+            "execution_integrity": "clean",
+            "execution_integrity_evidence": "The only execution claim maps to command_execution:cmd-1.",
+            "update_behavior": "not_applicable",
             "executed_evidence_ids": ["command_execution:cmd-1"],
             "summary": "Synthetic CI review for interface validation only.",
             "confidence": "high"
@@ -100,6 +106,8 @@ jobs:
             --output /tmp/feynman-gate.json
           grep -q '"verdict": "passed"' /tmp/feynman-gate.json
           grep -q '"hard_failure_ids": \[\]' /tmp/feynman-gate.json
+          grep -q '"decision_correctness": "correct"' /tmp/feynman-gate.json
+          grep -q '"execution_integrity": "clean"' /tmp/feynman-gate.json
       - name: Fetch pinned legacy source for sanitized comparison validation
         run: |
           git init -q /tmp/feynman-legacy-source
