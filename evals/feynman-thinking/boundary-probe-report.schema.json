@@ -5,27 +5,14 @@
   "properties": {
     "schema_version": {"const": 1},
     "run_id": {"type": "string", "minLength": 1},
+    "boundary_profile_sha256": {"$ref": "#/$defs/sha256"},
     "verdict": {"type": "string", "enum": ["passed", "failed"]},
-    "failed_probes": {
-      "type": "array",
-      "items": {"$ref": "#/$defs/probeId"},
-      "uniqueItems": true
-    },
-    "not_required_probes": {
-      "type": "array",
-      "items": {"$ref": "#/$defs/probeId"},
-      "uniqueItems": true
-    },
+    "failed_probes": {"type": "array", "items": {"$ref": "#/$defs/probeId"}, "uniqueItems": true},
+    "not_required_probes": {"type": "array", "items": {"$ref": "#/$defs/probeId"}, "uniqueItems": true},
     "source_artifact_sha256": {"$ref": "#/$defs/sha256"},
     "probe_program_sha256": {"$ref": "#/$defs/sha256"},
-    "network_reference_sha256": {
-      "anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]
-    },
-    "observed_env_keys": {
-      "type": "array",
-      "items": {"type": "string", "minLength": 1},
-      "uniqueItems": true
-    },
+    "network_reference_sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+    "observed_env_keys": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
     "probes": {
       "type": "object",
       "properties": {
@@ -55,6 +42,7 @@
   "required": [
     "schema_version",
     "run_id",
+    "boundary_profile_sha256",
     "verdict",
     "failed_probes",
     "not_required_probes",
