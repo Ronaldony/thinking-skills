@@ -3,7 +3,7 @@
   "title": "Feynman external model-runner job",
   "type": "object",
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
     "run_id": {"type": "string", "minLength": 1},
     "job": {
       "type": "object",
@@ -47,7 +47,7 @@
         "backend": {"type": "string", "minLength": 1},
         "backend_version": {"type": "string", "minLength": 1},
         "network_mode": {"enum": ["none", "restricted", "open"]},
-        "candidate_env_keys": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+        "candidate_env_keys": {"type": "array", "items": {"$ref": "#/$defs/env_key"}, "uniqueItems": true}
       },
       "required": ["profile_sha256", "backend", "backend_version", "network_mode", "candidate_env_keys"],
       "additionalProperties": false
@@ -58,7 +58,7 @@
         "case_requires_tool_network": {"type": "boolean"},
         "tool_network": {"enum": ["blocked", "restricted", "open"]},
         "allowed_tool_destinations": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
-        "control_plane_separate_from_tool_network": {"type": "boolean"}
+        "control_plane_separate_from_tool_network": {"const": true}
       },
       "required": ["case_requires_tool_network", "tool_network", "allowed_tool_destinations", "control_plane_separate_from_tool_network"],
       "additionalProperties": false
@@ -66,12 +66,21 @@
     "authentication": {
       "type": "object",
       "properties": {
-        "mode": {"const": "external-broker"},
+        "mode": {"const": "control-plane-only"},
+        "control_plane_credential_source": {"const": "environment"},
+        "control_plane_credential_env_key": {"$ref": "#/$defs/env_key"},
         "candidate_tool_auth_env_keys": {"type": "array", "maxItems": 0},
         "candidate_readable_credential_files": {"type": "array", "maxItems": 0},
         "credential_command_arguments": {"type": "array", "maxItems": 0}
       },
-      "required": ["mode", "candidate_tool_auth_env_keys", "candidate_readable_credential_files", "credential_command_arguments"],
+      "required": [
+        "mode",
+        "control_plane_credential_source",
+        "control_plane_credential_env_key",
+        "candidate_tool_auth_env_keys",
+        "candidate_readable_credential_files",
+        "credential_command_arguments"
+      ],
       "additionalProperties": false
     },
     "skills": {
@@ -99,6 +108,7 @@
   "required": ["schema_version", "run_id", "job", "versions", "paths", "boundary", "network", "authentication", "skills", "digests", "scope"],
   "additionalProperties": false,
   "$defs": {
-    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "env_key": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}
   }
 }
