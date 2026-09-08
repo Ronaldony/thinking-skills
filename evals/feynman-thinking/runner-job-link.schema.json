@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Feynman runner-job to attestation linkage",
+  "type": "object",
+  "properties": {
+    "schema_version": {"const": 1},
+    "verdict": {"const": "runner-job-attestation-bound"},
+    "run_id": {"type": "string", "minLength": 1},
+    "case_id": {"type": "string", "minLength": 1},
+    "condition_id": {"enum": ["baseline", "generic", "legacy-clean", "feynman-v05"]},
+    "runner_job_sha256": {"$ref": "#/$defs/sha256"},
+    "boundary_profile_sha256": {"$ref": "#/$defs/sha256"},
+    "probe_report_sha256": {"$ref": "#/$defs/sha256"},
+    "runner_attestation_sha256": {"$ref": "#/$defs/sha256"},
+    "eval_plan_sha256": {"$ref": "#/$defs/sha256"},
+    "candidate_prompt_sha256": {"$ref": "#/$defs/sha256"},
+    "runtime_sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+    "model": {"type": "string", "minLength": 1},
+    "codex_cli": {"type": "string", "minLength": 1},
+    "scope": {"type": "string", "minLength": 1}
+  },
+  "required": [
+    "schema_version",
+    "verdict",
+    "run_id",
+    "case_id",
+    "condition_id",
+    "runner_job_sha256",
+    "boundary_profile_sha256",
+    "probe_report_sha256",
+    "runner_attestation_sha256",
+    "eval_plan_sha256",
+    "candidate_prompt_sha256",
+    "runtime_sha256",
+    "model",
+    "codex_cli",
+    "scope"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}
