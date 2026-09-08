@@ -16,6 +16,8 @@ sys.path.insert(0, str(ROOT))
 from tooling.feynman_boundary_probe import run_probe
 from tooling.feynman_boundary_probe_verify import BOUNDARY_PROBES, verify
 
+PROFILE_SHA = "7" * 64
+
 
 def sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -54,11 +56,14 @@ class BoundaryProbeTests(unittest.TestCase):
         self.candidate_write.parent.mkdir(parents=True, exist_ok=True)
         self.candidate_write.write_text(self.markers["candidate_write"], encoding="utf-8")
         self.network_reference = self.base / "network-reference.json"
+        endpoint = "tcp://127.0.0.1:43123"
         self.network_reference.write_text(json.dumps({
             "schema_version": 1,
             "host": "127.0.0.1",
             "port": 43123,
             "reachable_from_control_plane": True,
+            "probe_method": "tcp-connect:v1",
+            "endpoint_identity_sha256": hashlib.sha256(endpoint.encode()).hexdigest(),
         }), encoding="utf-8")
 
     def tearDown(self):
@@ -82,6 +87,7 @@ class BoundaryProbeTests(unittest.TestCase):
         return {
             "schema_version": 1,
             "run_id": "run-boundary",
+            "boundary_profile_sha256": PROFILE_SHA,
             "probe_program_sha256": program_sha,
             "observations": {
                 "candidate_read": {
@@ -124,10 +130,11 @@ class BoundaryProbeTests(unittest.TestCase):
         path.write_text(json.dumps(value), encoding="utf-8")
         return path
 
-    def _verify(self, artifact: Path):
+    def _verify(self, artifact: Path, *, profile_sha: str = PROFILE_SHA):
         return verify(
             artifact_path=artifact,
             expected_run_id="run-boundary",
+            expected_boundary_profile_sha256=profile_sha,
             probe_program=self.probe_program,
             candidate_read=self.candidate_read,
             candidate_read_marker=self.markers["candidate"],
@@ -147,8 +154,13 @@ class BoundaryProbeTests(unittest.TestCase):
     def test_synthetic_denials_and_postchecks_produce_passed_report(self):
         report = self._verify(self._write_artifact(self._artifact()))
         self.assertEqual(report["verdict"], "passed")
+        self.assertEqual(report["boundary_profile_sha256"], PROFILE_SHA)
         self.assertEqual(set(report["probes"]), BOUNDARY_PROBES)
         self.assertTrue(all(item["passed"] for item in report["probes"].values()))
+
+    def test_profile_digest_mismatch_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self._verify(self._write_artifact(self._artifact()), profile_sha="8" * 64)
 
     def test_mount_namespace_hidden_paths_can_pass_when_host_fixtures_exist(self):
         artifact = self._artifact()
@@ -189,6 +201,7 @@ class BoundaryProbeTests(unittest.TestCase):
             verify(
                 artifact_path=path,
                 expected_run_id="run-boundary",
+                expected_boundary_profile_sha256=PROFILE_SHA,
                 probe_program=self.probe_program,
                 candidate_read=self.candidate_read,
                 candidate_read_marker=self.markers["candidate"],
@@ -216,12 +229,20 @@ class BoundaryProbeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self._verify(self._write_artifact(artifact))
 
+    def test_network_reference_identity_mismatch_is_rejected(self):
+        reference = json.loads(self.network_reference.read_text())
+        reference["endpoint_identity_sha256"] = "b" * 64
+        self.network_reference.write_text(json.dumps(reference))
+        with self.assertRaises(ValueError):
+            self._verify(self._write_artifact(self._artifact()))
+
     def test_network_denial_requires_control_plane_reference(self):
         artifact = self._write_artifact(self._artifact())
         with self.assertRaises(ValueError):
             verify(
                 artifact_path=artifact,
                 expected_run_id="run-boundary",
+                expected_boundary_profile_sha256=PROFILE_SHA,
                 probe_program=self.probe_program,
                 candidate_read=self.candidate_read,
                 candidate_read_marker=self.markers["candidate"],
@@ -243,6 +264,7 @@ class BoundaryProbeTests(unittest.TestCase):
         with patch.dict(os.environ, {"HOME": str(self.base / "home"), "PATH": "/usr/bin", "TMPDIR": str(self.base)}, clear=True):
             artifact = run_probe(
                 run_id="namespace-run",
+                boundary_profile_sha256=PROFILE_SHA,
                 candidate_read=self.candidate_read,
                 candidate_read_marker=self.markers["candidate"],
                 evaluator_read=missing_root / "evaluator/read.txt",
@@ -263,6 +285,7 @@ class BoundaryProbeTests(unittest.TestCase):
         with patch.dict(os.environ, {"HOME": str(self.base / "home"), "PATH": "/usr/bin", "TMPDIR": str(self.base)}, clear=True):
             artifact = run_probe(
                 run_id="live-run",
+                boundary_profile_sha256=PROFILE_SHA,
                 candidate_read=self.candidate_read,
                 candidate_read_marker=self.markers["candidate"],
                 evaluator_read=self.evaluator_read,
