@@ -5,6 +5,7 @@ on:
     paths:
       - 'tooling/feynman_mock_responses_server.py'
       - 'tooling/feynman_remote_exec_environment.py'
+      - 'tooling/feynman_remote_exec_reference_result.py'
       - 'tooling/feynman_runner_job*.py'
       - 'tooling/feynman_boundary_profile.py'
       - 'tooling/feynman_docker_*.py'
@@ -12,6 +13,7 @@ on:
       - 'evals/feynman-thinking/**'
       - 'tests/test_feynman_mock_responses_server.py'
       - 'tests/test_feynman_remote_exec_environment.py'
+      - 'tests/test_feynman_remote_exec_reference_result.py'
       - 'tests/test_feynman_runner_job*.py'
       - 'tests/test_feynman_boundary_profile.py'
       - '.github/workflows/validate-feynman-remote-exec-reference.yml'
@@ -19,6 +21,7 @@ on:
     paths:
       - 'tooling/feynman_mock_responses_server.py'
       - 'tooling/feynman_remote_exec_environment.py'
+      - 'tooling/feynman_remote_exec_reference_result.py'
       - 'tooling/feynman_runner_job*.py'
       - 'tooling/feynman_boundary_profile.py'
       - 'tooling/feynman_docker_*.py'
@@ -26,6 +29,7 @@ on:
       - 'evals/feynman-thinking/**'
       - 'tests/test_feynman_mock_responses_server.py'
       - 'tests/test_feynman_remote_exec_environment.py'
+      - 'tests/test_feynman_remote_exec_reference_result.py'
       - 'tests/test_feynman_runner_job*.py'
       - 'tests/test_feynman_boundary_profile.py'
       - '.github/workflows/validate-feynman-remote-exec-reference.yml'
@@ -50,6 +54,7 @@ jobs:
           python -m unittest \
             tests.test_feynman_mock_responses_server \
             tests.test_feynman_remote_exec_environment \
+            tests.test_feynman_remote_exec_reference_result \
             tests.test_feynman_runner_job_validate \
             tests.test_feynman_boundary_profile -v
 
@@ -270,7 +275,6 @@ jobs:
           inherit = "none"
           set = {{ HOME = {q(home)}, CODEX_HOME = {q(codex_home)}, PATH = "/usr/local/bin:/usr/bin:/bin", TMPDIR = {q(temp_dir)}, PYTHONDONTWRITEBYTECODE = "1" }}
           '''
-          # Remove indentation introduced solely for readable YAML heredoc.
           lines = [line.strip() if line.startswith('          ') else line for line in text.splitlines()]
           with open(output, 'w', encoding='utf-8') as handle:
               handle.write('\n'.join(lines).strip() + '\n')
@@ -296,19 +300,6 @@ jobs:
           grep -q 'REMOTE_EXEC_REFERENCE_OK' "$ROOT/codex-trace.jsonl"
           grep -q 'command_execution' "$ROOT/codex-trace.jsonl"
 
-          python - "$ROOT/mock-state.json" <<'PY'
-          import json
-          import sys
-          state = json.load(open(sys.argv[1], encoding='utf-8'))
-          assert state['validation_error'] is None, state
-          assert len(state['requests']) >= 2, state
-          accepted = state['requests'][-1]
-          assert accepted['has_matching_tool_output'] is True, accepted
-          assert accepted['tool_output_contains_workspace_marker'] is True, accepted
-          assert accepted['tool_output_contains_network_marker'] is True, accepted
-          assert accepted['tool_output_contains_auth_env_marker'] is True, accepted
-          PY
-
           docker inspect "$CONTAINER_NAME" > "$ROOT/tool-container-inspect.json"
           test "$(docker inspect "$CONTAINER_NAME" --format '{{.State.ExitCode}}')" = "0"
           python tooling/feynman_docker_reference_inspect.py \
@@ -316,30 +307,20 @@ jobs:
             --inspect "$ROOT/tool-container-inspect.json" \
             > "$ROOT/tool-container-inspect-check.json"
 
-          python - "$ROOT" <<'PY'
-          import hashlib
-          import json
-          import sys
-          from pathlib import Path
-          root = Path(sys.argv[1])
-          profile_raw = (root / 'boundary-profile.json').read_bytes()
-          job_raw = (root / 'runner-job.json').read_bytes()
-          trace_raw = (root / 'codex-trace.jsonl').read_bytes()
-          state = json.loads((root / 'mock-state.json').read_text())
-          inspect_check = json.loads((root / 'tool-container-inspect-check.json').read_text())
-          result = {
-              'schema_version': 1,
-              'verdict': 'mock-remote-exec-reference-passed',
-              'boundary_profile_sha256': hashlib.sha256(profile_raw).hexdigest(),
-              'runner_job_sha256': hashlib.sha256(job_raw).hexdigest(),
-              'codex_trace_sha256': hashlib.sha256(trace_raw).hexdigest(),
-              'model_requests': len(state['requests']),
-              'docker_inspect_verdict': inspect_check['verdict'],
-              'scope': 'credential-free mock model control plane -> Codex frontend -> network-none stdio exec-server -> tool output -> mock final; not an external model-service authentication result',
-          }
-          (root / 'reference-result.json').write_text(json.dumps(result, indent=2) + '\n')
-          print(json.dumps(result, indent=2))
-          PY
+          python tooling/feynman_remote_exec_reference_result.py \
+            --boundary-profile "$ROOT/boundary-profile.json" \
+            --runner-job "$ROOT/runner-job.json" \
+            --remote-environment "$CONTROL_CODEX_HOME/environments.toml" \
+            --network-reference "$ROOT/control-plane-network-reference.json" \
+            --mock-state "$ROOT/mock-state.json" \
+            --codex-trace "$ROOT/codex-trace.jsonl" \
+            --docker-inspect "$ROOT/tool-container-inspect.json" \
+            --candidate-proof "$CANDIDATE/remote-tool-proof.txt" \
+            --mock-server-program tooling/feynman_mock_responses_server.py \
+            --control-codex-version "$ROOT/control-codex-version.txt" \
+            --tool-codex-version "$ROOT/tool-codex-version.txt" \
+            --output "$ROOT/reference-result.json" \
+            > "$ROOT/reference-result.stdout.json"
 
       - name: Upload remote-exec reference evidence
         if: always()
@@ -367,5 +348,6 @@ jobs:
             /tmp/feynman-remote-exec-reference/tool-container-inspect-check.json
             /tmp/feynman-remote-exec-reference/candidate/remote-tool-proof.txt
             /tmp/feynman-remote-exec-reference/reference-result.json
+            /tmp/feynman-remote-exec-reference/reference-result.stdout.json
           if-no-files-found: warn
           retention-days: 14
