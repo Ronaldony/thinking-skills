@@ -2,6 +2,8 @@
 
 이 폴더의 18개 사례는 재설계에 사용한 **공개 개발/회귀 사례**다. held-out가 아니다. `cases.jsonl`은 과제와 후속 메시지, `rubrics.jsonl`은 평가자 기대값이다. 둘은 파일 수준에서 분리했으며 런타임에는 어느 것도 포함하지 않는다. 후보에게는 한 번에 해당 과제의 prompt만 전달하고 후속 메시지는 초기 답변을 보존한 뒤 별도 턴으로 전달한다. `tools-10`에만 해당 fixture 두 파일을 제공한다. 정답 루브릭은 제공하지 않는다.
 
+행동 비교의 사전등록 초안은 `preregister.md`다. 수치 효과 기준은 공개 개발 결과에 맞춰 사후 조정하지 않고, 별도 pilot의 분산을 본 뒤 final held-out를 열기 전에 고정한다.
+
 ## 비교 조건
 
 1. 무스킬 기준선.
@@ -18,17 +20,21 @@
 
 모델 스냅샷, 호스트 버전, 시스템 지시, 도구, 도구 권한, 시간·최대 출력 예산, 데이터와 스킬 digest를 기록한다. 프롬프트 길이와 실제 토큰 비용은 측정해서 보고한다. 단지 동일 시간 제한이라는 이유로 동일 계산량이라 하지 않는다. 사례별 조건 순서를 무작위화하고 예비 실험은 5회 이상 반복하되, 5회가 충분한 통계 검정력을 보장한다고 주장하지 않는다. 개선 주장에 필요한 표본 수는 실제 분산과 목표 효과를 보고 정한다. 다중 비교와 사례별 상관을 고려한다.
 
-후보는 별도 샌드박스/컨테이너에서 실행한다. 호스트의 evals·rubrics·이전 결과·채점 프롬프트가 보이지 않아야 한다. 읽기 전용 권한이나 임시 작업 디렉터리만으로 파일시스템 격리가 완성됐다고 간주하지 않는다. 웹 접근이 허용되면 공개 정답 조회 가능성을 별도로 통제한다. 진짜 held-out는 다른 작성자가 만들고 동결한다. 현재 Python 도구는 workspace와 파일을 분리하지만 운영체제·네트워크 격리를 구현하지 않는다.
+후보는 별도 샌드박스/컨테이너에서 실행한다. 호스트의 evals·rubrics·이전 결과·채점 프롬프트가 보이지 않아야 한다. 읽기 전용 권한이나 임시 작업 디렉터리만으로 파일시스템 격리가 완성됐다고 간주하지 않는다. 웹 접근이 허용되면 공개 정답 조회 가능성을 별도로 통제한다. 진짜 held-out는 다른 작성자가 만들고 동결한다. 현재 Python 도구는 workspace와 파일을 분리하고 ambient skill root를 검사하지만 운영체제·네트워크 격리를 구현하지 않는다.
 
-## 현재 구현된 평가 파이프라인 조각
+실제 비교에서는 평가 전용 빈 HOME/CODEX_HOME을 사용하고, 후보 내부 기대 스킬 외에 `$HOME/.agents/skills`, `$CODEX_HOME/skills`, 후보 상위 `.agents/skills`에서 스킬이 발견되면 해당 run을 무효로 처리한다. 플러그인·내장/system 스킬은 별도 기록·통제가 필요하다.
 
-다음 도구는 평가의 **격리와 증거 전달 경로**를 검증하기 위한 기반이다. 아직 모델 실행기나 의미 채점기를 완성한 것은 아니다.
+## 현재 구현된 평가 파이프라인
 
-1. `tooling/feynman_eval_workspace.py`는 한 사례의 후보 작업공간과 평가자 디렉터리를 별도로 만든다. 후보에는 초기 prompt, 해당 fixture, 선택한 런타임 스킬만 들어간다. rubric과 follow-up은 평가자 쪽에 남긴다. 후보/평가 디렉터리는 소스 저장소 밖에 있어야 하고 fixture symlink는 거부한다.
-2. 실제 후보 프로세스는 **후보 디렉터리만 볼 수 있는 별도 OS/컨테이너 샌드박스**에서 실행해야 한다. workspace builder 자체는 그런 보안 경계를 제공하지 않는다.
-3. `tooling/codex_exec_evidence.py`는 `codex exec --json` JSONL에서 완료된 command/MCP/web-search/file-change 항목과 최종 메시지만 평가자 증거 번들로 축약한다. reasoning 항목은 복사하지 않는다. command는 `completed`와 `failed` 모두 “실행됨”의 증거가 될 수 있지만, 성공 여부는 status/exit code를 별도로 본다.
-4. 의미 평가자는 과제·최종 답변·증거 번들을 함께 보고 필수 발견과 행동을 판정해야 한다. 후보가 주장한 실행 여부를 그대로 신뢰하지 않는다. `judge-prompt.md`와 `review-schema.json`은 공개 개발용 평가자 자산이다.
-5. `tooling/feynman_grade_gate.py`는 의미 판정과 evaluator가 추출한 trusted execution ID를 입력받아 구조적 합격 조건만 적용한다. 자체적으로 정답을 판단하지 않는다.
+다음 도구는 평가의 **격리와 증거 전달 경로**를 검증하기 위한 기반이다. candidate 모델 runner와 semantic judge 모델 runner 자체는 아직 별도 구현 대상이다.
+
+1. `tooling/feynman_eval_workspace.py`는 한 사례의 후보 작업공간과 평가자 디렉터리를 별도로 만든다. 후보에는 초기 prompt, 해당 fixture, 선택한 런타임 스킬만 들어간다. evaluator 쪽에는 원 prompt, rubric, follow-up, runtime digest와 evaluator assets가 남는다. 후보/평가 디렉터리는 소스 저장소 밖에 있어야 하고 fixture symlink는 거부한다.
+2. `tooling/feynman_eval_preflight.py`는 후보 내부 예상 스킬 집합과 사용자/CODEX_HOME/상위 경로의 `SKILL.md` 오염을 검사한다. 이 검사는 filesystem skill root만 다루며 plugin/system skill의 부재를 증명하지 않는다.
+3. 실제 후보 프로세스는 **후보 디렉터리만 볼 수 있는 별도 OS/컨테이너 샌드박스**에서 실행해야 한다. workspace/preflight 도구 자체는 그런 보안 경계를 제공하지 않는다.
+4. `tooling/codex_exec_evidence.py`는 `codex exec --json` JSONL에서 완료된 command/MCP/web-search/file-change 항목과 최종 메시지만 평가자 증거 번들로 축약한다. reasoning 항목은 복사하지 않는다. command는 `completed`와 `failed` 모두 “실행됨”의 증거가 될 수 있지만, 성공 여부는 status/exit code를 별도로 본다. 저장된 증거 파일은 별도 SHA-256으로 다시 검증할 수 있다.
+5. `tooling/feynman_review_bundle.py`는 evaluator case와 evidence bundle을 결합해 `review-input.json`, judge guidance, review schema를 evaluator-only 패키지로 만든다. 저장 증거의 해시가 맞지 않으면 의미 채점 전에 거부한다. multi-turn 사례는 실제 follow-up을 전달한 평가 단계에서만 `--include-followup`을 사용한다.
+6. 의미 평가자는 review bundle을 읽고 `review-schema.json`에 맞는 JSON을 만든다. 후보가 주장한 실행 여부를 그대로 신뢰하지 않고 evaluator의 trusted execution ID와 실제 output을 본다. `judge-prompt.md`는 공개 개발용 지침이다.
+7. `tooling/feynman_apply_review.py`는 review bundle의 hash linkage를 다시 확인한 뒤 외부 의미 판정과 trusted execution ID를 `feynman_grade_gate.py`에 전달한다. gate는 필수 발견, 필수 행동, hard failure와 execution linkage의 구조적 합격 조건만 적용하며 자체적으로 정답을 판단하지 않는다.
 
 현재 Codex `exec` JSON 이벤트의 `command_execution`, `mcp_tool_call`, `web_search` 등 타입은 OpenAI Codex SDK의 공개 item 정의를 호환 목표로 삼는다. CLI/프로토콜 버전이 바뀌면 고정된 평가 결과 집합에 조용히 섞지 말고 parser와 fixture를 먼저 갱신한다.
 
@@ -36,7 +42,7 @@
 
 최종 결과 품질을 우선한다. 다음 가중치는 사전 등록할 **설계 제안**이지 검증된 최적 값이 아니다. 정답·결정의 타당성 40, 직접 검사와 증거 25, 메커니즘·표현 전환의 유용성 15, 불확실성과 정당한 갱신 10, 비용·간결성 10으로 집계한다. 필수 발견마다 고유 ID, 판정, 근거를 남긴다. 어휘 일치가 아니라 동등한 해법을 허용한다.
 
-필수 행동은 0(없음/오류), 1(언급/부분), 2(실질적 충족)로 평가한다. 모든 필수 행동이 2이고 필수 발견을 충족해야 합격 후보가 된다. 동등한 다른 풀이의 적용성은 사람이 판정한다. 코드 실행 주장은 evaluator가 확보한 도구 기록과 맞아야 한다. 손계산은 유도 자체를 검토하되 실행 로그인 척하지 않는다. 의미 채점은 과제·답변·증거를 함께 읽는 평가자 또는 모델 채점기가 수행해야 한다. `tooling/feynman_grade_gate.py`는 이 판정을 생성하지 않으며 입력 구조와 합격 조건만 검사한다.
+필수 행동은 0(없음/오류), 1(언급/부분), 2(실질적 충족)로 평가한다. 모든 필수 행동이 2이고 필수 발견을 충족해야 합격 후보가 된다. 동등한 다른 풀이의 적용성은 사람이 판정한다. 코드 실행 주장은 evaluator가 확보한 도구 기록과 맞아야 한다. 손계산은 유도 자체를 검토하되 실행 로그인 척하지 않는다. 의미 채점은 과제·답변·증거를 함께 읽는 평가자 또는 모델 채점기가 수행해야 한다. 구조 gate는 이 의미 판단을 생성하지 않는다.
 
 기대 결론을 찾지 못했는데 태그나 형식만 충실한 답은 합격시키지 않는다. 반대로 정답을 유지한 답을 바뀌지 않았다는 이유로 감점하지 않는다. 검증 계획만 요구하는 과제에는 실행 로그를 필수로 요구하지 않는다. 실행 필수 과제에서 도구가 없는 경우는 별도 도구-부재 조건으로 채점하며 기본 실행 트랙과 합치지 않는다.
 
