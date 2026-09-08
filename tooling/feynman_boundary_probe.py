@@ -22,7 +22,12 @@ SECRET_KEY_PATTERN = re.compile(
     r"(?:TOKEN|SECRET|PASSWORD|CREDENTIAL|COOKIE|AUTH|API[_-]?KEY|ACCESS[_-]?KEY|PRIVATE[_-]?KEY)",
     re.IGNORECASE,
 )
-DENIAL_ERRNOS = {errno.EACCES, errno.EPERM, errno.EROFS}
+# A protected host canary may be blocked by permissions or hidden entirely by a
+# mount namespace. ENOENT/ENOTDIR count only provisionally here: the evaluator-
+# side verifier must separately prove that the host canary (or host parent for a
+# forbidden write) really exists, preventing a missing fixture from becoming a
+# false pass.
+BLOCKED_ERRNOS = {errno.EACCES, errno.EPERM, errno.EROFS, errno.ENOENT, errno.ENOTDIR}
 
 
 def _sha_bytes(data: bytes) -> str:
@@ -42,7 +47,7 @@ def _read(path: Path, expected_marker: str | None) -> dict[str, Any]:
     try:
         data = path.read_bytes()
     except OSError as exc:
-        record["denied"] = exc.errno in DENIAL_ERRNOS
+        record["denied"] = exc.errno in BLOCKED_ERRNOS
         record["error"] = _error(exc)
         return record
     record["succeeded"] = True
@@ -71,7 +76,7 @@ def _write(path: Path, marker: str) -> dict[str, Any]:
         finally:
             os.close(fd)
     except OSError as exc:
-        record["denied"] = exc.errno in DENIAL_ERRNOS
+        record["denied"] = exc.errno in BLOCKED_ERRNOS
         record["error"] = _error(exc)
         return record
     record["succeeded"] = True
