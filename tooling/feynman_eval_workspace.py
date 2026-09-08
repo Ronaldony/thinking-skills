@@ -54,6 +54,7 @@ def prepare(repo_root: Path, case_id: str, candidate_dir: Path, evaluator_dir: P
         raise ValueError(f"unknown case id: {case_id}")
     case = cases[case_id]
     rubric = rubrics[case_id]
+    prompt_text = str(case["prompt"])
     candidate_dir = candidate_dir.absolute()
     evaluator_dir = evaluator_dir.absolute()
     _ensure_disjoint(candidate_dir, evaluator_dir)
@@ -64,7 +65,7 @@ def prepare(repo_root: Path, case_id: str, candidate_dir: Path, evaluator_dir: P
     candidate_dir.mkdir(parents=True)
     evaluator_dir.mkdir(parents=True)
     try:
-        (candidate_dir / "task.txt").write_text(str(case["prompt"]) + "\n", encoding="utf-8")
+        (candidate_dir / "task.txt").write_text(prompt_text + "\n", encoding="utf-8")
         fixture_source = base / "fixtures" / case_id
         fixture_hashes: dict[str, str] = {}
         if fixture_source.is_dir():
@@ -99,12 +100,13 @@ def prepare(repo_root: Path, case_id: str, candidate_dir: Path, evaluator_dir: P
             "schema_version": 1,
             "case_id": case_id,
             "split": case.get("split"),
+            "prompt": prompt_text,
             "followup": case.get("followup"),
             "rubric": rubric,
             "fixture_sha256": fixture_hashes,
             "skill_installed": install_skill,
             "runtime_manifest": runtime_manifest,
-            "candidate_prompt_sha256": hashlib.sha256((str(case["prompt"]) + "\n").encode("utf-8")).hexdigest(),
+            "candidate_prompt_sha256": hashlib.sha256((prompt_text + "\n").encode("utf-8")).hexdigest(),
             "scope": "workspace separation only; runner must sandbox candidate from evaluator and host files",
         }
         (evaluator_dir / "case.json").write_text(
