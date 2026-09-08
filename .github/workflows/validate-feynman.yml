@@ -41,3 +41,25 @@ jobs:
           test ! -e /tmp/feynman-preview/feynman-thinking/evals
           test ! -e /tmp/feynman-preview/feynman-thinking/.git
           test -f /tmp/feynman-preview/runtime-manifest.json
+      - name: Prepare separated candidate and evaluator workspaces
+        run: |
+          python tooling/feynman_eval_workspace.py --root . --case tools-10 \
+            --candidate-dir /tmp/feynman-candidate --evaluator-dir /tmp/feynman-evaluator
+          test -f /tmp/feynman-candidate/.agents/skills/feynman-thinking/SKILL.md
+          test -f /tmp/feynman-candidate/candidate.py
+          test ! -e /tmp/feynman-candidate/case.json
+          test -f /tmp/feynman-evaluator/case.json
+          test -f /tmp/feynman-evaluator/review-schema.json
+          ! grep -R -q 'required_findings' /tmp/feynman-candidate
+      - name: Exercise reasoning-free evidence extraction
+        run: |
+          cat > /tmp/feynman-trace.jsonl <<'EOF'
+          {"type":"thread.started","thread_id":"synthetic-thread"}
+          {"type":"item.completed","item":{"id":"reason-1","type":"reasoning","text":"DO_NOT_COPY_REASONING"}}
+          {"type":"item.completed","item":{"id":"cmd-1","type":"command_execution","command":"python -m unittest","aggregated_output":"FAILED synthetic check","exit_code":1,"status":"failed"}}
+          {"type":"item.completed","item":{"id":"msg-1","type":"agent_message","text":"synthetic final"}}
+          EOF
+          python tooling/codex_exec_evidence.py /tmp/feynman-trace.jsonl --output /tmp/feynman-evidence
+          grep -q 'command_execution:cmd-1' /tmp/feynman-evidence/evidence-index.json
+          grep -q 'FAILED synthetic check' /tmp/feynman-evidence/evidence/0001-command.txt
+          ! grep -R -q 'DO_NOT_COPY_REASONING' /tmp/feynman-evidence
