@@ -1,6 +1,6 @@
 # 행동 평가 외부 runner 계약
 
-상태: **v0.1 proposal — external enforcement required**. 이 문서는 후보 모델의 행동 비교를 시작하기 전에 필요한 실행 격리 경계를 정의한다. 현재 저장소의 Python workspace/preflight 도구나 Codex 내부 sandbox 설정 하나만으로 이 계약이 충족됐다고 간주하지 않는다.
+상태: **v0.2 proposal — external enforcement required**. 이 문서는 후보 모델의 행동 비교를 시작하기 전에 필요한 실행 격리 경계를 정의한다. 현재 저장소의 Python workspace/preflight 도구나 Codex 내부 sandbox 설정 하나만으로 이 계약이 충족됐다고 간주하지 않는다.
 
 ## 왜 별도 경계가 필요한가
 
@@ -24,6 +24,7 @@ runner는 최소한 다음 오염을 막아야 한다.
 5. 후보 tool network가 공개 평가 정답이나 외부 데이터를 조회함.
 6. API 인증정보가 candidate-readable 파일·환경변수·명령행·로그로 노출됨.
 7. 격리 설정은 있다고 보고되지만 실제 read/write/network enforcement가 실패함.
+8. multi-turn 사례의 초기·후속 답변이 서로 다른 대화에서 생성됐는데도 하나의 수정/유지 episode로 합쳐짐.
 
 이 계약은 악의적인 커널·hypervisor·runner 운영자를 방어하는 설계가 아니다. 평가 harness가 같은 사용자·호스트의 우발적 또는 모델 주도 데이터 접근을 막고 재현 가능하게 기록하는 것을 목표로 한다.
 
@@ -45,7 +46,7 @@ runner attestation의 `boundary.external_enforcement`는 `true`여야 한다. �
 - 평가 전용 temp
 - interpreter/OS 실행에 필요한 platform runtime root
 
-platform runtime root에는 evaluator 데이터, 사용자 HOME, source checkout, 형제 프로젝트를 두지 않는다.
+platform runtime root에는 evaluator 데이터, 사용자 HOME, source checkout, 형제 프로젝트를 두지 않는다. validator는 protected root가 platform runtime root의 **안이나 밖 어느 방향으로든 겹치는 경우**를 거부한다.
 
 반드시 읽기 금지되는 root:
 
@@ -76,7 +77,7 @@ host runner ── allowed control plane ── model service
                               └── outbound tool network blocked
 ```
 
-control plane과 tool process가 같은 unrestricted network namespace를 공유한다면 `tool_network_blocked=true`라고 기록하지 않는다.
+control plane과 tool process가 같은 unrestricted network namespace를 공유한다면 `tool_network=blocked`라고 기록하지 않는다. `tool_network=blocked`일 때 `allowed_tool_destinations`는 비어 있어야 한다.
 
 네트워크 차단은 동일 boundary에서 synthetic probe로 확인한다. 공개 인터넷의 특정 사이트 가용성에 의존하기보다 runner가 통제하는 canary endpoint/DNS 또는 명시적 firewall counter를 사용한다.
 
@@ -91,6 +92,21 @@ candidate tool environment는 allowlist 방식으로 구성한다. `TOKEN`, `KEY
 `tooling/feynman_eval_preflight.py`의 예상 skill set 검사를 외부 boundary 안에서 수행한다. baseline/generic에서는 후보 skill 집합이 비어 있어야 한다. `legacy-clean`과 `feynman-v05`에서는 `feynman-thinking` 하나만 허용한다.
 
 내장/system skill, plugin, connector가 끌 수 없다면 **모든 비교 조건에서 동일하게 노출되고 목록과 버전이 attestation에 기록**되어야 한다. 조건별로 달라지면 run은 비교에서 제외한다.
+
+### 7. multi-turn 대화 연속성
+
+`revise-08`, `retain-09`처럼 후속 증거에 대한 수정/유지를 평가하는 사례는 **초기 턴과 후속 턴이 동일한 Codex conversation/session을 공유해야 한다.** 두 개의 독립 `codex exec` 결과를 나중에 붙여서는 안 된다.
+
+runner는 다음을 지킨다.
+
+1. 사례마다 새 conversation/thread로 시작한다. 이전 사례의 세션을 재사용하지 않는다.
+2. 초기 prompt를 실행하고 초기 JSONL trace와 final answer를 보존한다.
+3. 후속 메시지는 기존 thread/session을 `resume`하는 방식으로 전달한다.
+4. 후속 실행은 별도 JSONL trace로 보존한다.
+5. 두 evidence index의 `thread_id`가 같은 nonempty 값이어야 하고 `source_trace_sha256`은 달라야 한다.
+6. evaluator review bundle에는 초기 final answer와 후속 final answer를 모두 넣어 judge가 실제 변화 또는 유지를 직접 비교할 수 있게 한다.
+
+`tooling/feynman_review_bundle.py --include-followup --initial-evidence-bundle ...`는 이 연속성을 구조적으로 검사한다. 같은 `thread_id`는 conversation continuity의 유용한 증거지만, runner나 session storage 자체가 악의적으로 조작되지 않았다는 암호학적 증명은 아니다.
 
 ## 동작 기반 canary probe
 
@@ -131,6 +147,8 @@ candidate tool environment는 allowlist 방식으로 구성한다. `TOKEN`, `KEY
 - model/Codex 버전, eval plan/runtime digest
 - 알려진 제한사항
 
+conversation continuity의 thread/trace 연결은 runner attestation 하나의 선언값보다 evaluator-side evidence/review hash chain에서 별도로 확인한다.
+
 ## 조건별 유효성
 
 `baseline` / `generic`:
@@ -146,6 +164,7 @@ candidate tool environment는 allowlist 방식으로 구성한다. `TOKEN`, `KEY
 - 같은 platform/system/plugin 정책
 - 같은 tool/network 정책(과제가 다르게 요구하지 않는 한)
 - evaluator/source/real HOME read probe 차단
+- 동일 condition의 반복 사이에 runtime digest가 바뀌지 않음
 
 ## 현재 구현 상태
 
@@ -154,9 +173,12 @@ candidate tool environment는 allowlist 방식으로 구성한다. `TOKEN`, `KEY
 - 런타임 allowlist
 - candidate/evaluator directory 분리
 - ambient skill-root preflight
-- Codex JSONL의 reasoning-free evidence extraction
+- Codex JSONL의 reasoning-free evidence extraction과 final/evidence hash binding
 - evaluator-only semantic review bundle
-- trusted execution 구조 gate
+- multi-turn same-thread review linkage와 초기/후속 answer 보존
+- trusted execution 구조 gate와 semantic review v2 primary outcome
+- frozen eval plan → runner attestation → review bundle → semantic review → gate의 analysis-result hash linkage
+- 누락·혼합 환경·runtime drift를 막는 descriptive aggregator
 - deterministic condition plan
 - sanitized pinned legacy runtime
 
