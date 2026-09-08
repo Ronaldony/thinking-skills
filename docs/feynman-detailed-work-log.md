@@ -42,3 +42,51 @@
   - remote exec transport가 실제로 성공하는지 미확인.
   - `apply_patch`의 올바른 현재 Codex wire/tool 형식 미확인.
   - 실제 credential/model service는 사용하지 않았음.
+
+---
+
+## LOG-002 — remote reference 시나리오 분리
+
+- **시각(KST)**: 2026-09-08 20:45
+- **시작 head**: `2540035d0b1fdc0f06df9fcde96bb2dc93cc8b02`
+- **목적**: remote exec transport와 apply-patch custom-tool 호환성을 독립적으로 검증한다.
+- **변경**:
+  - `tooling/feynman_mock_responses_server.py`
+    - `exec-only` / `patch-then-exec` 두 시나리오를 명시적으로 분리.
+    - `exec-only`는 첫 모델 응답에서 바로 `exec_command`를 요청하고, 두 번째 모델 요청에서 remote command output을 확인한 뒤 final을 반환.
+    - `exec-only` command는 patch 파일에 의존하지 않음.
+    - remote command 안에서 `REMOTE_EXEC_OK`, `AUTH_ENV_CLEAN`, `NETWORK_BLOCKED`를 각각 증명하도록 유지.
+    - `patch-then-exec`는 기존 `apply_patch → exec_command` 계약을 보존하되 별도 시나리오로 격리.
+    - mock state를 schema version 3으로 올리고 `scenario`를 기록.
+  - `tooling/feynman_remote_exec_reference_result.py`
+    - mock-state scenario에 따라 서로 다른 증거 계약 적용.
+    - `exec-only`: 정확히 2 model requests, patch output 없음, exec output + workspace/network/auth marker 필수.
+    - `patch-then-exec`: 정확히 3 model requests, patch output + patch proof + exec output 모두 필수.
+    - `exec-only`에서 patch proof를 공급하면 오히려 거부하도록 fail-closed 처리.
+    - reference result schema를 3으로 올리고 scenario 및 patch digest nullable 여부를 기록.
+  - `tests/test_feynman_mock_responses_server.py`
+    - exec-only command가 patch filename/marker에 의존하지 않는지 검사.
+    - patch-then-exec command는 patch marker를 요구하는지 별도 검사.
+  - `tests/test_feynman_remote_exec_reference_result.py`
+    - exec-only valid path를 primary synthetic fixture로 전환.
+    - patch-then-exec stronger path도 별도 regression으로 유지.
+    - exec-only에 patch proof를 주는 경우, patch scenario에서 proof가 없는 경우를 각각 거부.
+  - `.github/workflows/validate-feynman-remote-exec-reference.yml`
+    - 실제 reference run을 `--scenario exec-only`로 명시.
+    - `remote-patch-proof.txt`를 성공 조건과 artifact 목록에서 제거.
+    - patch 파일이 생성되지 않았음을 반대로 확인.
+    - reference result 생성에서도 `--patch-proof`를 제거.
+- **관련 커밋**:
+  - `847fb07fabdf7795446100cdac377dd5232e07ab` — mock server scenario 분리
+  - `1bfb5094bc8ac8ac98e0060561bb3cf415915db4` — result validator scenario 분리
+  - `50d810b7dd0440508bb39b588d18bac8dbe0a6eb` — mock server regression 갱신
+  - `3adb7f81d8e6c41913bc53fdfac86958aaa6f730` — reference-result regression 갱신
+  - `11e4d8f5c713f4588b70f510b894592e5d526db0` — CI exec-only 전환
+- **검증 상태**: 코드/테스트/CI 계약 변경은 커밋됨. 실제 GitHub Actions 결과는 아직 이 로그 시점에 확정하지 않음.
+- **결론**: apply-patch 실패가 remote exec transport 판정을 막지 않도록 평가 주장을 분리했다. 아직 exec-only가 실제 통과했다고 주장하지 않는다.
+- **다음 작업**: `11e4d8f5…`에 연결된 `validate-feynman-remote-exec-reference` 실행 결과를 확인하고, 실패하면 최초 실패 지점부터 수정한다.
+- **남은 위험**:
+  - `exec_command`가 remote exec-server에서 실제 실행되는지 아직 미확정.
+  - tool command trace의 `aggregated_output` 형식이 current Codex 0.153.4에서 validator 예상과 다를 가능성.
+  - apply-patch compatibility는 의도적으로 미해결 상태로 유지.
+  - 실제 credential/model service는 여전히 사용하지 않음.
