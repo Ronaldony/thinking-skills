@@ -120,25 +120,52 @@ class EvalResultLinkageTests(unittest.TestCase):
 
 
 class EvalAggregateTests(unittest.TestCase):
+    GENERIC_PROMPT_SHA = "1" * 64
+    V05_PROMPT_SHA = "2" * 64
+
     def _plan(self):
         return {
             "conditions": ["generic", "feynman-v05"],
             "jobs": [
-                {"ordinal": 1, "case_id": "case-1", "condition": "generic", "repeat": 1, "has_followup": False},
-                {"ordinal": 2, "case_id": "case-1", "condition": "feynman-v05", "repeat": 1, "has_followup": False},
+                {
+                    "ordinal": 1,
+                    "case_id": "case-1",
+                    "condition": "generic",
+                    "repeat": 1,
+                    "has_followup": False,
+                    "candidate_prompt_sha256": self.GENERIC_PROMPT_SHA,
+                },
+                {
+                    "ordinal": 2,
+                    "case_id": "case-1",
+                    "condition": "feynman-v05",
+                    "repeat": 1,
+                    "has_followup": False,
+                    "candidate_prompt_sha256": self.V05_PROMPT_SHA,
+                },
             ],
         }
 
     def _record(self, condition: str, *, decision: str, supported: int,
-                critical: bool = False, execution: str = "clean"):
+                critical: bool = False, execution: str = "clean",
+                update_behavior: str = "not_applicable", model: str = "same-model",
+                cli: str = "same-cli", profile: str = "a" * 64):
+        ordinal = 1 if condition == "generic" else 2
+        prompt_sha = self.GENERIC_PROMPT_SHA if condition == "generic" else self.V05_PROMPT_SHA
         return {
             "schema_version": 1,
             "valid_for_analysis": True,
             "run_id": f"run-{condition}",
-            "job": {"ordinal": 1, "case_id": "case-1", "condition": condition, "repeat": 1, "phase": "initial"},
-            "versions": {"model": "same-model", "codex_cli": "same-cli"},
-            "runner": {"backend": "container", "backend_version": "1", "profile_sha256": "a" * 64},
-            "digests": {},
+            "job": {
+                "ordinal": ordinal,
+                "case_id": "case-1",
+                "condition": condition,
+                "repeat": 1,
+                "phase": "initial",
+            },
+            "versions": {"model": model, "codex_cli": cli},
+            "runner": {"backend": "container", "backend_version": "1", "profile_sha256": profile},
+            "digests": {"candidate_prompt_sha256": prompt_sha},
             "metrics": {
                 "decision_correctness": decision,
                 "required_findings_supported": supported,
@@ -147,9 +174,14 @@ class EvalAggregateTests(unittest.TestCase):
                 "critical_failure": critical,
                 "hard_failure_ids": ["H1"] if critical else [],
                 "execution_integrity": execution,
-                "update_behavior": "not_applicable",
+                "update_behavior": update_behavior,
                 "behavior_scores": {"honesty": 2},
-                "gate_verdict": "failed" if critical or decision != "correct" else "passed",
+                "gate_verdict": (
+                    "unverified" if decision == "unverified" or execution == "unverified"
+                    or update_behavior == "unverified"
+                    else "failed" if critical or decision != "correct" or execution == "failure"
+                    else "passed"
+                ),
                 "review_confidence": "high",
             },
             "limitations": [],
@@ -159,7 +191,8 @@ class EvalAggregateTests(unittest.TestCase):
         generic = self._record("generic", decision="partial", supported=1)
         v05 = self._record("feynman-v05", decision="correct", supported=2)
         result = aggregate(self._plan(), [generic, v05])
-        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["status"], "analysis-ready")
+        self.assertTrue(result["primary_comparison_ready"])
         self.assertEqual(result["conditions"]["feynman-v05"]["decision_correct_rate_over_all_runs"], 1.0)
         paired = result["paired_descriptive"]["generic_vs_feynman_v05"]
         self.assertEqual(paired["paired_units"], 1)
@@ -170,9 +203,45 @@ class EvalAggregateTests(unittest.TestCase):
         generic = self._record("generic", decision="correct", supported=2)
         result = aggregate(self._plan(), [generic])
         self.assertEqual(result["status"], "incomplete")
+        self.assertFalse(result["primary_comparison_ready"])
         self.assertEqual(result["expected_runs"], 2)
         self.assertEqual(result["observed_runs"], 1)
         self.assertEqual(len(result["missing_jobs"]), 1)
+
+    def test_mixed_model_environment_is_not_analysis_ready(self):
+        generic = self._record("generic", decision="correct", supported=2, model="model-a")
+        v05 = self._record("feynman-v05", decision="correct", supported=2, model="model-b")
+        result = aggregate(self._plan(), [generic, v05])
+        self.assertEqual(result["status"], "mixed-environment")
+        self.assertFalse(result["primary_comparison_ready"])
+        self.assertFalse(result["environment_consistency"]["single_model"])
+
+    def test_mixed_runner_profile_is_not_analysis_ready(self):
+        generic = self._record("generic", decision="correct", supported=2, profile="a" * 64)
+        v05 = self._record("feynman-v05", decision="correct", supported=2, profile="b" * 64)
+        result = aggregate(self._plan(), [generic, v05])
+        self.assertEqual(result["status"], "mixed-environment")
+        self.assertFalse(result["environment_consistency"]["single_runner_profile"])
+
+    def test_unverified_primary_outcome_is_not_analysis_ready(self):
+        generic = self._record("generic", decision="unverified", supported=2)
+        v05 = self._record("feynman-v05", decision="correct", supported=2)
+        result = aggregate(self._plan(), [generic, v05])
+        self.assertEqual(result["status"], "unverified-outcomes")
+        self.assertFalse(result["primary_comparison_ready"])
+        self.assertEqual(len(result["unverified_primary_jobs"]), 1)
+
+    def test_wrong_prompt_digest_is_rejected(self):
+        generic = self._record("generic", decision="correct", supported=2)
+        generic["digests"]["candidate_prompt_sha256"] = "f" * 64
+        with self.assertRaises(ValueError):
+            aggregate(self._plan(), [generic])
+
+    def test_wrong_ordinal_is_rejected(self):
+        v05 = self._record("feynman-v05", decision="correct", supported=2)
+        v05["job"]["ordinal"] = 999
+        with self.assertRaises(ValueError):
+            aggregate(self._plan(), [v05])
 
     def test_duplicate_result_key_is_rejected(self):
         generic = self._record("generic", decision="correct", supported=2)
