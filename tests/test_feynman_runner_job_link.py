@@ -56,7 +56,7 @@ class RunnerJobLinkTests(unittest.TestCase):
 
         self.job_path = self.base / "runner-job.json"
         self.job = {
-            "schema_version": 1,
+            "schema_version": 2,
             "run_id": "run-1",
             "job": {
                 "ordinal": 1,
@@ -81,7 +81,9 @@ class RunnerJobLinkTests(unittest.TestCase):
                 "control_plane_separate_from_tool_network": True,
             },
             "authentication": {
-                "mode": "external-broker",
+                "mode": "control-plane-only",
+                "control_plane_credential_source": "environment",
+                "control_plane_credential_env_key": "OPENAI_API_KEY",
                 "candidate_tool_auth_env_keys": [],
                 "candidate_readable_credential_files": [],
                 "credential_command_arguments": [],
@@ -122,7 +124,12 @@ class RunnerJobLinkTests(unittest.TestCase):
                 self.paths["evaluator_dir"], self.paths["source_repo"], self.paths["real_home"],
             ],
         })
-        self.attestation["environment"]["candidate_env_keys"] = ["HOME", "CODEX_HOME", "PATH", "TMPDIR"]
+        self.attestation["environment"].update({
+            "candidate_env_keys": ["HOME", "CODEX_HOME", "PATH", "TMPDIR"],
+            "control_plane_auth_mode": "control-plane-only",
+            "control_plane_credential_source": "environment",
+            "control_plane_credential_env_key": "OPENAI_API_KEY",
+        })
         self.attestation["versions"] = deepcopy(self.job["versions"])
         self.attestation["digests"].update({
             "eval_plan_sha256": self.job["digests"]["eval_plan_sha256"],
@@ -157,9 +164,25 @@ class RunnerJobLinkTests(unittest.TestCase):
 
     def test_matching_job_and_attestation_bind(self):
         result = self._bind()
+        self.assertEqual(result["schema_version"], 2)
         self.assertEqual(result["verdict"], "runner-job-attestation-bound")
         self.assertEqual(result["boundary_profile_sha256"], self.profile_sha)
         self.assertEqual(result["model"], "test-model")
+        self.assertEqual(result["authentication_mode"], "control-plane-only")
+        self.assertEqual(result["control_plane_credential_source"], "environment")
+        self.assertEqual(result["control_plane_credential_env_key"], "OPENAI_API_KEY")
+
+    def test_credential_env_key_drift_is_rejected(self):
+        self.attestation["environment"]["control_plane_credential_env_key"] = "OTHER_API_KEY"
+        self._write_attestation()
+        with self.assertRaises(ValueError):
+            self._bind()
+
+    def test_auth_mode_drift_is_rejected(self):
+        self.attestation["environment"]["control_plane_auth_mode"] = "external-broker"
+        self._write_attestation()
+        with self.assertRaises(ValueError):
+            self._bind()
 
     def test_model_version_drift_is_rejected(self):
         self.attestation["versions"]["model"] = "different-model"
