@@ -3,7 +3,7 @@
   "title": "Feynman evaluation external runner attestation",
   "type": "object",
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
     "run_id": {"type": "string", "minLength": 1},
     "case_id": {"type": "string", "minLength": 1},
     "condition_id": {"type": "string", "enum": ["baseline", "generic", "legacy-clean", "feynman-v05"]},
@@ -15,7 +15,7 @@
         "platform": {"type": "string", "minLength": 1},
         "kernel": {"type": "string", "minLength": 1},
         "external_enforcement": {"const": true},
-        "profile_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        "profile_sha256": {"$ref": "#/$defs/sha256"}
       },
       "required": ["backend", "backend_version", "platform", "kernel", "external_enforcement", "profile_sha256"],
       "additionalProperties": false
@@ -51,7 +51,7 @@
       "properties": {
         "case_requires_tool_network": {"type": "boolean"},
         "tool_network": {"type": "string", "enum": ["blocked", "restricted", "open"]},
-        "control_plane_separate_from_tool_network": {"type": "boolean"},
+        "control_plane_separate_from_tool_network": {"const": true},
         "allowed_tool_destinations": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
       },
       "required": ["case_requires_tool_network", "tool_network", "control_plane_separate_from_tool_network", "allowed_tool_destinations"],
@@ -76,14 +76,27 @@
     "environment": {
       "type": "object",
       "properties": {
-        "candidate_env_keys": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "candidate_env_keys": {"type": "array", "items": {"$ref": "#/$defs/env_key"}, "uniqueItems": true},
         "api_auth_exposed_to_candidate_tools": {"const": false},
+        "control_plane_auth_mode": {"const": "control-plane-only"},
+        "control_plane_credential_source": {"const": "environment"},
+        "control_plane_credential_env_key": {"$ref": "#/$defs/env_key"},
         "plugins_enabled": {"type": "boolean"},
         "system_skills": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
         "expected_candidate_skills": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
         "observed_candidate_skills": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
       },
-      "required": ["candidate_env_keys", "api_auth_exposed_to_candidate_tools", "plugins_enabled", "system_skills", "expected_candidate_skills", "observed_candidate_skills"],
+      "required": [
+        "candidate_env_keys",
+        "api_auth_exposed_to_candidate_tools",
+        "control_plane_auth_mode",
+        "control_plane_credential_source",
+        "control_plane_credential_env_key",
+        "plugins_enabled",
+        "system_skills",
+        "expected_candidate_skills",
+        "observed_candidate_skills"
+      ],
       "additionalProperties": false
     },
     "probes": {
@@ -114,10 +127,10 @@
     "digests": {
       "type": "object",
       "properties": {
-        "eval_plan_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-        "runtime_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
-        "candidate_prompt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-        "probe_report_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        "eval_plan_sha256": {"$ref": "#/$defs/sha256"},
+        "runtime_sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+        "candidate_prompt_sha256": {"$ref": "#/$defs/sha256"},
+        "probe_report_sha256": {"$ref": "#/$defs/sha256"}
       },
       "required": ["eval_plan_sha256", "runtime_sha256", "candidate_prompt_sha256", "probe_report_sha256"],
       "additionalProperties": false
@@ -125,11 +138,13 @@
     "limitations": {"type": "array", "items": {"type": "string"}}
   },
   "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "env_key": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
     "probe": {
       "type": "object",
       "properties": {
         "passed": {"type": "boolean"},
-        "artifact_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "artifact_sha256": {"$ref": "#/$defs/sha256"},
         "method": {"type": "string", "minLength": 1}
       },
       "required": ["passed", "artifact_sha256", "method"],
