@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Validate and bind the credential-free mock remote-tool reference evidence.
+"""Validate and bind credential-free mock remote-tool reference evidence.
 
-The reference proves two candidate-manipulable tool paths in one selected remote
-environment: `apply_patch` creates a marker file, then `exec_command` must read
-that exact marker while also proving tool-network denial and a clean auth env.
-Only after both tool outputs round-trip through the mock model does it return the
-final answer.
+The primary ``exec-only`` reference proves that a host-side Codex control plane
+routes ``exec_command`` into one selected remote exec-server whose Docker
+boundary has no network and exposes no auth-like environment variables.
+
+A separate ``patch-then-exec`` scenario retains the stronger apply-patch + exec
+contract, but failure of that custom-tool integration does not invalidate the
+more basic remote exec transport claim.
 
 This does not authenticate to an external model service and does not measure
 Feynman skill quality.
@@ -25,18 +27,31 @@ try:
     from .feynman_network_reference import endpoint_identity
     from .feynman_remote_exec_environment import validate_files as validate_remote_environment_files
     from .feynman_runner_job_validate import validate_job_files
+    from .feynman_mock_responses_server import (
+        AUTH_ENV_MARKER,
+        FINAL_TEXT,
+        NETWORK_MARKER,
+        PATCH_MARKER,
+        SCENARIO_EXEC_ONLY,
+        SCENARIO_PATCH_THEN_EXEC,
+        WORKSPACE_MARKER,
+    )
 except ImportError:
     from feynman_boundary_profile import validate_profile_file
     from feynman_docker_reference_inspect import verify_reference
     from feynman_network_reference import endpoint_identity
     from feynman_remote_exec_environment import validate_files as validate_remote_environment_files
     from feynman_runner_job_validate import validate_job_files
+    from feynman_mock_responses_server import (
+        AUTH_ENV_MARKER,
+        FINAL_TEXT,
+        NETWORK_MARKER,
+        PATCH_MARKER,
+        SCENARIO_EXEC_ONLY,
+        SCENARIO_PATCH_THEN_EXEC,
+        WORKSPACE_MARKER,
+    )
 
-FINAL_TEXT = "REMOTE_EXEC_REFERENCE_OK"
-PATCH_MARKER = "REMOTE_PATCH_OK"
-WORKSPACE_MARKER = "REMOTE_EXEC_OK"
-NETWORK_MARKER = "NETWORK_BLOCKED"
-AUTH_ENV_MARKER = "AUTH_ENV_CLEAN"
 SHA_PATTERN = re.compile(r"[0-9a-f]{64}")
 
 
@@ -96,30 +111,63 @@ def _validate_network_reference(value: dict[str, Any]) -> tuple[str, int]:
     return host, port
 
 
-def _validate_mock_state(value: dict[str, Any]) -> None:
-    if value.get("schema_version") != 2:
-        raise ValueError("mock state schema_version must be 2")
+def _validate_request_digests(requests: list[dict[str, Any]]) -> None:
+    for record in requests:
+        _validate_sha(record.get("body_sha256"), "mock request body_sha256")
+
+
+def _validate_mock_state(value: dict[str, Any]) -> str:
+    if value.get("schema_version") != 3:
+        raise ValueError("mock state schema_version must be 3")
+    scenario = value.get("scenario")
+    if scenario not in {SCENARIO_EXEC_ONLY, SCENARIO_PATCH_THEN_EXEC}:
+        raise ValueError("mock state has unsupported scenario")
     if value.get("validation_error") is not None:
         raise ValueError("mock model server recorded a validation error")
     if value.get("final_text") != FINAL_TEXT:
         raise ValueError("mock state final_text differs from reference contract")
     requests = value.get("requests")
-    if not isinstance(requests, list) or len(requests) != 3:
-        raise ValueError("mock reference must contain exactly three model requests")
-    first, second, third = requests
-    if not all(isinstance(item, dict) for item in requests):
-        raise ValueError("mock request records must be objects")
-    if [first.get("index"), second.get("index"), third.get("index")] != [1, 2, 3]:
-        raise ValueError("mock request indexes must be exactly 1,2,3")
+    if not isinstance(requests, list) or not all(isinstance(item, dict) for item in requests):
+        raise ValueError("mock request records must be a list of objects")
+    _validate_request_digests(requests)
 
+    if scenario == SCENARIO_EXEC_ONLY:
+        if len(requests) != 2:
+            raise ValueError("exec-only reference must contain exactly two model requests")
+        first, second = requests
+        if [first.get("index"), second.get("index")] != [1, 2]:
+            raise ValueError("exec-only request indexes must be exactly 1,2")
+        if first.get("has_patch_output") is not False or first.get("has_exec_output") is not False:
+            raise ValueError("first exec-only request must not already contain tool output")
+        if second.get("has_patch_output") is not False:
+            raise ValueError("exec-only reference must not contain apply_patch output")
+        if second.get("has_exec_output") is not True:
+            raise ValueError("second exec-only request lacks matching exec_command output")
+        for field in (
+            "exec_output_contains_workspace_marker",
+            "exec_output_contains_network_marker",
+            "exec_output_contains_auth_env_marker",
+        ):
+            if second.get(field) is not True:
+                raise ValueError(f"exec-only request failed required assertion: {field}")
+        if second.get("exec_output_contains_patch_marker") is not False:
+            raise ValueError("exec-only output unexpectedly claims patch marker")
+        _validate_sha(second.get("exec_output_sha256"), "exec-only output digest")
+        return scenario
+
+    if len(requests) != 3:
+        raise ValueError("patch-then-exec reference must contain exactly three model requests")
+    first, second, third = requests
+    if [first.get("index"), second.get("index"), third.get("index")] != [1, 2, 3]:
+        raise ValueError("patch-then-exec request indexes must be exactly 1,2,3")
     if first.get("has_patch_output") is not False or first.get("has_exec_output") is not False:
-        raise ValueError("first mock request must not already contain tool output")
+        raise ValueError("first patch-then-exec request must not already contain tool output")
     if second.get("has_patch_output") is not True:
-        raise ValueError("second mock request lacks matching apply_patch output")
+        raise ValueError("second patch-then-exec request lacks matching apply_patch output")
     if second.get("has_exec_output") is not False:
-        raise ValueError("second mock request must precede exec_command output")
+        raise ValueError("second patch-then-exec request must precede exec_command output")
     if third.get("has_exec_output") is not True:
-        raise ValueError("third mock request lacks matching exec_command output")
+        raise ValueError("third patch-then-exec request lacks matching exec_command output")
     for field in (
         "exec_output_contains_patch_marker",
         "exec_output_contains_workspace_marker",
@@ -127,15 +175,19 @@ def _validate_mock_state(value: dict[str, Any]) -> None:
         "exec_output_contains_auth_env_marker",
     ):
         if third.get(field) is not True:
-            raise ValueError(f"third mock request failed required assertion: {field}")
-
-    for record in requests:
-        _validate_sha(record.get("body_sha256"), "mock request body_sha256")
+            raise ValueError(f"patch-then-exec request failed required assertion: {field}")
     _validate_sha(second.get("patch_output_sha256"), "apply_patch output digest")
-    _validate_sha(third.get("exec_output_sha256"), "exec output digest")
+    _validate_sha(third.get("exec_output_sha256"), "patch-then-exec output digest")
+    return scenario
 
 
-def _trace_assertions(path: Path, *, network_host: str, network_port: int) -> dict[str, Any]:
+def _trace_assertions(
+    path: Path,
+    *,
+    network_host: str,
+    network_port: int,
+    scenario: str,
+) -> dict[str, Any]:
     path = _regular(path, "Codex trace")
     command_seen = False
     endpoint_seen = False
@@ -171,9 +223,13 @@ def _trace_assertions(path: Path, *, network_host: str, network_port: int) -> di
             output_text = output if isinstance(output, str) else ""
             if str(network_host) in command_text and str(network_port) in command_text:
                 endpoint_seen = True
-            required = (PATCH_MARKER, WORKSPACE_MARKER, NETWORK_MARKER, AUTH_ENV_MARKER)
+            required = [WORKSPACE_MARKER, NETWORK_MARKER, AUTH_ENV_MARKER]
+            if scenario == SCENARIO_PATCH_THEN_EXEC:
+                required.insert(0, PATCH_MARKER)
             if not all(marker in output_text for marker in required):
-                raise ValueError("completed reference command output lacks one or more remote-tool markers")
+                raise ValueError("completed reference command output lacks required remote-tool markers")
+            if scenario == SCENARIO_EXEC_ONLY and PATCH_MARKER in output_text:
+                raise ValueError("exec-only trace unexpectedly includes patch marker")
         elif kind == "agent_message":
             text = item.get("text")
             if text == FINAL_TEXT:
@@ -202,11 +258,11 @@ def assemble(
     mock_state_path: Path,
     codex_trace_path: Path,
     docker_inspect_path: Path,
-    patch_proof_path: Path,
     candidate_proof_path: Path,
     mock_server_program_path: Path,
     control_codex_version_path: Path,
     tool_codex_version_path: Path,
+    patch_proof_path: Path | None = None,
 ) -> dict[str, Any]:
     boundary_profile_path = _regular(boundary_profile_path, "boundary profile")
     runner_job_path = _regular(runner_job_path, "runner job")
@@ -215,7 +271,6 @@ def assemble(
     mock_state_path = _regular(mock_state_path, "mock state")
     codex_trace_path = _regular(codex_trace_path, "Codex trace")
     docker_inspect_path = _regular(docker_inspect_path, "Docker inspect")
-    patch_proof_path = _regular(patch_proof_path, "patch proof")
     candidate_proof_path = _regular(candidate_proof_path, "candidate proof")
     mock_server_program_path = _regular(mock_server_program_path, "mock server program")
 
@@ -232,15 +287,29 @@ def assemble(
     network_reference = _load_object(network_reference_path, "network reference")
     network_host, network_port = _validate_network_reference(network_reference)
     mock_state = _load_object(mock_state_path, "mock state")
-    _validate_mock_state(mock_state)
-    trace = _trace_assertions(codex_trace_path, network_host=network_host, network_port=network_port)
+    scenario = _validate_mock_state(mock_state)
+    trace = _trace_assertions(
+        codex_trace_path,
+        network_host=network_host,
+        network_port=network_port,
+        scenario=scenario,
+    )
 
-    patch_text = patch_proof_path.read_text(encoding="utf-8")
-    if patch_text.strip() != PATCH_MARKER:
-        raise ValueError("patch proof file does not contain the expected remote apply_patch marker")
+    patch_proof_sha: str | None = None
+    if scenario == SCENARIO_PATCH_THEN_EXEC:
+        if patch_proof_path is None:
+            raise ValueError("patch-then-exec scenario requires patch proof file")
+        patch_proof_path = _regular(patch_proof_path, "patch proof")
+        patch_text = patch_proof_path.read_text(encoding="utf-8")
+        if patch_text.strip() != PATCH_MARKER:
+            raise ValueError("patch proof file does not contain expected remote apply_patch marker")
+        patch_proof_sha = _sha(patch_proof_path)
+    elif patch_proof_path is not None:
+        raise ValueError("exec-only scenario must not supply patch proof")
+
     proof_text = candidate_proof_path.read_text(encoding="utf-8")
     if proof_text.strip() != WORKSPACE_MARKER:
-        raise ValueError("candidate proof file does not contain the expected remote exec marker")
+        raise ValueError("candidate proof file does not contain expected remote exec marker")
 
     inspect_payload = _load_json(docker_inspect_path, "Docker inspect")
     inspect_result = verify_reference(profile, inspect_payload)
@@ -258,9 +327,11 @@ def assemble(
     if runner_job.get("boundary", {}).get("profile_sha256") != profile_sha:
         raise ValueError("runner job is not bound to this boundary profile")
 
+    model_requests = 2 if scenario == SCENARIO_EXEC_ONLY else 3
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "verdict": "mock-remote-tool-reference-passed",
+        "scenario": scenario,
         "versions": {
             "control_codex": control_version,
             "tool_codex": tool_version,
@@ -273,14 +344,14 @@ def assemble(
             "mock_state_sha256": _sha(mock_state_path),
             "codex_trace_sha256": _sha(codex_trace_path),
             "docker_inspect_sha256": _sha(docker_inspect_path),
-            "patch_proof_sha256": _sha(patch_proof_path),
+            "patch_proof_sha256": patch_proof_sha,
             "candidate_proof_sha256": _sha(candidate_proof_path),
             "mock_server_program_sha256": _sha(mock_server_program_path),
         },
         "assertions": {
-            "model_requests": 3,
-            "apply_patch_round_trip": True,
-            "remote_patch_marker": True,
+            "model_requests": model_requests,
+            "apply_patch_round_trip": scenario == SCENARIO_PATCH_THEN_EXEC,
+            "remote_patch_marker": scenario == SCENARIO_PATCH_THEN_EXEC,
             "exec_output_round_trip": True,
             "workspace_marker": True,
             "tool_network_blocked": True,
@@ -293,8 +364,8 @@ def assemble(
             "local_execution_disabled": remote_validation.get("include_local") is False,
         },
         "scope": (
-            "credential-free mock model control plane -> remote apply_patch -> network-none stdio exec-server "
-            "command -> tool output -> mock final, with content-bound evidence; not an external model-service "
+            f"credential-free mock model control plane -> {scenario} -> network-none stdio exec-server -> "
+            "tool output -> mock final, with content-bound evidence; not an external model-service "
             "authentication or Feynman-skill performance result"
         ),
     }
@@ -309,7 +380,7 @@ def main() -> int:
     parser.add_argument("--mock-state", type=Path, required=True)
     parser.add_argument("--codex-trace", type=Path, required=True)
     parser.add_argument("--docker-inspect", type=Path, required=True)
-    parser.add_argument("--patch-proof", type=Path, required=True)
+    parser.add_argument("--patch-proof", type=Path)
     parser.add_argument("--candidate-proof", type=Path, required=True)
     parser.add_argument("--mock-server-program", type=Path, required=True)
     parser.add_argument("--control-codex-version", type=Path, required=True)
