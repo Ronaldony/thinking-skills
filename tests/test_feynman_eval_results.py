@@ -18,7 +18,7 @@ from tooling.feynman_eval_aggregate import aggregate
 from tooling.feynman_eval_plan import build_plan, write_plan
 from tooling.feynman_eval_result import assemble
 from tooling.feynman_review_bundle import assemble as assemble_review_bundle
-from test_feynman_runner_attestation import attestation
+from test_feynman_runner_attestation import attestation, boundary_report
 
 
 def sha(path: Path) -> str:
@@ -81,6 +81,11 @@ class EvalResultLinkageTests(unittest.TestCase):
         self.attestation = attestation("baseline")
         self.attestation["digests"]["eval_plan_sha256"] = sha(self.plan_path)
         self.attestation["digests"]["candidate_prompt_sha256"] = self.job["candidate_prompt_sha256"]
+
+        self.probe_report_path = self.base / "probe-report.json"
+        self.probe_report = boundary_report(self.attestation)
+        self.probe_report_path.write_text(json.dumps(self.probe_report), encoding="utf-8")
+        self.attestation["digests"]["probe_report_sha256"] = sha(self.probe_report_path)
         self.attestation_path.write_text(json.dumps(self.attestation), encoding="utf-8")
 
     def tearDown(self):
@@ -95,6 +100,7 @@ class EvalResultLinkageTests(unittest.TestCase):
             self.review_path,
             self.gate_path,
             review_bundle_path=self.review_bundle,
+            probe_report_path=self.probe_report_path,
         )
 
     def test_linked_baseline_result_is_analysis_ready(self):
@@ -105,6 +111,7 @@ class EvalResultLinkageTests(unittest.TestCase):
         self.assertEqual(result["metrics"]["required_finding_completion"], 1.0)
         self.assertEqual(result["job"]["condition"], "baseline")
         self.assertEqual(result["digests"]["candidate_final_sha256"], self.gate["candidate_final_sha256"])
+        self.assertEqual(result["digests"]["probe_report_sha256"], sha(self.probe_report_path))
 
     def test_attestation_bound_to_different_plan_is_rejected(self):
         self.attestation["digests"]["eval_plan_sha256"] = "c" * 64
@@ -124,6 +131,12 @@ class EvalResultLinkageTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self._assemble()
 
+    def test_tampered_probe_report_is_rejected(self):
+        self.probe_report["observed_env_keys"] = ["HOME"]
+        self.probe_report_path.write_text(json.dumps(self.probe_report), encoding="utf-8")
+        with self.assertRaises(ValueError):
+            self._assemble()
+
     def test_result_requires_review_bundle(self):
         with self.assertRaises(ValueError):
             assemble(
@@ -133,6 +146,19 @@ class EvalResultLinkageTests(unittest.TestCase):
                 self.attestation_path,
                 self.review_path,
                 self.gate_path,
+                probe_report_path=self.probe_report_path,
+            )
+
+    def test_result_requires_probe_report(self):
+        with self.assertRaises(ValueError):
+            assemble(
+                self.plan_path,
+                self.job["ordinal"],
+                self.evaluator / "case.json",
+                self.attestation_path,
+                self.review_path,
+                self.gate_path,
+                review_bundle_path=self.review_bundle,
             )
 
 
@@ -194,6 +220,7 @@ class EvalAggregateTests(unittest.TestCase):
             "digests": {
                 "candidate_prompt_sha256": prompt_sha,
                 "runtime_sha256": runtime_sha,
+                "probe_report_sha256": "9" * 64,
             },
             "metrics": {
                 "decision_correctness": decision,
