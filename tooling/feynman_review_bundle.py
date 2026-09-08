@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Assemble an evaluator-only semantic review package from case + evidence artifacts.
 
-This does not call a judge model. It validates evidence file hashes and creates a
+This does not call a judge model. It validates evidence/final hashes and creates a
 self-contained review input that can be supplied to a blinded human/model judge.
 """
 from __future__ import annotations
@@ -10,8 +10,11 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 from typing import Any
+
+TRUSTED_COMMAND_STATUSES = {"completed", "failed"}
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -46,6 +49,27 @@ def _evidence_refs(index: dict[str, Any]) -> list[dict[str, Any]]:
     return refs
 
 
+def _validate_trusted_execution_ids(index: dict[str, Any]) -> list[str]:
+    records = index.get("records")
+    if not isinstance(records, list):
+        raise ValueError("evidence index records must be a list")
+    expected: list[str] = []
+    for record in records:
+        if not isinstance(record, dict):
+            raise ValueError("evidence record must be an object")
+        if record.get("kind") == "command_execution" and record.get("status") in TRUSTED_COMMAND_STATUSES:
+            evidence_id = record.get("evidence_id")
+            if not isinstance(evidence_id, str) or not evidence_id:
+                raise ValueError("trusted command record has no evidence_id")
+            expected.append(evidence_id)
+    observed = index.get("trusted_execution_ids")
+    if not isinstance(observed, list) or not all(isinstance(x, str) for x in observed):
+        raise ValueError("trusted_execution_ids must be a list of strings")
+    if observed != expected:
+        raise ValueError("trusted_execution_ids do not match trusted command records")
+    return observed
+
+
 def assemble(evaluator_dir: Path, evidence_bundle: Path, output_dir: Path,
              *, include_followup: bool = False) -> dict[str, Any]:
     evaluator_dir = evaluator_dir.resolve()
@@ -67,6 +91,15 @@ def assemble(evaluator_dir: Path, evidence_bundle: Path, output_dir: Path,
     if include_followup and not isinstance(followup, str):
         raise ValueError("followup phase requested for a case without followup")
 
+    expected_final_sha = index.get("final_sha256")
+    if not isinstance(expected_final_sha, str) or re.fullmatch(r"[0-9a-f]{64}", expected_final_sha) is None:
+        raise ValueError("evidence index has invalid final_sha256")
+    final_raw = final_path.read_bytes()
+    actual_final_sha = hashlib.sha256(final_raw).hexdigest()
+    if actual_final_sha != expected_final_sha:
+        raise ValueError("candidate final hash mismatch")
+    trusted_execution_ids = _validate_trusted_execution_ids(index)
+
     evidence_text: dict[str, str] = {}
     for ref in _evidence_refs(index):
         filename = ref.get("file")
@@ -83,7 +116,7 @@ def assemble(evaluator_dir: Path, evidence_bundle: Path, output_dir: Path,
             raise ValueError(f"stored evidence hash mismatch: {filename}")
         evidence_text[filename] = raw.decode("utf-8", errors="replace")
 
-    final_text = final_path.read_text(encoding="utf-8", errors="replace")
+    final_text = final_raw.decode("utf-8", errors="replace")
     review_input = {
         "schema_version": 1,
         "case_id": case.get("case_id"),
@@ -114,7 +147,8 @@ def assemble(evaluator_dir: Path, evidence_bundle: Path, output_dir: Path,
             "review_schema_sha256": hashlib.sha256(
                 (output_dir / "review-schema.json").read_bytes()).hexdigest(),
             "source_trace_sha256": index.get("source_trace_sha256"),
-            "trusted_execution_ids": index.get("trusted_execution_ids", []),
+            "candidate_final_sha256": actual_final_sha,
+            "trusted_execution_ids": trusted_execution_ids,
         }
         (output_dir / "review-manifest.json").write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
