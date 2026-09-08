@@ -35,6 +35,11 @@ class BoundaryProfileTests(unittest.TestCase):
     def test_valid_reference_profile_passes(self):
         self.assertEqual(validate_profile(deepcopy(PROFILE))["verdict"], "profile-valid")
 
+    def test_empty_read_only_mounts_are_allowed_for_image_contained_runtime(self):
+        value = deepcopy(PROFILE)
+        value["read_only_mounts"] = []
+        self.assertEqual(validate_profile(value)["verdict"], "profile-valid")
+
     def test_writable_root_is_rejected(self):
         value = deepcopy(PROFILE)
         value["read_only_root"] = False
