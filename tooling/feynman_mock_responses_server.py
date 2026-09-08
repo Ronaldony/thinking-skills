@@ -7,8 +7,14 @@ Two scenarios are supported:
   ``exec_command`` into the selected remote exec-server, while the tool boundary
   has no network and no auth-like environment variables.
 - ``patch-then-exec``: additionally request ``apply_patch`` first, then require
-  the remote command to read the patched marker. This scenario is intentionally
-  separate because custom-tool compatibility may differ across Codex versions.
+  the remote command to read the patched marker.
+
+For synthetic authentication references an optional expected bearer SHA-256 may
+be supplied. The server then verifies that every Responses request carries the
+matching bearer while recording only its digest, never the raw Authorization
+header or token. The expected digest can also be embedded into the remote tool
+command so the tool process proves that no environment value equals the control-
+plane credential.
 
 This is a test model server. It never calls an external model service and never
 needs a real credential.
@@ -36,8 +42,10 @@ PATCH_MARKER = "REMOTE_PATCH_OK"
 WORKSPACE_MARKER = "REMOTE_EXEC_OK"
 NETWORK_MARKER = "NETWORK_BLOCKED"
 AUTH_ENV_MARKER = "AUTH_ENV_CLEAN"
+AUTH_VALUE_MARKER = "AUTH_VALUE_CLEAN"
 MAX_BODY_BYTES = 5 * 1024 * 1024
 HOST_PATTERN = re.compile(r"(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])")
+SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 
 
 def _sse(events: list[dict[str, Any]]) -> bytes:
@@ -95,11 +103,20 @@ def apply_patch_events() -> list[dict[str, Any]]:
     ]
 
 
-def _tool_command(host: str, port: int, *, require_patch: bool = False) -> str:
+def _tool_command(
+    host: str,
+    port: int,
+    *,
+    require_patch: bool = False,
+    expected_bearer_sha256: str | None = None,
+) -> str:
     if HOST_PATTERN.fullmatch(host) is None:
         raise ValueError("tool network host contains unsupported characters")
     if not 1 <= port <= 65535:
         raise ValueError("tool network port must be in 1..65535")
+    if expected_bearer_sha256 is not None and SHA256_PATTERN.fullmatch(expected_bearer_sha256) is None:
+        raise ValueError("expected bearer digest must be lowercase SHA-256")
+
     patch_lines = ""
     if require_patch:
         patch_lines = (
@@ -107,6 +124,25 @@ def _tool_command(host: str, port: int, *, require_patch: bool = False) -> str:
             f"test \"$PATCH_VALUE\" = '{PATCH_MARKER}'\n"
             "printf '%s\\n' \"$PATCH_VALUE\"\n"
         )
+
+    value_check = ""
+    if expected_bearer_sha256 is not None:
+        value_check = f"""python3 - <<'PY'
+import hashlib
+import os
+expected = {expected_bearer_sha256!r}
+leaks = []
+for key, value in os.environ.items():
+    digest = hashlib.sha256(value.encode('utf-8', errors='surrogateescape')).hexdigest()
+    if digest == expected:
+        leaks.append(key)
+if leaks:
+    print('AUTH_VALUE_LEAK:' + ','.join(sorted(leaks)))
+    raise SystemExit(10)
+print({AUTH_VALUE_MARKER!r})
+PY
+"""
+
     return f"""set -eu
 {patch_lines}printf '%s\\n' '{WORKSPACE_MARKER}' > remote-tool-proof.txt
 python3 - <<'PY'
@@ -119,7 +155,7 @@ if bad:
     raise SystemExit(8)
 print({AUTH_ENV_MARKER!r})
 PY
-python3 - <<'PY'
+{value_check}python3 - <<'PY'
 import socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 sock.settimeout(0.5)
@@ -135,10 +171,24 @@ cat remote-tool-proof.txt
 """
 
 
-def exec_command_events(host: str, port: int, *, require_patch: bool = False) -> list[dict[str, Any]]:
+def exec_command_events(
+    host: str,
+    port: int,
+    *,
+    require_patch: bool = False,
+    expected_bearer_sha256: str | None = None,
+) -> list[dict[str, Any]]:
     response_id = "resp-remote-exec"
     arguments = json.dumps(
-        {"cmd": _tool_command(host, port, require_patch=require_patch), "yield_time_ms": 1000},
+        {
+            "cmd": _tool_command(
+                host,
+                port,
+                require_patch=require_patch,
+                expected_bearer_sha256=expected_bearer_sha256,
+            ),
+            "yield_time_ms": 1000,
+        },
         separators=(",", ":"),
     )
     return [
@@ -221,6 +271,15 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
         raise
 
 
+def _bearer_digest(header: str | None) -> tuple[bool, str | None]:
+    if header is None or not header.startswith("Bearer "):
+        return False, None
+    token = header[len("Bearer "):]
+    if not token:
+        return False, None
+    return True, hashlib.sha256(token.encode("utf-8", errors="surrogateescape")).hexdigest()
+
+
 class ReferenceServer(ThreadingHTTPServer):
     daemon_threads = True
 
@@ -232,14 +291,18 @@ class ReferenceServer(ThreadingHTTPServer):
         ready_path: Path,
         tool_network_host: str,
         scenario: str,
+        expected_bearer_sha256: str | None = None,
     ):
         if scenario not in SCENARIOS:
             raise ValueError(f"unsupported reference scenario: {scenario}")
+        if expected_bearer_sha256 is not None and SHA256_PATTERN.fullmatch(expected_bearer_sha256) is None:
+            raise ValueError("expected bearer digest must be lowercase SHA-256")
         super().__init__(address, ReferenceHandler)
         self.state_path = state_path
         self.ready_path = ready_path
         self.tool_network_host = tool_network_host
         self.scenario = scenario
+        self.expected_bearer_sha256 = expected_bearer_sha256
         self.requests: list[dict[str, Any]] = []
         self.validation_error: str | None = None
 
@@ -247,16 +310,17 @@ class ReferenceServer(ThreadingHTTPServer):
         _atomic_json(
             self.state_path,
             {
-                "schema_version": 3,
+                "schema_version": 4,
                 "scenario": self.scenario,
                 "requests": self.requests,
                 "validation_error": self.validation_error,
+                "expected_bearer_sha256": self.expected_bearer_sha256,
                 "final_text": FINAL_TEXT,
                 "patch_call_id": PATCH_CALL_ID if self.scenario == SCENARIO_PATCH_THEN_EXEC else None,
                 "exec_call_id": EXEC_CALL_ID,
                 "patch_filename": PATCH_FILENAME if self.scenario == SCENARIO_PATCH_THEN_EXEC else None,
                 "scope": (
-                    "credential-free mock Responses control-plane reference; "
+                    "mock Responses control-plane reference; raw authorization values are never recorded; "
                     f"scenario={self.scenario}"
                 ),
             },
@@ -316,11 +380,17 @@ class ReferenceHandler(BaseHTTPRequestHandler):
             self._json(400, {"error": "invalid json"})
             return
 
+        bearer_present, bearer_sha = _bearer_digest(self.headers.get("Authorization"))
+        expected_bearer = self.server.expected_bearer_sha256
+        bearer_matches = expected_bearer is None or bearer_sha == expected_bearer
         patch_output = find_patch_output(body)
         exec_output = find_exec_output(body)
         record = {
             "index": len(self.server.requests) + 1,
             "body_sha256": hashlib.sha256(raw).hexdigest(),
+            "authorization_bearer_present": bearer_present,
+            "authorization_bearer_sha256": bearer_sha,
+            "authorization_matches_expected": bearer_matches,
             "has_patch_output": patch_output is not None,
             "patch_output_sha256": (
                 hashlib.sha256(patch_output.encode("utf-8")).hexdigest()
@@ -343,17 +413,36 @@ class ReferenceHandler(BaseHTTPRequestHandler):
             "exec_output_contains_auth_env_marker": (
                 AUTH_ENV_MARKER in exec_output if exec_output is not None else False
             ),
+            "exec_output_contains_auth_value_marker": (
+                AUTH_VALUE_MARKER in exec_output if exec_output is not None else False
+            ),
         }
         self.server.requests.append(record)
+
+        if expected_bearer is not None and not bearer_matches:
+            self.server.validation_error = "Responses request bearer is missing or does not match expected SHA-256"
+            self.server.write_state()
+            self._json(401, {"error": self.server.validation_error})
+            return
+
         request_no = len(self.server.requests)
+        auth_value_required = expected_bearer is not None
 
         if self.server.scenario == SCENARIO_EXEC_ONLY:
             if request_no == 1:
                 self.server.write_state()
-                self._sse(exec_command_events(self.server.tool_network_host, self.server.server_port))
+                self._sse(
+                    exec_command_events(
+                        self.server.tool_network_host,
+                        self.server.server_port,
+                        expected_bearer_sha256=expected_bearer,
+                    )
+                )
                 return
             if request_no == 2:
-                required = (WORKSPACE_MARKER, NETWORK_MARKER, AUTH_ENV_MARKER)
+                required = [WORKSPACE_MARKER, NETWORK_MARKER, AUTH_ENV_MARKER]
+                if auth_value_required:
+                    required.append(AUTH_VALUE_MARKER)
                 if exec_output is None or not all(marker in exec_output for marker in required):
                     self.server.validation_error = (
                         "second model request lacks verified exec-only remote output markers"
@@ -387,11 +476,14 @@ class ReferenceHandler(BaseHTTPRequestHandler):
                     self.server.tool_network_host,
                     self.server.server_port,
                     require_patch=True,
+                    expected_bearer_sha256=expected_bearer,
                 )
             )
             return
         if request_no == 3:
-            required = (PATCH_MARKER, WORKSPACE_MARKER, NETWORK_MARKER, AUTH_ENV_MARKER)
+            required = [PATCH_MARKER, WORKSPACE_MARKER, NETWORK_MARKER, AUTH_ENV_MARKER]
+            if auth_value_required:
+                required.append(AUTH_VALUE_MARKER)
             if exec_output is None or not all(marker in exec_output for marker in required):
                 self.server.validation_error = (
                     "third model request lacks verified patch-then-exec output markers"
@@ -413,6 +505,7 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--tool-network-host", required=True)
     parser.add_argument("--scenario", choices=sorted(SCENARIOS), default=SCENARIO_EXEC_ONLY)
+    parser.add_argument("--expected-bearer-sha256")
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--ready", type=Path, required=True)
     args = parser.parse_args()
@@ -420,6 +513,8 @@ def main() -> int:
         parser.error("--port must be in 0..65535")
     if HOST_PATTERN.fullmatch(args.tool_network_host) is None:
         parser.error("--tool-network-host contains unsupported characters")
+    if args.expected_bearer_sha256 is not None and SHA256_PATTERN.fullmatch(args.expected_bearer_sha256) is None:
+        parser.error("--expected-bearer-sha256 must be lowercase SHA-256")
 
     server = ReferenceServer(
         (args.bind, args.port),
@@ -427,15 +522,17 @@ def main() -> int:
         ready_path=args.ready.resolve(),
         tool_network_host=args.tool_network_host,
         scenario=args.scenario,
+        expected_bearer_sha256=args.expected_bearer_sha256,
     )
     _atomic_json(
         server.ready_path,
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "bind": args.bind,
             "port": server.server_port,
             "tool_network_host": args.tool_network_host,
             "scenario": args.scenario,
+            "expected_bearer_sha256": args.expected_bearer_sha256,
         },
     )
     server.write_state()
