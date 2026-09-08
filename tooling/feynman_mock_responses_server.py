@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Serve deterministic Responses API SSE for the remote-tool reference.
+"""Serve deterministic Responses API SSE for remote-tool references.
 
-The mock conversation has three model requests:
+Two scenarios are supported:
 
-1. ask Codex to apply a patch that creates `remote-patch-proof.txt`;
-2. after the matching custom-tool output returns, ask Codex to execute a command;
-3. only after that command proves the patched file is visible in the selected
-   remote environment, verifies network denial and a clean auth environment, and
-   writes the exec marker, return the final assistant message.
+- ``exec-only``: prove that a host-side Codex control plane can route an
+  ``exec_command`` into the selected remote exec-server, while the tool boundary
+  has no network and no auth-like environment variables.
+- ``patch-then-exec``: additionally request ``apply_patch`` first, then require
+  the remote command to read the patched marker. This scenario is intentionally
+  separate because custom-tool compatibility may differ across Codex versions.
 
 This is a test model server. It never calls an external model service and never
 needs a real credential.
@@ -24,6 +25,9 @@ import re
 import tempfile
 from typing import Any
 
+SCENARIO_EXEC_ONLY = "exec-only"
+SCENARIO_PATCH_THEN_EXEC = "patch-then-exec"
+SCENARIOS = {SCENARIO_EXEC_ONLY, SCENARIO_PATCH_THEN_EXEC}
 PATCH_CALL_ID = "call-remote-patch-reference"
 EXEC_CALL_ID = "call-remote-exec-reference"
 FINAL_TEXT = "REMOTE_EXEC_REFERENCE_OK"
@@ -91,16 +95,20 @@ def apply_patch_events() -> list[dict[str, Any]]:
     ]
 
 
-def _tool_command(host: str, port: int) -> str:
+def _tool_command(host: str, port: int, *, require_patch: bool = False) -> str:
     if HOST_PATTERN.fullmatch(host) is None:
         raise ValueError("tool network host contains unsupported characters")
     if not 1 <= port <= 65535:
         raise ValueError("tool network port must be in 1..65535")
+    patch_lines = ""
+    if require_patch:
+        patch_lines = (
+            f'PATCH_VALUE="$(cat {PATCH_FILENAME})"\n'
+            f"test \"$PATCH_VALUE\" = '{PATCH_MARKER}'\n"
+            "printf '%s\\n' \"$PATCH_VALUE\"\n"
+        )
     return f"""set -eu
-PATCH_VALUE="$(cat {PATCH_FILENAME})"
-test "$PATCH_VALUE" = '{PATCH_MARKER}'
-printf '%s\\n' "$PATCH_VALUE"
-printf '%s\\n' '{WORKSPACE_MARKER}' > remote-tool-proof.txt
+{patch_lines}printf '%s\\n' '{WORKSPACE_MARKER}' > remote-tool-proof.txt
 python3 - <<'PY'
 import os
 import re
@@ -127,10 +135,10 @@ cat remote-tool-proof.txt
 """
 
 
-def exec_command_events(host: str, port: int) -> list[dict[str, Any]]:
+def exec_command_events(host: str, port: int, *, require_patch: bool = False) -> list[dict[str, Any]]:
     response_id = "resp-remote-exec"
     arguments = json.dumps(
-        {"cmd": _tool_command(host, port), "yield_time_ms": 1000},
+        {"cmd": _tool_command(host, port, require_patch=require_patch), "yield_time_ms": 1000},
         separators=(",", ":"),
     )
     return [
@@ -216,12 +224,22 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
 class ReferenceServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address: tuple[str, int], *, state_path: Path, ready_path: Path,
-                 tool_network_host: str):
+    def __init__(
+        self,
+        address: tuple[str, int],
+        *,
+        state_path: Path,
+        ready_path: Path,
+        tool_network_host: str,
+        scenario: str,
+    ):
+        if scenario not in SCENARIOS:
+            raise ValueError(f"unsupported reference scenario: {scenario}")
         super().__init__(address, ReferenceHandler)
         self.state_path = state_path
         self.ready_path = ready_path
         self.tool_network_host = tool_network_host
+        self.scenario = scenario
         self.requests: list[dict[str, Any]] = []
         self.validation_error: str | None = None
 
@@ -229,14 +247,18 @@ class ReferenceServer(ThreadingHTTPServer):
         _atomic_json(
             self.state_path,
             {
-                "schema_version": 2,
+                "schema_version": 3,
+                "scenario": self.scenario,
                 "requests": self.requests,
                 "validation_error": self.validation_error,
                 "final_text": FINAL_TEXT,
-                "patch_call_id": PATCH_CALL_ID,
+                "patch_call_id": PATCH_CALL_ID if self.scenario == SCENARIO_PATCH_THEN_EXEC else None,
                 "exec_call_id": EXEC_CALL_ID,
-                "patch_filename": PATCH_FILENAME,
-                "scope": "credential-free mock Responses control-plane reference with remote apply_patch + exec",
+                "patch_filename": PATCH_FILENAME if self.scenario == SCENARIO_PATCH_THEN_EXEC else None,
+                "scope": (
+                    "credential-free mock Responses control-plane reference; "
+                    f"scenario={self.scenario}"
+                ),
             },
         )
 
@@ -268,7 +290,7 @@ class ReferenceHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
         if self.path == "/healthz":
-            self._json(200, {"ok": True})
+            self._json(200, {"ok": True, "scenario": self.server.scenario})
             return
         if self.path in {"/v1/models", "/models"}:
             self._json(200, {"object": "list", "data": []})
@@ -300,44 +322,87 @@ class ReferenceHandler(BaseHTTPRequestHandler):
             "index": len(self.server.requests) + 1,
             "body_sha256": hashlib.sha256(raw).hexdigest(),
             "has_patch_output": patch_output is not None,
-            "patch_output_sha256": hashlib.sha256(patch_output.encode("utf-8")).hexdigest() if patch_output is not None else None,
+            "patch_output_sha256": (
+                hashlib.sha256(patch_output.encode("utf-8")).hexdigest()
+                if patch_output is not None else None
+            ),
             "has_exec_output": exec_output is not None,
-            "exec_output_sha256": hashlib.sha256(exec_output.encode("utf-8")).hexdigest() if exec_output is not None else None,
-            "exec_output_contains_patch_marker": PATCH_MARKER in exec_output if exec_output is not None else False,
-            "exec_output_contains_workspace_marker": WORKSPACE_MARKER in exec_output if exec_output is not None else False,
-            "exec_output_contains_network_marker": NETWORK_MARKER in exec_output if exec_output is not None else False,
-            "exec_output_contains_auth_env_marker": AUTH_ENV_MARKER in exec_output if exec_output is not None else False,
+            "exec_output_sha256": (
+                hashlib.sha256(exec_output.encode("utf-8")).hexdigest()
+                if exec_output is not None else None
+            ),
+            "exec_output_contains_patch_marker": (
+                PATCH_MARKER in exec_output if exec_output is not None else False
+            ),
+            "exec_output_contains_workspace_marker": (
+                WORKSPACE_MARKER in exec_output if exec_output is not None else False
+            ),
+            "exec_output_contains_network_marker": (
+                NETWORK_MARKER in exec_output if exec_output is not None else False
+            ),
+            "exec_output_contains_auth_env_marker": (
+                AUTH_ENV_MARKER in exec_output if exec_output is not None else False
+            ),
         }
         self.server.requests.append(record)
         request_no = len(self.server.requests)
+
+        if self.server.scenario == SCENARIO_EXEC_ONLY:
+            if request_no == 1:
+                self.server.write_state()
+                self._sse(exec_command_events(self.server.tool_network_host, self.server.server_port))
+                return
+            if request_no == 2:
+                required = (WORKSPACE_MARKER, NETWORK_MARKER, AUTH_ENV_MARKER)
+                if exec_output is None or not all(marker in exec_output for marker in required):
+                    self.server.validation_error = (
+                        "second model request lacks verified exec-only remote output markers"
+                    )
+                    self.server.write_state()
+                    self._json(409, {"error": self.server.validation_error})
+                    return
+                self.server.write_state()
+                self._sse(final_events())
+                return
+            self.server.validation_error = "exec-only reference received more than two model requests"
+            self.server.write_state()
+            self._json(409, {"error": self.server.validation_error})
+            return
 
         if request_no == 1:
             self.server.write_state()
             self._sse(apply_patch_events())
             return
-
         if request_no == 2:
             if patch_output is None:
-                self.server.validation_error = "second model request lacks matching remote apply_patch output"
+                self.server.validation_error = (
+                    "second model request lacks matching remote apply_patch output"
+                )
                 self.server.write_state()
                 self._json(409, {"error": self.server.validation_error})
                 return
             self.server.write_state()
-            self._sse(exec_command_events(self.server.tool_network_host, self.server.server_port))
+            self._sse(
+                exec_command_events(
+                    self.server.tool_network_host,
+                    self.server.server_port,
+                    require_patch=True,
+                )
+            )
             return
-
         if request_no == 3:
             required = (PATCH_MARKER, WORKSPACE_MARKER, NETWORK_MARKER, AUTH_ENV_MARKER)
             if exec_output is None or not all(marker in exec_output for marker in required):
-                self.server.validation_error = "third model request lacks verified remote exec output markers"
+                self.server.validation_error = (
+                    "third model request lacks verified patch-then-exec output markers"
+                )
                 self.server.write_state()
                 self._json(409, {"error": self.server.validation_error})
                 return
             self.server.write_state()
             self._sse(final_events())
             return
-
-        self.server.validation_error = "mock reference received more than three model requests"
+        self.server.validation_error = "patch-then-exec reference received more than three model requests"
         self.server.write_state()
         self._json(409, {"error": self.server.validation_error})
 
@@ -347,6 +412,7 @@ def main() -> int:
     parser.add_argument("--bind", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--tool-network-host", required=True)
+    parser.add_argument("--scenario", choices=sorted(SCENARIOS), default=SCENARIO_EXEC_ONLY)
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--ready", type=Path, required=True)
     args = parser.parse_args()
@@ -360,6 +426,7 @@ def main() -> int:
         state_path=args.state.resolve(),
         ready_path=args.ready.resolve(),
         tool_network_host=args.tool_network_host,
+        scenario=args.scenario,
     )
     _atomic_json(
         server.ready_path,
@@ -368,6 +435,7 @@ def main() -> int:
             "bind": args.bind,
             "port": server.server_port,
             "tool_network_host": args.tool_network_host,
+            "scenario": args.scenario,
         },
     )
     server.write_state()
