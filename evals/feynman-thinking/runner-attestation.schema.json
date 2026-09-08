@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Feynman evaluation external runner attestation",
+  "type": "object",
+  "properties": {
+    "schema_version": {"const": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "case_id": {"type": "string", "minLength": 1},
+    "condition_id": {"type": "string", "enum": ["baseline", "generic", "legacy-clean", "feynman-v05"]},
+    "boundary": {
+      "type": "object",
+      "properties": {
+        "backend": {"type": "string", "minLength": 1},
+        "backend_version": {"type": "string", "minLength": 1},
+        "platform": {"type": "string", "minLength": 1},
+        "kernel": {"type": "string", "minLength": 1},
+        "external_enforcement": {"const": true},
+        "profile_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "required": ["backend", "backend_version", "platform", "kernel", "external_enforcement", "profile_sha256"],
+      "additionalProperties": false
+    },
+    "paths": {
+      "type": "object",
+      "properties": {
+        "candidate_dir": {"type": "string", "minLength": 1},
+        "evaluator_dir": {"type": "string", "minLength": 1},
+        "source_repo": {"type": "string", "minLength": 1},
+        "ephemeral_home": {"type": "string", "minLength": 1},
+        "codex_home": {"type": "string", "minLength": 1},
+        "temp_dir": {"type": "string", "minLength": 1},
+        "real_home": {"type": "string", "minLength": 1}
+      },
+      "required": ["candidate_dir", "evaluator_dir", "source_repo", "ephemeral_home", "codex_home", "temp_dir", "real_home"],
+      "additionalProperties": false
+    },
+    "filesystem": {
+      "type": "object",
+      "properties": {
+        "candidate_readable_data_roots": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "candidate_writable_roots": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "platform_runtime_roots": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "forbidden_read_roots": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "forbidden_write_roots": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+      },
+      "required": ["candidate_readable_data_roots", "candidate_writable_roots", "platform_runtime_roots", "forbidden_read_roots", "forbidden_write_roots"],
+      "additionalProperties": false
+    },
+    "network": {
+      "type": "object",
+      "properties": {
+        "case_requires_tool_network": {"type": "boolean"},
+        "tool_network": {"type": "string", "enum": ["blocked", "restricted", "open"]},
+        "control_plane_separate_from_tool_network": {"type": "boolean"},
+        "allowed_tool_destinations": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      },
+      "required": ["case_requires_tool_network", "tool_network", "control_plane_separate_from_tool_network", "allowed_tool_destinations"],
+      "additionalProperties": false
+    },
+    "environment": {
+      "type": "object",
+      "properties": {
+        "candidate_env_keys": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "api_auth_exposed_to_candidate_tools": {"const": false},
+        "plugins_enabled": {"type": "boolean"},
+        "system_skills": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "expected_candidate_skills": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "observed_candidate_skills": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      },
+      "required": ["candidate_env_keys", "api_auth_exposed_to_candidate_tools", "plugins_enabled", "system_skills", "expected_candidate_skills", "observed_candidate_skills"],
+      "additionalProperties": false
+    },
+    "probes": {
+      "type": "object",
+      "properties": {
+        "candidate_read": {"$ref": "#/$defs/probe"},
+        "evaluator_read_denied": {"$ref": "#/$defs/probe"},
+        "source_read_denied": {"$ref": "#/$defs/probe"},
+        "real_home_read_denied": {"$ref": "#/$defs/probe"},
+        "candidate_write": {"$ref": "#/$defs/probe"},
+        "forbidden_write_denied": {"$ref": "#/$defs/probe"},
+        "tool_network_denied": {"$ref": "#/$defs/probe"},
+        "ambient_skill_preflight": {"$ref": "#/$defs/probe"},
+        "secret_env_scan": {"$ref": "#/$defs/probe"}
+      },
+      "required": ["candidate_read", "evaluator_read_denied", "source_read_denied", "real_home_read_denied", "candidate_write", "forbidden_write_denied", "tool_network_denied", "ambient_skill_preflight", "secret_env_scan"],
+      "additionalProperties": false
+    },
+    "versions": {
+      "type": "object",
+      "properties": {
+        "codex_cli": {"type": "string", "minLength": 1},
+        "model": {"type": "string", "minLength": 1}
+      },
+      "required": ["codex_cli", "model"],
+      "additionalProperties": false
+    },
+    "digests": {
+      "type": "object",
+      "properties": {
+        "eval_plan_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "runtime_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "candidate_prompt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "required": ["eval_plan_sha256", "runtime_sha256", "candidate_prompt_sha256"],
+      "additionalProperties": false
+    },
+    "limitations": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "probe": {
+      "type": "object",
+      "properties": {
+        "passed": {"type": "boolean"},
+        "artifact_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "method": {"type": "string", "minLength": 1}
+      },
+      "required": ["passed", "artifact_sha256", "method"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["schema_version", "run_id", "case_id", "condition_id", "boundary", "paths", "filesystem", "network", "environment", "probes", "versions", "digests", "limitations"],
+  "additionalProperties": false
+}
