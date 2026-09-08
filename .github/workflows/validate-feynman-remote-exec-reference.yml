@@ -201,7 +201,7 @@ jobs:
             --codex-home "$CONTROL_CODEX_HOME" \
             > "$ROOT/candidate-preflight.json"
 
-      - name: Run mock model through network-disabled stdio exec-server
+      - name: Run mock model through remote apply-patch and network-disabled exec-server
         shell: bash
         run: |
           set -euo pipefail
@@ -295,6 +295,8 @@ jobs:
               "$PROMPT" \
             > "$ROOT/codex-trace.jsonl"
 
+          test -f "$CANDIDATE/remote-patch-proof.txt"
+          test "$(cat "$CANDIDATE/remote-patch-proof.txt")" = "REMOTE_PATCH_OK"
           test -f "$CANDIDATE/remote-tool-proof.txt"
           test "$(cat "$CANDIDATE/remote-tool-proof.txt")" = "REMOTE_EXEC_OK"
           grep -q 'REMOTE_EXEC_REFERENCE_OK' "$ROOT/codex-trace.jsonl"
@@ -315,6 +317,7 @@ jobs:
             --mock-state "$ROOT/mock-state.json" \
             --codex-trace "$ROOT/codex-trace.jsonl" \
             --docker-inspect "$ROOT/tool-container-inspect.json" \
+            --patch-proof "$CANDIDATE/remote-patch-proof.txt" \
             --candidate-proof "$CANDIDATE/remote-tool-proof.txt" \
             --mock-server-program tooling/feynman_mock_responses_server.py \
             --control-codex-version "$ROOT/control-codex-version.txt" \
@@ -346,6 +349,7 @@ jobs:
             /tmp/feynman-remote-exec-reference/codex-trace.jsonl
             /tmp/feynman-remote-exec-reference/tool-container-inspect.json
             /tmp/feynman-remote-exec-reference/tool-container-inspect-check.json
+            /tmp/feynman-remote-exec-reference/candidate/remote-patch-proof.txt
             /tmp/feynman-remote-exec-reference/candidate/remote-tool-proof.txt
             /tmp/feynman-remote-exec-reference/reference-result.json
             /tmp/feynman-remote-exec-reference/reference-result.stdout.json
