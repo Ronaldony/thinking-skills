@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Feynman inside-boundary canary probe artifact",
+  "type": "object",
+  "properties": {
+    "schema_version": {"const": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "probe_program_sha256": {"$ref": "#/$defs/sha256"},
+    "observations": {
+      "type": "object",
+      "properties": {
+        "candidate_read": {"$ref": "#/$defs/readObservation"},
+        "protected_reads": {
+          "type": "object",
+          "properties": {
+            "evaluator": {"$ref": "#/$defs/readObservation"},
+            "source": {"$ref": "#/$defs/readObservation"},
+            "real_home": {"$ref": "#/$defs/readObservation"}
+          },
+          "required": ["evaluator", "source", "real_home"],
+          "additionalProperties": false
+        },
+        "candidate_write": {"$ref": "#/$defs/writeObservation"},
+        "forbidden_writes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/writeObservation"}
+        },
+        "environment": {
+          "type": "object",
+          "properties": {
+            "keys": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+            "secret_like_keys": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+          },
+          "required": ["keys", "secret_like_keys"],
+          "additionalProperties": false
+        },
+        "network": {
+          "type": "object",
+          "properties": {
+            "attempted": {"type": "boolean"},
+            "host": {"type": "string"},
+            "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+            "connected": {"type": "boolean"},
+            "error": {"$ref": "#/$defs/osError"}
+          },
+          "required": ["attempted"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["candidate_read", "protected_reads", "candidate_write", "forbidden_writes", "environment", "network"],
+      "additionalProperties": false
+    },
+    "scope": {"type": "string", "minLength": 1}
+  },
+  "required": ["schema_version", "run_id", "probe_program_sha256", "observations", "scope"],
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "osError": {
+      "type": "object",
+      "properties": {
+        "type": {"type": "string", "minLength": 1},
+        "errno": {"type": ["integer", "null"]},
+        "message": {"type": "string"}
+      },
+      "required": ["type", "errno", "message"],
+      "additionalProperties": false
+    },
+    "readObservation": {
+      "type": "object",
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "succeeded": {"type": "boolean"},
+        "denied": {"type": "boolean"},
+        "bytes": {"type": "integer", "minimum": 0},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "expected_marker_sha256": {"$ref": "#/$defs/sha256"},
+        "marker_match": {"type": "boolean"},
+        "error": {"$ref": "#/$defs/osError"}
+      },
+      "required": ["path", "succeeded", "denied"],
+      "additionalProperties": false
+    },
+    "writeObservation": {
+      "type": "object",
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "succeeded": {"type": "boolean"},
+        "denied": {"type": "boolean"},
+        "marker_sha256": {"$ref": "#/$defs/sha256"},
+        "error": {"$ref": "#/$defs/osError"}
+      },
+      "required": ["path", "succeeded", "denied", "marker_sha256"],
+      "additionalProperties": false
+    }
+  }
+}
