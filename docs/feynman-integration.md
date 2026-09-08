@@ -5,8 +5,8 @@
 ## 배치
 
 - `skills/feynman-thinking/`: 후보 모델에게 설치할 독립 런타임. 이 폴더의 허용 파일만 패키징한다.
-- `evals/feynman-thinking/`: 공개 개발용 사례, 평가자 루브릭, 의미 평가 schema/prompt. 후보 런타임에 복사하지 않는다.
-- `tooling/`: 패키징, 후보/평가 workspace 분리, Codex JSONL 증거 축약 및 채점 게이트의 로컬 검증 코드. 모델 실행기나 의미 채점기의 대체물이 아니다.
+- `evals/feynman-thinking/`: 공개 개발용 사례, 평가자 루브릭, 의미 평가 schema/prompt, 행동 비교 사전등록 초안. 후보 런타임에 복사하지 않는다.
+- `tooling/`: 패키징, 후보/평가 workspace 분리, ambient skill-root preflight, Codex JSONL 증거 축약 및 채점 게이트의 로컬 검증 코드. 모델 실행기나 의미 채점기의 대체물이 아니다.
 - `audit/`: 구버전 함수의 관련 부분을 옮긴 최소 재현 검사. 원 저장소 전체 실행이 아니다.
 - `docs/`: 감사 보고서와 통합 제안. 후보에게 평가 결과를 노출하지 않는다.
 
@@ -22,7 +22,9 @@ Agent Skills 표준은 최소 `SKILL.md`와 `name`/`description` frontmatter를 
 
 `feynman_package.py`는 런타임 allowlist만 만들며 평가자 파일을 복사하지 않는다. `feynman_eval_workspace.py`는 후보와 평가자 디렉터리를 따로 만들고 후보/평가 경로가 소스 저장소 안에 있거나 서로 포함되는 구성을 거부하며 fixture symlink도 거부한다. 이것은 **파일 배치 수준의 방어**다.
 
-실제 후보 프로세스는 후보 디렉터리만 볼 수 있는 별도 OS/컨테이너 샌드박스에서 실행해야 한다. 현재 저장소는 그 보안 경계를 구현하지 않는다. 네트워크 접근이 있으면 공개 개발 사례나 외부 정답을 조회할 수 있으므로 별도 통제가 필요하다.
+Codex 계열 호스트에서는 사용자 또는 상위 경로의 스킬이 후보 workspace 밖에서 발견될 수 있다. 따라서 `--ignore-user-config` 같은 설정 하나를 완전한 격리로 취급하지 않는다. `feynman_eval_preflight.py`는 후보 내부 기대 스킬 집합과 `$HOME/.agents/skills`, `$CODEX_HOME/skills`, 후보 상위 디렉터리의 `.agents/skills`를 검사하고 예상하지 않은 `SKILL.md`가 있으면 run을 거부한다. 현재 Codex 생태계에서 사용자 스킬 경로가 `.agents/skills`와 CODEX_HOME 계열로 혼재·변화하는 사례가 있으므로 두 경로를 모두 검사한다. 이 검사는 파일시스템에 보이는 skill root만 확인하며 플러그인·내장/system 스킬을 완전히 제거하는 기능은 아니다.
+
+실제 후보 프로세스는 후보 디렉터리만 볼 수 있는 별도 OS/컨테이너 샌드박스에서 실행해야 한다. HOME과 CODEX_HOME도 평가 전용 빈 디렉터리로 고정하고 preflight에 사용한다. 현재 저장소는 그 보안 경계를 구현하지 않는다. 네트워크 접근이 있으면 공개 개발 사례나 외부 정답을 조회할 수 있으므로 별도 통제가 필요하다. 인증 정보나 일반 사용자 설정을 후보 workspace로 복사하는 방식으로 격리를 우회하지 않는다.
 
 후보 실행 후 `codex_exec_evidence.py`는 `codex exec --json` JSONL에서 완료된 command/MCP/web-search/file-change 항목과 최종 메시지를 평가자용 증거 번들로 축약한다. reasoning 항목은 복사하지 않는다. command의 `failed` 상태도 명령이 실제 실행되었다는 증거일 수 있지만 검사 성공을 뜻하지는 않는다. web search 이벤트 역시 검색 행동의 증거이지 검색 결과 내용의 진실성 증명은 아니다.
 
@@ -32,12 +34,13 @@ Agent Skills 표준은 최소 `SKILL.md`와 `name`/`description` frontmatter를 
 
 1. v0.4.0을 비교 기준으로 보존한다. 기존 핵심 루프와 근거 구분을 삭제하지 않는다.
 2. 새 런타임과 평가 자산을 경로 수준에서 분리한다. allowlist 복사와 독립 해시를 사용한다.
-3. 후보 workspace와 평가자 자료를 분리하고, 실행 trace를 reasoning 없는 증거 번들로 축약한다.
-4. 의미 채점기는 최종 답변과 검증된 증거 묶음을 함께 읽도록 개편한다. 기대 발견·필수 행동의 빠짐을 합격으로 처리하지 않는다.
-5. 공개 개발 사례로 정적·실행 경로를 점검한다. 이 사례를 held-out 성능으로 발표하지 않는다.
-6. 별도 작성자가 새 비공개 사례를 잠근 뒤 동일 조건의 모델 비교를 실행한다.
-7. 비용·정답·검증 진실성·불필요한 보류를 함께 보고하고 이름 제거/연산 제거 실험을 한다.
-8. 유효한 개선이 없으면 규칙을 줄이거나 일반 기능으로 이동한다. 실증 전에는 v1.0 또는 성능 개선 점수를 부여하지 않는다.
+3. 후보 workspace와 평가자 자료를 분리하고 ambient skill root를 preflight한다.
+4. 실행 trace를 reasoning 없는 증거 번들로 축약한다.
+5. 의미 채점기는 최종 답변과 검증된 증거 묶음을 함께 읽도록 개편한다. 기대 발견·필수 행동의 빠짐을 합격으로 처리하지 않는다.
+6. 공개 개발 사례로 정적·실행 경로를 점검한다. 이 사례를 held-out 성능으로 발표하지 않는다.
+7. 별도 작성자가 새 비공개 사례를 잠근 뒤 동일 조건의 모델 비교를 실행한다.
+8. 비용·정답·검증 진실성·불필요한 보류를 함께 보고하고 이름 제거/연산 제거 실험을 한다.
+9. 유효한 개선이 없으면 규칙을 줄이거나 일반 기능으로 이동한다. 실증 전에는 v1.0 또는 성능 개선 점수를 부여하지 않는다.
 
 ## 로컬 실행
 
@@ -49,6 +52,11 @@ python audit/legacy_probes.py
 python tooling/feynman_package.py --root . --output /tmp/feynman-preview
 python tooling/feynman_eval_workspace.py --root . --case tools-10 \
   --candidate-dir /tmp/feynman-candidate --evaluator-dir /tmp/feynman-evaluator
+mkdir -p /tmp/feynman-home /tmp/feynman-codex-home
+python tooling/feynman_eval_preflight.py \
+  --candidate-dir /tmp/feynman-candidate \
+  --expected-skill feynman-thinking \
+  --home /tmp/feynman-home --codex-home /tmp/feynman-codex-home
 ```
 
-대상 경로가 이미 있으면 덮어쓰지 않는다. 생성되는 `feynman-thinking/`만 호스트의 스킬 위치에 설치한다. `runtime-manifest.json`은 후보 패키지 밖에 있으며 허용 파일 해시와 저장소 커밋(없으면 null)을 기록한다. 패키저와 workspace builder는 파일 노출을 줄일 뿐 운영체제나 네트워크 격리를 제공하지 않는다. 모델 실행기와 실제 의미 채점기는 아직 별도 구현·검증 대상이다.
+대상 경로가 이미 있으면 덮어쓰지 않는다. 생성되는 `feynman-thinking/`만 호스트의 스킬 위치에 설치한다. `runtime-manifest.json`은 후보 패키지 밖에 있으며 허용 파일 해시와 저장소 커밋(없으면 null)을 기록한다. 패키저·workspace builder·preflight는 파일 노출과 skill-root 오염을 줄일 뿐 운영체제나 네트워크 격리를 제공하지 않는다. 모델 실행기와 실제 의미 채점기는 아직 별도 구현·검증 대상이다.
