@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Feynman external model-runner job",
+  "type": "object",
+  "properties": {
+    "schema_version": {"const": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "job": {
+      "type": "object",
+      "properties": {
+        "ordinal": {"type": "integer", "minimum": 1},
+        "case_id": {"type": "string", "minLength": 1},
+        "condition_id": {"enum": ["baseline", "generic", "legacy-clean", "feynman-v05"]},
+        "repeat": {"type": "integer", "minimum": 1},
+        "has_followup": {"type": "boolean"}
+      },
+      "required": ["ordinal", "case_id", "condition_id", "repeat", "has_followup"],
+      "additionalProperties": false
+    },
+    "versions": {
+      "type": "object",
+      "properties": {
+        "model": {"type": "string", "minLength": 1},
+        "codex_cli": {"type": "string", "minLength": 1}
+      },
+      "required": ["model", "codex_cli"],
+      "additionalProperties": false
+    },
+    "paths": {
+      "type": "object",
+      "properties": {
+        "candidate_dir": {"type": "string", "minLength": 1},
+        "evaluator_dir": {"type": "string", "minLength": 1},
+        "source_repo": {"type": "string", "minLength": 1},
+        "ephemeral_home": {"type": "string", "minLength": 1},
+        "codex_home": {"type": "string", "minLength": 1},
+        "temp_dir": {"type": "string", "minLength": 1},
+        "real_home": {"type": "string", "minLength": 1}
+      },
+      "required": ["candidate_dir", "evaluator_dir", "source_repo", "ephemeral_home", "codex_home", "temp_dir", "real_home"],
+      "additionalProperties": false
+    },
+    "boundary": {
+      "type": "object",
+      "properties": {
+        "profile_sha256": {"$ref": "#/$defs/sha256"},
+        "backend": {"type": "string", "minLength": 1},
+        "backend_version": {"type": "string", "minLength": 1},
+        "network_mode": {"enum": ["none", "restricted", "open"]},
+        "candidate_env_keys": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+      },
+      "required": ["profile_sha256", "backend", "backend_version", "network_mode", "candidate_env_keys"],
+      "additionalProperties": false
+    },
+    "network": {
+      "type": "object",
+      "properties": {
+        "case_requires_tool_network": {"type": "boolean"},
+        "tool_network": {"enum": ["blocked", "restricted", "open"]},
+        "allowed_tool_destinations": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "control_plane_separate_from_tool_network": {"type": "boolean"}
+      },
+      "required": ["case_requires_tool_network", "tool_network", "allowed_tool_destinations", "control_plane_separate_from_tool_network"],
+      "additionalProperties": false
+    },
+    "authentication": {
+      "type": "object",
+      "properties": {
+        "mode": {"const": "external-broker"},
+        "candidate_tool_auth_env_keys": {"type": "array", "maxItems": 0},
+        "candidate_readable_credential_files": {"type": "array", "maxItems": 0},
+        "credential_command_arguments": {"type": "array", "maxItems": 0}
+      },
+      "required": ["mode", "candidate_tool_auth_env_keys", "candidate_readable_credential_files", "credential_command_arguments"],
+      "additionalProperties": false
+    },
+    "skills": {
+      "type": "object",
+      "properties": {
+        "expected_candidate_skills": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "runtime_sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]}
+      },
+      "required": ["expected_candidate_skills", "runtime_sha256"],
+      "additionalProperties": false
+    },
+    "digests": {
+      "type": "object",
+      "properties": {
+        "eval_plan_sha256": {"$ref": "#/$defs/sha256"},
+        "candidate_prompt_sha256": {"$ref": "#/$defs/sha256"},
+        "boundary_profile_sha256": {"$ref": "#/$defs/sha256"},
+        "runtime_sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]}
+      },
+      "required": ["eval_plan_sha256", "candidate_prompt_sha256", "boundary_profile_sha256", "runtime_sha256"],
+      "additionalProperties": false
+    },
+    "scope": {"type": "string", "minLength": 1}
+  },
+  "required": ["schema_version", "run_id", "job", "versions", "paths", "boundary", "network", "authentication", "skills", "digests", "scope"],
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}
