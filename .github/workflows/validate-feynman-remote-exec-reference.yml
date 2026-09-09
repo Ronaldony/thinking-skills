@@ -176,6 +176,7 @@ jobs:
             --source-repo "$GITHUB_WORKSPACE" \
             --ephemeral-home "$CANDIDATE_HOME" \
             --codex-home "$TOOL_CODEX_HOME" \
+            --control-codex-home "$CONTROL_CODEX_HOME" \
             --temp-dir "$TOOL_TEMP" \
             --real-home "$HOME" \
             --output "$ROOT/runner-job.json" \
@@ -271,7 +272,7 @@ jobs:
           [model_providers.mock]
           name = "mock"
           base_url = "http://127.0.0.1:{port}/v1"
-          env_key = "OPENAI_API_KEY"
+          env_key = "MOCK_MODEL_TOKEN"
           wire_api = "responses"
 
           [shell_environment_policy]
@@ -290,7 +291,7 @@ jobs:
             CODEX_HOME="$CONTROL_CODEX_HOME" \
             PATH="$CONTROL_PATH" \
             TMPDIR="$CONTROL_TEMP" \
-            OPENAI_API_KEY="MOCK_REFERENCE_ONLY_NOT_A_SECRET" \
+            MOCK_MODEL_TOKEN="MOCK_REFERENCE_ONLY_NOT_A_SECRET" \
             "$CODEX_BIN" exec \
               --json \
               --skip-git-repo-check \
