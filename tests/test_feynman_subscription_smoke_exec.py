@@ -117,6 +117,33 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
         for key in ("OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN"): self.assertNotIn(key, state["env"])
         self.assertFalse(Path(state["env"]["TMPDIR"]).exists()); self.assertEqual(len(AUTH_CALLS), 1); self.assertEqual(len(PREFLIGHT_CALLS), 1)
 
+    def test_windows_safe_exec_env_keeps_launch_requirements_only(self):
+        env = executor._safe_exec_env(
+            self.control,
+            self.base / "temp",
+            platform_name="nt",
+            source_env={
+                "Path": r"C:\Tools;C:\Windows\System32",
+                "SystemRoot": r"C:\Windows",
+                "ComSpec": r"C:\Windows\System32\cmd.exe",
+                "PATHEXT": ".COM;.EXE;.BAT;.CMD",
+                "WINDIR": r"C:\Windows",
+                "OPENAI_API_KEY": "do-not-copy",
+                "CODEX_ACCESS_TOKEN": "do-not-copy",
+                "APPDATA": r"C:\Users\example\AppData\Roaming",
+            },
+        )
+        self.assertEqual(env["PATH"], r"C:\Tools;C:\Windows\System32")
+        self.assertEqual(env["TEMP"], str(self.base / "temp"))
+        self.assertEqual(env["TMP"], str(self.base / "temp"))
+        self.assertEqual(env["TMPDIR"], str(self.base / "temp"))
+        self.assertEqual(env["USERPROFILE"], str(self.control.parent))
+        self.assertEqual(
+            set(env),
+            {"HOME", "USERPROFILE", "CODEX_HOME", "PATH", "TEMP", "TMP", "TMPDIR",
+             "SystemRoot", "ComSpec", "PATHEXT", "WINDIR"},
+        )
+
     def test_retired_auth_envs_are_rejected(self):
         for key in ("OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN"):
             with self.subTest(key=key), patch.dict(os.environ, {key: "forbidden"}, clear=False):

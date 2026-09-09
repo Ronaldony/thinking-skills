@@ -146,7 +146,7 @@ def check(control_codex_home: Path, codex_bin: str = "codex", timeout_seconds: i
 
     version_proc = subprocess.run(
         [executable, "--version"], env=env, text=True, capture_output=True,
-        timeout=timeout_seconds, check=False,
+        encoding="utf-8", errors="replace", timeout=timeout_seconds, check=False,
     )
     if version_proc.returncode != 0:
         raise ValueError(
@@ -159,7 +159,8 @@ def check(control_codex_home: Path, codex_bin: str = "codex", timeout_seconds: i
 
     status_proc = subprocess.run(
         [executable, "-c", 'forced_login_method="chatgpt"', "login", "status"],
-        env=env, text=True, capture_output=True, timeout=timeout_seconds, check=False,
+        env=env, text=True, capture_output=True, encoding="utf-8", errors="replace",
+        timeout=timeout_seconds, check=False,
     )
     raw = ((status_proc.stdout or "") + "\n" + (status_proc.stderr or "")).strip()
     lowered = raw.lower()

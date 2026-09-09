@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-from typing import Any
+from typing import Any, Mapping
 
 try:
     from .feynman_subscription_auth_gate import CONFIG_TEXT, check as check_auth
@@ -30,6 +30,7 @@ EXPECTED_CASE_ID = "tools-10"
 EXPECTED_CONDITIONS = {"baseline", "feynman-v05"}
 RETIRED_API_ENV_KEYS = {"OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN"}
 EXPECTED_REASONING_POLICY = "model-default"
+WINDOWS_SYSTEM_ENV_KEYS = ("SystemRoot", "ComSpec", "PATHEXT", "WINDIR")
 
 
 def _no_symlink_components(path: Path, label: str, *, must_exist: bool) -> Path:
@@ -77,10 +78,12 @@ def _sha(path: Path) -> str:
 def _resolve_executable(value: str) -> str:
     if not value.strip():
         raise ValueError("codex executable must be nonempty")
-    if "/" in value:
+    if any(sep in value for sep in ("/", "\\")):
         path = Path(value).expanduser().absolute()
-        if path.is_symlink() or not path.is_file() or not os.access(path, os.X_OK):
+        if path.is_symlink() or not path.is_file():
             raise ValueError(f"codex executable is missing or unsafe: {path}")
+        if os.name != "nt" and not os.access(path, os.X_OK):
+            raise ValueError(f"codex executable is not executable: {path}")
         return str(path.resolve())
     resolved = shutil.which(value)
     if resolved is None:
@@ -180,11 +183,49 @@ def _assert_invocation_context() -> None:
         raise ValueError("ChatGPT account auth smoke execution is prohibited in GitHub Actions")
 
 
-def _safe_exec_env(control_home: Path, temp_dir: Path) -> dict[str, str]:
+def _source_env_get(source: Mapping[str, str], key: str) -> str | None:
+    direct = source.get(key)
+    if direct:
+        return direct
+    target = key.upper()
+    for name, value in source.items():
+        if name.upper() == target and value:
+            return value
+    return None
+
+
+def _safe_exec_env(
+    control_home: Path,
+    temp_dir: Path,
+    *,
+    platform_name: str | None = None,
+    source_env: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    platform_name = os.name if platform_name is None else platform_name
+    source = os.environ if source_env is None else source_env
+    path_value = _source_env_get(source, "PATH") or (
+        r"C:\Windows\System32" if platform_name == "nt" else "/usr/local/bin:/usr/bin:/bin"
+    )
+    if platform_name == "nt":
+        temp_value = str(temp_dir)
+        result = {
+            "HOME": str(control_home.parent),
+            "USERPROFILE": str(control_home.parent),
+            "CODEX_HOME": str(control_home),
+            "PATH": path_value,
+            "TEMP": temp_value,
+            "TMP": temp_value,
+            "TMPDIR": temp_value,
+        }
+        for key in WINDOWS_SYSTEM_ENV_KEYS:
+            value = _source_env_get(source, key)
+            if value:
+                result[key] = value
+        return result
     return {
         "HOME": str(control_home.parent),
         "CODEX_HOME": str(control_home),
-        "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+        "PATH": path_value,
         "TMPDIR": str(temp_dir),
     }
 
@@ -338,6 +379,8 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
                 env=env,
                 cwd=candidate_dir,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 stdout=trace_handle,
                 stderr=subprocess.PIPE,
                 timeout=timeout_seconds,

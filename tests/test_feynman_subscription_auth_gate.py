@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -88,6 +90,23 @@ class SubscriptionAuthGateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, r"exit code 7") as caught:
             check(home, str(fake))
         self.assertNotIn("SHOULD_NOT_BE_PRESERVED", str(caught.exception))
+
+    def test_check_decodes_codex_output_as_utf8(self):
+        home = self.base / "control"
+        home.mkdir()
+        completed = [
+            subprocess.CompletedProcess([], 0, stdout="codex-cli synthetic", stderr="경고"),
+            subprocess.CompletedProcess([], 0, stdout="", stderr="Logged in using ChatGPT"),
+        ]
+        with patch("tooling.feynman_subscription_auth_gate._resolve_executable", return_value="codex.exe"):
+            with patch("tooling.feynman_subscription_auth_gate.subprocess.run", side_effect=completed) as run:
+                result = check(home, "codex")
+        self.assertEqual(result["verdict"], "chatgpt-subscription-authenticated")
+        self.assertEqual(run.call_count, 2)
+        for call in run.call_args_list:
+            self.assertTrue(call.kwargs["text"])
+            self.assertEqual(call.kwargs["encoding"], "utf-8")
+            self.assertEqual(call.kwargs["errors"], "replace")
 
     def test_posix_safe_env_remains_minimal(self):
         home = self.base / "control"
