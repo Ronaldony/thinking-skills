@@ -1,28 +1,79 @@
 # feynman-thinking 작업 상태
 
-기준: 2026-09-08, `feat/feynman-thinking-v0.5-draft` research preview.
+기준: 2026-09-09, `feat/feynman-thinking-v0.5-draft` research preview.
 
-이 문서는 구현 상태를 성능 주장과 분리해 기록한다. 체크가 되어 있다는 이유만으로 실제 모델 성능 또는 배포 안전성이 입증됐다고 해석하지 않는다.
+이 문서는 구현 상태와 행동 성능 주장을 분리해 기록한다. 체크가 되어 있다는 이유만으로 실제 모델 성능, 인과적 스킬 효과, 배포 안전성이 입증됐다고 해석하지 않는다.
+
+> **정책 변경:** OpenAI Platform API-key 기반 실행 경로는 프로젝트의 현재 정책에서 폐기됐다. `LOG-008`, `LOG-010`, `LOG-011`, `LOG-012`의 API/credential 관련 다음 행동은 역사 기록일 뿐이며 새 실행에는 적용하지 않는다. 정본 전환 기록은 `LOG-013-api-retirement-subscription-pivot.md`부터 시작한다.
 
 | ID | 상태 | 현재 근거 | 남은 조건 |
 |---|---|---|---|
-| FYN-01 기존 감사 재검증 | **완료** | pinned v0.4.0 구조 결함 재현 코드/문서 | 실제 과거 모델 결과의 재채점은 별개 |
+| FYN-01 기존 감사 재검증 | **완료** | pinned v0.4.0 구조 결함 재현 코드/문서 | 실제 과거 모델 결과 재채점은 별개 |
 | FYN-02 역할·설계 확정 | **완료** | v0.5.0-draft SKILL + references | 행동 평가 후 규칙 축소 가능 |
-| FYN-03 `thinking-skills` 통합 | **완료(draft)** | feature branch + draft PR + runtime allowlist | 병합은 성능 검증 뒤 |
-| FYN-04 평가 격리 | **부분 완료 — pre-auth real-run readiness까지 검증** | boundary/canary/inspect + remote exec/patch + synthetic-auth + two-job real-run readiness E2E | 실제 외부 model-service credential/응답 + 실제 평가 run에서 동일 계약 재검증 필요 |
-| FYN-05 실행 증거/합격 판정 연결 | **완료(구조 v3)** | frozen plan → runner-job v2 → profile/probe → attestation v2 → runner-job-link v2 + trace → evidence → review v2 → gate → analysis-result v3 | 실제 semantic judge/human review 결과 필요 |
-| FYN-06 자동 검사/회귀 | **완료(구조)** | 310-unit diagnostic + 8개 structural/reference workflows | 실제 external model-run regression은 FYN-08에서 추가 |
+| FYN-03 `thinking-skills` 통합 | **완료(draft)** | feature branch + draft PR + runtime allowlist | 병합은 행동 검증 뒤 |
+| FYN-04 평가 격리 | **부분 완료 — subscription auth boundary 직전까지 구조 검증** | boundary/canary/inspect + remote exec/patch + protected `control_codex_home` + ChatGPT subscription auth gate + subscription preflight | trusted local/self-hosted control plane에서 실제 ChatGPT 로그인과 two-job smoke 필요 |
+| FYN-05 실행 증거/합격 판정 연결 | **완료(구조 v4)** | frozen plan → runner-job v3 → profile/probe → attestation v3 → runner-job-link v3 + trace → evidence → review v2 → gate → analysis-result v4 | 실제 model run의 semantic/human review 결과 필요 |
+| FYN-06 자동 검사/회귀 | **완료(구조)** | 249-unit diagnostic + 7개 active workflow 모두 green | 실제 subscription-authenticated run regression은 FYN-08에서 추가 |
 | FYN-07 평가 데이터 보강 | **개발 세트 완료** | 18 public-development cases, 20 predefined hard failures, controls | 독립 작성 held-out final set 필요 |
-| FYN-08 통제된 신·구 비교 | **미실행** | frozen plan/conditions/result-v3/aggregator-v3 + integration-only smoke spec/readiness 준비 | authorized external model control plane, real requests, repeats, semantic review 필요 |
-| FYN-09 실패 분석/규칙 축소 | **대기** | ablation 원칙만 사전등록 | FYN-08 결과 필요 |
+| FYN-08 통제된 신·구 비교 | **미실행** | frozen conditions + v4 result/aggregate + two-job subscription smoke spec/preflight/auth gate 준비 | 실제 subscription-authenticated smoke, 반복 pilot, semantic review 필요 |
+| FYN-09 실패 분석/규칙 축소 | **대기** | ablation 원칙 사전등록 | FYN-08 결과 필요 |
 | FYN-10 검토·버전 확정·배포 | **대기** | draft PR 유지 | FYN-08/09 및 held-out 결과 필요 |
+
+## 현재 canonical 인증 계약
+
+새 runner-job schema v3의 인증 객체는 다음으로 고정한다.
+
+```json
+{
+  "mode": "chatgpt-subscription",
+  "control_plane_auth_source": "codex-session",
+  "api_key_auth_allowed": false,
+  "candidate_auth_exposed": false,
+  "candidate_tool_auth_env_keys": [],
+  "candidate_readable_auth_paths": [],
+  "auth_command_arguments": []
+}
+```
+
+핵심 경계:
+
+```text
+trusted local/self-hosted control plane
+  └─ protected control_codex_home
+       └─ ChatGPT-authenticated Codex session
+                    │
+                    │ stdio remote environment
+                    ▼
+          candidate Docker tool boundary
+          - candidate 전용 codex_home
+          - closed-network case: network none
+          - control auth env 없음
+          - control auth path mount 없음
+```
+
+`control_codex_home`은 evaluator/source/real-home과 함께 보호 영역이며 candidate-owned `candidate_dir`, `ephemeral_home`, `codex_home`, `temp_dir`와 겹칠 수 없다. 평가 코드의 구조 preflight는 `control_codex_home` 내부 credential 파일을 열거나 hash/copy/serialize하지 않는다.
+
+## API 경로 폐기 범위
+
+새 canonical 실행에서는 다음을 허용하지 않는다.
+
+- `OPENAI_API_KEY` 기반 runner authentication
+- OpenAI Platform API billing을 평가 전제조건으로 두는 것
+- runner-job / attestation / link / result에 credential env-key 이름을 기록하는 구조
+- candidate tool env/file/argv에 control authentication material을 전달하는 것
+- 과거 API-specific real-model control config / pre-auth workflow를 새 실행에 사용하는 것
+
+과거 Git history와 LOG-008/010~012는 감사 가능성을 위해 삭제하지 않는다. 그러나 새 실행의 입력이나 절차로 재사용하지 않는다.
+
+로컬 mock-model CI는 외부 OpenAI API를 호출하지 않는다. transport 회귀검사용 synthetic 값은 `MOCK_MODEL_TOKEN`이라는 mock 전용 이름만 사용한다. subscription-readiness CI는 두 remote mock workflow에 `OPENAI_API_KEY`가 다시 등장하면 실패하도록 고정했다.
 
 ## FYN-04 세부 상태
 
 ### 완료된 부분
 
 - candidate/evaluator/source/real-HOME 경계 계약
-- candidate tool environment secret-like key 차단 계약
+- protected `control_codex_home` 추가 및 candidate-owned roots와 overlap 차단
+- candidate tool environment secret-like key 차단
 - `boundary-profile.json` schema/validator
 - inside-boundary read/write/env/network canary recorder
 - evaluator-side host post-verifier
@@ -30,54 +81,58 @@
 - mount-namespace `ENOENT`를 host fixture와 교차검증하는 규칙
 - Docker profile raw SHA → probe artifact → report → attestation 연결
 - Docker inspect/profile consistency validator
-- runner-job schema v2/builder/strict validator
-- pre-run runner job → post-run attestation linkage artifact schema v2
+- runner-job schema **v3** / builder / strict validator
+- runner-attestation schema **v3**
+- pre-run runner job → post-run attestation linkage artifact schema **v3**
 - canonical Codex remote `environments.toml` generator/validator (`include_local=false`)
 - 실제 Docker tool-process reference canary 성공
-- Codex CLI가 포함된 동일 boundary profile reference 성공
-- credential-free remote `exec_command` E2E reference 성공
-- bundled patch-capable metadata 기반 remote `apply_patch → exec_command` E2E reference 성공
-- synthetic bearer control-plane-only auth separation reference 성공
-- `analysis-result.schema.json` v3 + v3-only canonical aggregator
-- `real-run-readiness.schema.json` + credential-free readiness preflight
-- integration-only real-model smoke spec 고정:
+- Codex CLI 포함 동일 boundary profile reference 성공
+- credential-free local mock `exec_command` E2E reference 성공
+- bundled patch-capable metadata 기반 local mock `apply_patch → exec_command` E2E reference 성공
+- `analysis-result.schema.json` **v4** + v4-only canonical aggregator
+- `subscription-smoke-spec.json` 고정:
   - `tools-10`
   - `baseline`, `feynman-v05`
   - 각 1회
+  - `chatgpt-subscription` / `codex-session`
+  - API-key auth 금지
   - 성능 추론 금지
-- **실제 GitHub runner에서 two-job pre-auth readiness E2E 성공**
-  - bundled model metadata id: `gpt-6-astra`
-  - Codex: `codex-cli 0.153.4`
-  - ordinal 1: `feynman-v05`, expected skill=`feynman-thinking`, runtime digest 존재
-  - ordinal 2: `baseline`, expected skills empty, runtime digest null
-  - 두 job 모두 `ready-for-control-plane-auth`
-  - credential env-key 이름=`OPENAI_API_KEY`
-  - `credential_value_used=false`
-  - `external_model_request_sent=false`
-  - candidate auth exposed=false
+- `feynman_subscription_run_preflight.py`:
+  - frozen plan/job/task/profile/remote environment/skill exposure 검증
+  - control session contents를 읽지 않음
+  - 성공 verdict `ready-for-local-chatgpt-session-check`
+- `feynman_subscription_auth_gate.py`:
+  - 새 dedicated control `CODEX_HOME` 준비
+  - `forced_login_method="chatgpt"`
+  - `codex login status`를 scrubbed environment에서 실행
+  - raw status output과 account identifier를 artifact에 보존하지 않음
+  - credential 파일을 gate가 직접 읽지 않음
+  - 성공 verdict `chatgpt-subscription-authenticated`
+- canonical human handoff: `docs/feynman-subscription-local-smoke.md`
 
 ### 아직 완료하지 않은 부분
 
-- 승인된 실제 외부 model-service credential/account access를 control-plane 전용으로 설정
-- `gpt-6-astra`가 해당 실제 account에서 사용 가능한지 실제 요청으로 확인
-- 실제 external model request/response 성공
-- 실제 run마다 boundary canary/report + runner-attestation v2 + runner-job-link v2를 새로 보존
-- 실제 trace → evidence → semantic review → gate → analysis-result v3 생성
-- 행동 평가에 실제 사용되는 모든 candidate-accessible tool 유형의 boundary regression
-- 실제 multi-turn model run에서 same-thread continuity 검증
+- trusted local/self-hosted control plane에서 intended ChatGPT subscription으로 Codex interactive login
+- auth gate의 실제 `chatgpt-subscription-authenticated` 결과
+- 실제 subscription-backed model turn 성공
+- `tools-10 × {baseline, feynman-v05}` two-job integration smoke
+- 실제 run마다 same-profile boundary canary/report 생성
+- runner-attestation v3 + runner-job-link v3 생성
+- 실제 trace → evidence → semantic review → gate → analysis-result v4 생성
+- 실제 multi-turn model run의 same-thread continuity 검증
 
-중요: reference/readiness 성공은 **검증한 transport/tool/auth/pre-run architecture의 실행 가능성**을 입증하지만 실제 model-service 인증 성공, account entitlement, rate limit, 모델 품질을 입증하지 않는다.
+중요: structural/mock reference 성공은 **runner와 boundary 구조의 실행 가능성**을 보여주지만, 실제 ChatGPT subscription session, 모델 entitlement, 제품-side rollout, rate/usage limit, 모델 품질을 입증하지 않는다.
 
-## FYN-05 세부 상태 — analysis-result v3
+## FYN-05 세부 상태 — analysis-result v4
 
 canonical analysis chain:
 
 ```text
 frozen plan
-  → runner-job.json v2 (pre-run)
-  → boundary profile/probe + model/tool execution
-  → runner-attestation.json v2 (post-run)
-  → runner-job-link.json v2
+  → runner-job.json v3 (pre-run)
+  → boundary profile/probe + subscription-authenticated model/tool execution
+  → runner-attestation.json v3 (post-run)
+  → runner-job-link.json v3
 
 trace
   → evidence
@@ -86,49 +141,45 @@ trace
   → grade gate
 
 두 경로
-  → analysis-result.json v3
-  → canonical aggregate (v3 result only)
+  → analysis-result.json v4
+  → canonical aggregate (v4 result only)
 ```
 
-`feynman_eval_result.py`는 raw runner job과 raw runner-job-link를 모두 필수로 요구한다. saved link를 그대로 믿지 않고 raw profile/probe/attestation에서 다시 계산하며 frozen plan의 ordinal/case/condition/repeat/followup/prompt/plan digest와 runner job을 직접 대조한다.
+schema 버전을 올린 이유는 API-auth 결과와 subscription-auth 결과를 동일 schema로 보이게 만들지 않기 위해서다. 과거 v2/v3 result/aggregate는 Git history/legacy module로 감사할 수 있지만 새 primary aggregation에는 넣지 않는다.
 
-`analysis-result.schema.json`이 canonical schema v3 형식이다. historical result/aggregate v2 구현은 `*_v2_legacy.py`로만 보존하며 새 primary aggregation에는 넣을 수 없다.
-
-canonical aggregator는 model/Codex/runner/runtime뿐 아니라 **control-plane authentication profile(mode/source/env-key 이름)**이 섞여도 `mixed-environment`로 차단한다.
+canonical aggregator는 model/Codex/runner/runtime뿐 아니라 subscription authentication profile이 섞이면 `mixed-environment`로 차단한다.
 
 ## 최신 구조 회귀 상태
 
-검증 head: `fed6ff976f827539a829c4087670da58d3439fe9`
+**코드/CI 검증 head:** `9162506fbb592e8513f8347f755badbe006ac40a`
 
 full unittest diagnostic:
 
-- **310 tests**
-- **1.021s**
+- **249 tests**
+- **1.149s**
 - exit code `0`
 - `OK`
+- workflow: `validate-feynman-unit-diagnostic` run #65, id `34305223014`
+- artifact id `10086395096`
+- artifact ZIP digest: `sha256:4812686e4e6526103cd46910b4b17efea6331ba9108c6d08c10d383b36d51634`
 
-동일 head에서 다음 8개 workflow 모두 success:
+이전 310 tests보다 개수가 감소한 이유는 API-specific control/preauth/synthetic-auth 테스트와 실행 경로를 canonical tree에서 제거했기 때문이다. 테스트 수 감소 자체를 품질 개선으로 해석하지 않는다.
 
-1. `validate-feynman` — run #407, id `34233537435`
-2. `validate-feynman-docker-reference` — run #105, id `34233537474`
-3. `validate-feynman-codex-reference` — run #95, id `34233537379`
-4. `validate-feynman-remote-exec-reference` — run #112, id `34233537478`
-5. `validate-feynman-remote-patch-reference` — run #74, id `34233537462`
-6. `validate-feynman-synthetic-auth-reference` — run #53, id `34233537400`
-7. `validate-feynman-unit-diagnostic` — run #50, id `34233537418`
-8. `validate-feynman-real-run-readiness` — run #7, id `34233537420`
+동일 head에서 active workflow 7개 모두 success:
 
-pre-auth readiness artifact:
+1. `validate-feynman-docker-reference` — run #116, id `34305223003`
+2. `validate-feynman-subscription-readiness` — run #12, id `34305223012`
+3. `validate-feynman-unit-diagnostic` — run #65, id `34305223014`
+4. `validate-feynman-remote-exec-reference` — run #126, id `34305223113`
+5. `validate-feynman-remote-patch-reference` — run #88, id `34305223094`
+6. `validate-feynman-codex-reference` — run #106, id `34305223107`
+7. `validate-feynman` — run #422, id `34305223043`
 
-- artifact id `10058836269`
-- ZIP SHA-256 `9f3cf4c5e430af52b594b16ee14d034b3a223b22b6c1ad3753987f150c0672d2`
-- smoke-plan SHA-256 `d64dc0e685e40b824f5ad973f7d67f92230eeea02d772f9b81b14138844f4884`
-
-세부 이력은 `docs/feynman-work-log/LOG-010-real-run-preauth-readiness.md`에 기록한다.
+`validate-feynman-synthetic-auth-reference`와 `validate-feynman-real-run-readiness`는 API-era 목적 때문에 active workflow 집합에서 제거됐다. 따라서 과거의 "8 workflows"와 현재의 "7 workflows"를 직접적인 품질 증감 지표로 비교하지 않는다.
 
 ## 성능 주장 상태
 
-현재 **성능 개선 주장은 0개**다.
+현재 **Feynman v0.5의 행동 성능 개선 주장은 0개**다.
 
 아직 존재하지 않는 값:
 
@@ -137,41 +188,40 @@ pre-auth readiness artifact:
 - execution integrity failure rate 비교
 - justified revision / retention 개선량
 - token / wall-time / tool-call 비용 차이
-- held-out 결과
+- independent held-out 결과
 
-integration-only two-job smoke가 실제로 실행되더라도 그 결과는 위 효과 추정에 사용하지 않는다.
+두-job integration smoke가 성공하더라도 그 차이는 skill-effect estimate에 사용하지 않는다.
 
-## 사람 개입이 처음 필요한 지점
+## 현재 사람 개입 경계
 
-**이제 다음 의미 있는 실행 단계부터 실제 외부 권한이 필요하다.**
+필수 사람 개입은 이제 API credential 제공이 아니다. **trusted local/self-hosted machine에서 dedicated control Codex를 ChatGPT subscription으로 interactive login하는 행위**다.
 
-사람/runner 운영자가 해야 하는 것은 secret 값을 채팅이나 repository에 쓰는 일이 아니라 승인된 secret store 또는 runner environment에서 **control-plane 전용 model-service credential/account access**를 사용할 수 있게 하는 것이다.
+정본 순서:
 
-현재 고정 auth contract:
-
-```json
-{
-  "mode": "control-plane-only",
-  "control_plane_credential_source": "environment",
-  "control_plane_credential_env_key": "OPENAI_API_KEY"
-}
+```text
+1. fresh control CODEX_HOME 준비
+2. CODEX_HOME=<dedicated path> codex login
+3. ChatGPT browser/device login 완료
+4. feynman_subscription_auth_gate.py check
+5. exact frozen job별 subscription preflight 재검증
+6. tools-10 × {baseline, feynman-v05} integration smoke 실행
 ```
 
-여기서 env-key **이름만** artifact에 기록하며 실제 값은 기록하지 않는다. candidate tool env/file/argv에는 credential을 전달하지 않는다.
-
-이 저장소 작업만으로는 실제 credential/account 권한을 만들어낼 수 없으므로 이 지점이 첫 필수 사람/운영 환경 개입이다.
+사람은 session/token 값을 이 채팅이나 GitHub에 전달할 필요가 없으며 전달해서도 안 된다. control `CODEX_HOME` 자체도 Git, Actions artifact, candidate mounts에 넣지 않는다.
 
 ## 다음 실행 순서
 
 ```text
-[완료] mock exec + remote patch + synthetic-auth boundary references
-  → [완료] runner-job ↔ attestation mandatory linkage + analysis-result v3
-  → [완료] integration-only real-model smoke spec + two-job pre-auth readiness
-  → 실제 model-service control-plane credential/account access 설정  ← 현재 사람 개입 지점
-  → tools-10 × {baseline, feynman-v05} 실제 external-model integration smoke
-  → 동일 run boundary canary/report
-  → runner-attestation v2 / runner-job-link v2
-  → trace / evidence / review / gate / result-v3 확인
+[완료] runtime/evaluator isolation
+  → [완료] Docker + Codex remote exec/patch references
+  → [완료] API path retirement
+  → [완료] runner-job v3 / attestation v3 / link v3 / result v4 migration
+  → [완료] subscription smoke spec + structural preflight + auth gate
+  → [완료] local mock token naming 분리 + API-name regression guard
+  → trusted local control plane에서 ChatGPT subscription login  ← 현재 사람 개입 지점
+  → tools-10 × {baseline, feynman-v05} 실제 subscription integration smoke
+  → same-profile boundary canary/report + trace
+  → attestation v3 / link v3 / evidence / review / gate / result-v4
   → four-condition public-development pilot
   → pilot 분산/비용으로 final 기준 고정
   → independent held-out 작성/동결
@@ -179,3 +229,5 @@ integration-only two-job smoke가 실제로 실행되더라도 그 결과는 위
   → failure + ablation analysis
   → merge/revise/drop 결정
 ```
+
+PR은 계속 draft 상태를 유지한다.
