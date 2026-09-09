@@ -1,10 +1,12 @@
 from __future__ import annotations
 from copy import deepcopy
 import hashlib,json,sys,tempfile,unittest
+import os
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT));sys.path.insert(0,str(ROOT/"tests"))
 from tooling.feynman_runner_job_link import bind
 from test_feynman_runner_attestation import attestation,boundary_report
+from feynman_test_support import attach_native_mounts,use_native_profile
 def sha(p:Path)->str:return hashlib.sha256(p.read_bytes()).hexdigest()
 class RunnerJobLinkTests(unittest.TestCase):
     def setUp(self):
@@ -16,12 +18,13 @@ class RunnerJobLinkTests(unittest.TestCase):
           "read_only_root":True,"no_new_privileges":True,"capabilities":[],"run_as":"1000:1000",
           "read_write_mounts":[paths[x] for x in ("candidate_dir","ephemeral_home","codex_home","temp_dir")],"read_only_mounts":[],
           "tmpfs_mounts":["/tmp"],"protected_roots_mounted":[],"candidate_env_keys":["HOME","CODEX_HOME","PATH","TMPDIR"],"scope":"test"}
+        use_native_profile(self.profile,paths)
         self.pp=b/"profile.json";self.pp.write_text(json.dumps(self.profile,sort_keys=True),encoding="utf-8");ps=sha(self.pp)
         self.att=attestation();self.att["paths"]=deepcopy(paths);self.att["boundary"].update({"backend":"docker","backend_version":"1","profile_sha256":ps})
         self.att["filesystem"]={
           "candidate_readable_data_roots":[paths[x] for x in ("candidate_dir","ephemeral_home","codex_home","temp_dir")],
           "candidate_writable_roots":[paths[x] for x in ("candidate_dir","ephemeral_home","codex_home","temp_dir")],
-          "platform_runtime_roots":["/usr","/lib"],
+          "platform_runtime_roots":[r"C:\Windows\System32"] if os.name == "nt" else ["/usr","/lib"],
           "forbidden_read_roots":[paths["evaluator_dir"],paths["source_repo"],paths["real_home"]],
           "forbidden_write_roots":[paths["evaluator_dir"],paths["source_repo"],paths["real_home"]],
         }
@@ -32,6 +35,7 @@ class RunnerJobLinkTests(unittest.TestCase):
           "network":deepcopy(self.att["network"]),"authentication":{"mode":"chatgpt-subscription","control_plane_auth_source":"codex-session","api_key_auth_allowed":False,
           "candidate_auth_exposed":False,"candidate_tool_auth_env_keys":[],"candidate_readable_auth_paths":[],"auth_command_arguments":[]},
           "skills":{"expected_candidate_skills":[],"runtime_sha256":None},"digests":{"eval_plan_sha256":"a"*64,"candidate_prompt_sha256":"a"*64,"boundary_profile_sha256":ps,"runtime_sha256":None},"scope":"test"}
+        attach_native_mounts(self.job,paths)
         self.jp=b/"job.json";self.jp.write_text(json.dumps(self.job),encoding="utf-8")
     def tearDown(self): self.tmp.cleanup()
     def _bind(self): return bind(runner_job_path=self.jp,boundary_profile_path=self.pp,probe_report_path=self.rp,attestation_path=self.ap)

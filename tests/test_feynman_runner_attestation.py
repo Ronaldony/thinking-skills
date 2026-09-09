@@ -1,5 +1,6 @@
 from __future__ import annotations
 from copy import deepcopy
+import os
 from pathlib import Path
 import sys,unittest
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
@@ -8,16 +9,26 @@ SHA="a"*64
 def probe(method:str="synthetic external-boundary canary"): return {"passed":True,"artifact_sha256":SHA,"method":method}
 def attestation(condition:str="baseline"):
     skill=condition in {"legacy-clean","feynman-v05"}
+    if os.name == "nt":
+        paths={"candidate_dir":r"C:\feynman-test\isolated\candidate","evaluator_dir":r"C:\feynman-test\evaluator\run-1","source_repo":r"C:\feynman-test\source\thinking-skills",
+          "ephemeral_home":r"C:\feynman-test\isolated\home","codex_home":r"C:\feynman-test\isolated\codex-home","temp_dir":r"C:\feynman-test\isolated\tmp",
+          "real_home":r"C:\feynman-test\home\real-user","control_codex_home":r"C:\feynman-test\home\real-user\.codex"}
+        readable=[paths[x] for x in ("candidate_dir","ephemeral_home","codex_home","temp_dir")]
+        forbidden=[paths[x] for x in ("evaluator_dir","source_repo","real_home")]
+    else:
+        paths={"candidate_dir":"/isolated/candidate","evaluator_dir":"/evaluator/run-1","source_repo":"/source/thinking-skills",
+          "ephemeral_home":"/isolated/home","codex_home":"/isolated/codex-home","temp_dir":"/isolated/tmp",
+          "real_home":"/home/real-user","control_codex_home":"/home/real-user/.codex"}
+        readable=["/isolated/candidate","/isolated/home","/isolated/codex-home","/isolated/tmp"]
+        forbidden=["/evaluator/run-1","/source/thinking-skills","/home/real-user"]
     return {
       "schema_version":3,"run_id":"run-1","case_id":"mechanism-01","condition_id":condition,
       "boundary":{"backend":"test-container","backend_version":"1","platform":"linux","kernel":"test-kernel","external_enforcement":True,"profile_sha256":SHA},
-      "paths":{"candidate_dir":"/isolated/candidate","evaluator_dir":"/evaluator/run-1","source_repo":"/source/thinking-skills",
-        "ephemeral_home":"/isolated/home","codex_home":"/isolated/codex-home","temp_dir":"/isolated/tmp",
-        "real_home":"/home/real-user","control_codex_home":"/home/real-user/.codex"},
-      "filesystem":{"candidate_readable_data_roots":["/isolated/candidate","/isolated/home","/isolated/codex-home","/isolated/tmp"],
-        "candidate_writable_roots":["/isolated/candidate","/isolated/home","/isolated/codex-home","/isolated/tmp"],
-        "platform_runtime_roots":["/usr","/lib"],"forbidden_read_roots":["/evaluator/run-1","/source/thinking-skills","/home/real-user"],
-        "forbidden_write_roots":["/evaluator/run-1","/source/thinking-skills","/home/real-user"]},
+      "paths":paths,
+      "filesystem":{"candidate_readable_data_roots":readable,
+        "candidate_writable_roots":readable,
+        "platform_runtime_roots":[r"C:\Windows\System32",r"C:\Program Files" ] if os.name == "nt" else ["/usr","/lib"],"forbidden_read_roots":forbidden,
+        "forbidden_write_roots":forbidden},
       "network":{"case_requires_tool_network":False,"tool_network":"blocked","control_plane_separate_from_tool_network":True,"allowed_tool_destinations":[]},
       "environment":{"candidate_env_keys":["HOME","CODEX_HOME","PATH","TMPDIR"],"candidate_auth_exposed":False,
         "control_plane_auth_mode":"chatgpt-subscription","control_plane_auth_source":"codex-session","api_key_auth_allowed":False,

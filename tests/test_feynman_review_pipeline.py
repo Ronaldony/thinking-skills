@@ -65,7 +65,7 @@ class ReviewPipelineTests(unittest.TestCase):
         self.assertTrue(review_input["rubric"]["requires_execution"])
         self.assertEqual(review_input["candidate_final"], "The executed test exposed the defect.")
         self.assertIn("FAILED: expected 7 got 4", "\n".join(review_input["evidence_files"].values()))
-        self.assertNotIn("PRIVATE_REASONING_SHOULD_NOT_APPEAR", (review_bundle / "review-input.json").read_text())
+        self.assertNotIn("PRIVATE_REASONING_SHOULD_NOT_APPEAR", (review_bundle / "review-input.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["trusted_execution_ids"], ["command_execution:cmd-1"])
 
     def test_semantic_review_can_pass_only_with_matching_trusted_execution(self):
@@ -138,8 +138,8 @@ class ReviewPipelineTests(unittest.TestCase):
             include_followup=True,
             initial_evidence_bundle=initial_evidence,
         )
-        initial_input = json.loads((initial_review / "review-input.json").read_text())
-        followup_input = json.loads((followup_review / "review-input.json").read_text())
+        initial_input = json.loads((initial_review / "review-input.json").read_text(encoding="utf-8"))
+        followup_input = json.loads((followup_review / "review-input.json").read_text(encoding="utf-8"))
         self.assertIsNone(initial_input["followup"])
         self.assertIn("교정 후 안정 처리량", followup_input["followup"])
         self.assertIn("20/s", followup_input["initial_candidate_final"])
@@ -181,7 +181,7 @@ class ReviewPipelineTests(unittest.TestCase):
         review_bundle = self.base / "review-bundle"
         assemble(evaluator, evidence, review_bundle)
         review_input = review_bundle / "review-input.json"
-        review_input.write_text(review_input.read_text() + " ", encoding="utf-8")
+        review_input.write_text(review_input.read_text(encoding="utf-8") + " ", encoding="utf-8")
         review = self.base / "review.json"
         review.write_text(json.dumps({"id": "tools-10"}), encoding="utf-8")
         with self.assertRaises(ValueError):

@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 import hashlib
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -10,10 +11,12 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
 
 from tooling.feynman_network_reference import endpoint_identity
 from tooling.feynman_remote_exec_environment import build_files as build_remote_environment
 from tooling.feynman_remote_exec_reference_result import assemble
+from feynman_test_support import attach_native_mounts,use_native_profile
 
 
 class RemoteExecReferenceResultTests(unittest.TestCase):
@@ -56,6 +59,12 @@ class RemoteExecReferenceResultTests(unittest.TestCase):
             "candidate_env_keys": ["HOME", "CODEX_HOME", "PATH", "TMPDIR"],
             "scope": "synthetic remote tool result profile",
         }
+        use_native_profile(self.profile, {
+            "candidate_dir": str(self.candidate.resolve()), "evaluator_dir": str(self.evaluator.resolve()),
+            "source_repo": str(self.source.resolve()), "ephemeral_home": str(self.home.resolve()),
+            "codex_home": str(self.codex_home.resolve()), "temp_dir": str(self.temp_dir.resolve()),
+            "real_home": str(self.real_home.resolve()), "control_codex_home": str(self.control_codex_home.resolve()),
+        })
         self.profile_path.write_text(
             json.dumps(self.profile, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
@@ -114,6 +123,7 @@ class RemoteExecReferenceResultTests(unittest.TestCase):
             },
             "scope": "synthetic subscription runner job",
         }
+        attach_native_mounts(self.job, self.job["paths"])
         self.job_path.write_text(json.dumps(self.job, indent=2) + "\n", encoding="utf-8")
 
         self.environment_path = self.base / "environments.toml"
@@ -172,17 +182,23 @@ class RemoteExecReferenceResultTests(unittest.TestCase):
         self.patch_proof_path = self.candidate / "remote-patch-proof.txt"
 
         self.inspect_path = self.base / "inspect.json"
+        container_paths = {
+            "home": "/run/home" if os.name == "nt" else str(self.home.resolve()),
+            "codex_home": "/run/codex" if os.name == "nt" else str(self.codex_home.resolve()),
+            "temp_dir": "/run/temp" if os.name == "nt" else str(self.temp_dir.resolve()),
+            "candidate": "/run/candidate" if os.name == "nt" else str(self.candidate.resolve()),
+        }
         env_tokens = [
-            f"HOME={self.home.resolve()}",
-            f"CODEX_HOME={self.codex_home.resolve()}",
+            f"HOME={container_paths['home']}",
+            f"CODEX_HOME={container_paths['codex_home']}",
             "PATH=/usr/local/bin:/usr/bin:/bin",
-            f"TMPDIR={self.temp_dir.resolve()}",
+            f"TMPDIR={container_paths['temp_dir']}",
         ]
         mounts = [
-            {"Type": "bind", "Destination": str(self.candidate.resolve()), "RW": True},
-            {"Type": "bind", "Destination": str(self.home.resolve()), "RW": True},
-            {"Type": "bind", "Destination": str(self.codex_home.resolve()), "RW": True},
-            {"Type": "bind", "Destination": str(self.temp_dir.resolve()), "RW": True},
+            {"Type": "bind", "Source": str(self.candidate.resolve()), "Destination": container_paths["candidate"], "RW": True},
+            {"Type": "bind", "Source": str(self.home.resolve()), "Destination": container_paths["home"], "RW": True},
+            {"Type": "bind", "Source": str(self.codex_home.resolve()), "Destination": container_paths["codex_home"], "RW": True},
+            {"Type": "bind", "Source": str(self.temp_dir.resolve()), "Destination": container_paths["temp_dir"], "RW": True},
             {"Type": "tmpfs", "Destination": "/tmp", "RW": True},
         ]
         self.inspect_path.write_text(json.dumps([{

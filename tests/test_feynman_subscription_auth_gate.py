@@ -23,7 +23,18 @@ class SubscriptionAuthGateTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def _fake_codex(self, status: str, *, status_code: int = 0, version_code: int = 0) -> Path:
-        path = self.base / f"fake-{len(list(self.base.glob('fake-*')))}"
+        stem = f"fake-{len(list(self.base.glob('fake-*')))}"
+        if os.name == "nt":
+            path = self.base / f"{stem}.cmd"
+            path.write_text(
+                "@echo off\r\n"
+                f"if \"%~1\"==\"--version\" (echo codex-cli synthetic& exit /b {version_code})\r\n"
+                f"echo {status}\r\n"
+                f"exit /b {status_code}\r\n",
+                encoding="utf-8",
+            )
+            return path
+        path = self.base / stem
         path.write_text(
             "#!/bin/sh\n"
             f"if [ \"$1\" = \"--version\" ]; then echo 'codex-cli synthetic'; exit {version_code}; fi\n"
@@ -78,7 +89,10 @@ class SubscriptionAuthGateTests(unittest.TestCase):
         target = self.base / "target"
         target.mkdir()
         home = self.base / "control"
-        home.symlink_to(target, target_is_directory=True)
+        try:
+            home.symlink_to(target, target_is_directory=True)
+        except OSError:
+            self.skipTest("directory symlink privilege unavailable")
         fake = self._fake_codex("Logged in using ChatGPT")
         with self.assertRaises(ValueError):
             check(home, str(fake))

@@ -1,9 +1,11 @@
 from __future__ import annotations
 from copy import deepcopy
-import hashlib,json,sys,tempfile,tomllib,unittest
+import hashlib,json,os,sys,tempfile,tomllib,unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
+sys.path.insert(0,str(ROOT / "tests"))
 from tooling.feynman_remote_exec_environment import build_document,expected_docker_args,render_toml,validate_document
+from feynman_test_support import attach_native_mounts,use_native_profile
 class RemoteExecEnvironmentTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();b=Path(self.tmp.name)
@@ -12,6 +14,7 @@ class RemoteExecEnvironmentTests(unittest.TestCase):
           "network_mode":"none","read_only_root":True,"no_new_privileges":True,"capabilities":[],"run_as":"1000:1000",
           "read_write_mounts":[self.paths[x] for x in ("candidate_dir","ephemeral_home","codex_home","temp_dir")],"read_only_mounts":[],
           "tmpfs_mounts":["/tmp"],"protected_roots_mounted":[],"candidate_env_keys":["HOME","CODEX_HOME","PATH","TMPDIR"],"scope":"synthetic stdio remote exec profile"}
+        use_native_profile(self.profile,self.paths)
         self.profile_sha=hashlib.sha256(json.dumps(self.profile,sort_keys=True).encode()).hexdigest()
         self.job={"schema_version":3,"run_id":"reference/run 1","job":{"ordinal":1,"case_id":"mechanism-01","condition_id":"baseline","repeat":1,"has_followup":False},
           "versions":{"model":"mock-model","codex_cli":"codex-test"},"paths":deepcopy(self.paths),
@@ -20,6 +23,7 @@ class RemoteExecEnvironmentTests(unittest.TestCase):
           "authentication":{"mode":"chatgpt-subscription","control_plane_auth_source":"codex-session","api_key_auth_allowed":False,"candidate_auth_exposed":False,
              "candidate_tool_auth_env_keys":[],"candidate_readable_auth_paths":[],"auth_command_arguments":[]},
           "skills":{"expected_candidate_skills":[],"runtime_sha256":None},"digests":{"eval_plan_sha256":"1"*64,"candidate_prompt_sha256":"2"*64,"boundary_profile_sha256":self.profile_sha,"runtime_sha256":None},"scope":"synthetic subscription runner job"}
+        attach_native_mounts(self.job,self.paths)
     def tearDown(self):self.tmp.cleanup()
     def test_document_disables_local_and_uses_stdio(self):
         d=build_document(deepcopy(self.job),deepcopy(self.profile),self.profile_sha);self.assertFalse(d["include_local"]);args=d["environments"][0]["args"]
@@ -28,8 +32,10 @@ class RemoteExecEnvironmentTests(unittest.TestCase):
         for p in (self.paths["evaluator_dir"],self.paths["source_repo"],self.paths["real_home"],self.paths["control_codex_home"]):self.assertNotIn(p,joined)
     def test_candidate_roots_exact_rw(self):
         joined="\n".join(expected_docker_args(deepcopy(self.job),deepcopy(self.profile)))
-        for k in ("candidate_dir","ephemeral_home","codex_home","temp_dir"):
-            p=self.paths[k];self.assertIn(f"{p}:{p}:rw",joined)
+        for k,dest in (("candidate_dir","/run/candidate"),("ephemeral_home","/run/home"),("codex_home","/run/codex"),("temp_dir","/run/temp")):
+            p=self.paths[k]
+            expected=f"{p}:{dest}:rw" if os.name == "nt" else f"{p}:{p}:rw"
+            self.assertIn(expected,joined)
     def test_toml_round_trip(self):
         d=build_document(deepcopy(self.job),deepcopy(self.profile),self.profile_sha);parsed=tomllib.loads(render_toml(d))
         self.assertEqual(validate_document(parsed,deepcopy(self.job),deepcopy(self.profile),self.profile_sha)["verdict"],"remote-exec-environment-valid")

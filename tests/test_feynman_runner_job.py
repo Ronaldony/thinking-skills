@@ -2,9 +2,11 @@ from __future__ import annotations
 import json,sys,tempfile,unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
+sys.path.insert(0,str(ROOT / "tests"))
 from tooling.feynman_condition_workspace import prepare_condition
 from tooling.feynman_eval_plan import build_plan,write_plan
 from tooling.feynman_runner_job import build_job
+from feynman_test_support import use_native_profile
 class RunnerJobTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.base=Path(self.tmp.name)
@@ -17,11 +19,14 @@ class RunnerJobTests(unittest.TestCase):
         home=self.base/f"home-{condition}";codex=self.base/f"codex-{condition}";tmp=self.base/f"tmp-{condition}"
         real=self.base/"real-home";control=real/".codex"
         for p in (home,codex,tmp,real,control): p.mkdir(parents=True,exist_ok=True)
+        mount_paths={"candidate_dir":str(candidate.resolve()),"evaluator_dir":str(evaluator.resolve()),"source_repo":str(ROOT.resolve()),
+          "ephemeral_home":str(home.resolve()),"codex_home":str(codex.resolve()),"temp_dir":str(tmp.resolve()),"real_home":str(real.resolve()),"control_codex_home":str(control.resolve())}
         profile={"schema_version":1,"backend":"docker","backend_version":"28.0.4","image":"python:3.12-slim",
           "image_id":"sha256:"+"6"*64,"network_mode":"none","read_only_root":True,"no_new_privileges":True,
           "capabilities":[],"run_as":"1000:1000","read_write_mounts":[str(candidate.resolve()),str(home.resolve()),str(codex.resolve()),str(tmp.resolve())],
           "read_only_mounts":[],"tmpfs_mounts":["/tmp"],"protected_roots_mounted":[],"candidate_env_keys":["HOME","CODEX_HOME","PATH","TMPDIR"],
           "scope":"subscription runner job unit profile"}
+        use_native_profile(profile,mount_paths)
         pp=self.base/f"profile-{condition}.json";pp.write_text(json.dumps(profile,sort_keys=True),encoding="utf-8")
         return plan,plan_path,candidate,evaluator,pp,home,codex,tmp,real,control
     def _build(self,condition="baseline",**overrides):
@@ -47,7 +52,7 @@ class RunnerJobTests(unittest.TestCase):
               control_codex_home=codex/"control")
     def test_secret_like_candidate_env_rejected(self):
         plan,plan_path,candidate,evaluator,pp,home,codex,tmp,real,control=self._prepare()
-        profile=json.loads(pp.read_text());profile["candidate_env_keys"].append("OPENAI_API_KEY");pp.write_text(json.dumps(profile),encoding="utf-8")
+        profile=json.loads(pp.read_text(encoding="utf-8"));profile["candidate_env_keys"].append("OPENAI_API_KEY");pp.write_text(json.dumps(profile),encoding="utf-8")
         with self.assertRaises(ValueError):
             build_job(plan_path=plan_path,ordinal=1,evaluator_case_path=evaluator/"case.json",boundary_profile_path=pp,run_id="x",model="m",codex_cli="c",
               candidate_dir=candidate,evaluator_dir=evaluator,source_repo=ROOT,ephemeral_home=home,codex_home=codex,temp_dir=tmp,real_home=real,control_codex_home=control)
@@ -57,7 +62,7 @@ class RunnerJobTests(unittest.TestCase):
         with self.assertRaises(ValueError): self._build(case_requires_tool_network=True,allowed_tool_destinations=["example.invalid"])
     def test_tampered_evaluator_prompt_rejected(self):
         plan,plan_path,candidate,evaluator,pp,home,codex,tmp,real,control=self._prepare()
-        cp=evaluator/"case.json";v=json.loads(cp.read_text());v["candidate_prompt_sha256"]="f"*64;cp.write_text(json.dumps(v),encoding="utf-8")
+        cp=evaluator/"case.json";v=json.loads(cp.read_text(encoding="utf-8"));v["candidate_prompt_sha256"]="f"*64;cp.write_text(json.dumps(v),encoding="utf-8")
         with self.assertRaises(ValueError):
             build_job(plan_path=plan_path,ordinal=1,evaluator_case_path=cp,boundary_profile_path=pp,run_id="x",model="m",codex_cli="c",
               candidate_dir=candidate,evaluator_dir=evaluator,source_repo=ROOT,ephemeral_home=home,codex_home=codex,temp_dir=tmp,real_home=real,control_codex_home=control)

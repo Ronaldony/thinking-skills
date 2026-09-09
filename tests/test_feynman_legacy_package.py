@@ -59,7 +59,7 @@ class LegacyPackageTests(unittest.TestCase):
         self.assertFalse((runtime / "evals").exists())
         self.assertFalse((runtime / "scripts").exists())
         self.assertFalse((runtime / ".git").exists())
-        self.assertNotIn("references/evaluation.md", (runtime / "SKILL.md").read_text())
+        self.assertNotIn("references/evaluation.md", (runtime / "SKILL.md").read_text(encoding="utf-8"))
         self.assertEqual(manifest["source_commit"], self.commit)
         self.assertEqual(manifest["comparison_condition"], "legacy-clean")
         self.assertIn("references/evaluation.md", manifest["sanitization"]["excluded_files"])
@@ -69,14 +69,14 @@ class LegacyPackageTests(unittest.TestCase):
             build(self.legacy, self.base / "out", expected_commit="0" * 40)
 
     def test_dirty_checkout_is_rejected(self):
-        (self.legacy / "SKILL.md").write_text((self.legacy / "SKILL.md").read_text() + "dirty\n")
+        (self.legacy / "SKILL.md").write_text((self.legacy / "SKILL.md").read_text(encoding="utf-8") + "dirty\n", encoding="utf-8")
         with self.assertRaises(ValueError):
             build(self.legacy, self.base / "out", expected_commit=self.commit)
 
     def test_evaluation_reference_drift_is_rejected(self):
-        text = (self.legacy / "SKILL.md").read_text().replace(
+        text = (self.legacy / "SKILL.md").read_text(encoding="utf-8").replace(
             "- 행동 평가와 A/B/C 비교: [references/evaluation.md](references/evaluation.md)\n", "")
-        (self.legacy / "SKILL.md").write_text(text)
+        (self.legacy / "SKILL.md").write_text(text, encoding="utf-8")
         subprocess.run(["git", "-C", str(self.legacy), "add", "SKILL.md"], check=True)
         subprocess.run(["git", "-C", str(self.legacy), "-c", "user.name=Legacy Test",
                         "-c", "user.email=test@example.invalid", "commit", "-qm", "drift"], check=True)

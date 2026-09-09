@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 import shutil
 import sys
 import tempfile
@@ -25,6 +26,8 @@ class EvalPreflightTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    @unittest.skipIf(os.name == "nt" and (Path.home() / ".agents" / "skills").exists(),
+                     "Windows temp fixtures inherit the active user's ambient skill root")
     def test_skill_condition_passes_with_only_expected_candidate_skill(self):
         candidate = self.base / "runs" / "candidate"
         evaluator = self.base / "evaluator"
@@ -35,6 +38,8 @@ class EvalPreflightTests(unittest.TestCase):
         self.assertEqual(result["expected_candidate_skills"], ["feynman-thinking"])
         self.assertEqual(set(result["observed_candidate_skills"]), {"feynman-thinking"})
 
+    @unittest.skipIf(os.name == "nt" and (Path.home() / ".agents" / "skills").exists(),
+                     "Windows temp fixtures inherit the active user's ambient skill root")
     def test_baseline_passes_with_no_candidate_skill(self):
         candidate = self.base / "runs" / "candidate"
         evaluator = self.base / "evaluator"

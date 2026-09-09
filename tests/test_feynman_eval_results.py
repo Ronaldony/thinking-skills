@@ -1,6 +1,6 @@
 from __future__ import annotations
 from copy import deepcopy
-import hashlib,json,sys,tempfile,unittest
+import hashlib,json,os,sys,tempfile,unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT));sys.path.insert(0,str(ROOT/"tests"))
 from tooling.codex_exec_evidence import extract
@@ -12,6 +12,7 @@ from tooling.feynman_eval_result import assemble
 from tooling.feynman_review_bundle import assemble as assemble_review_bundle
 from tooling.feynman_runner_job_link import bind as bind_runner_job
 from test_feynman_runner_attestation import attestation,boundary_report
+from feynman_test_support import attach_native_mounts,use_native_profile
 def sha(p:Path)->str:return hashlib.sha256(p.read_bytes()).hexdigest()
 class EvalResultV4LinkageTests(unittest.TestCase):
     def setUp(self):
@@ -26,15 +27,29 @@ class EvalResultV4LinkageTests(unittest.TestCase):
           "behaviors":{"mechanism":2,"honesty":2},"hard_failures":[],"execution_integrity":"clean","execution_integrity_evidence":"No unsupported claims.",
           "update_behavior":"not_applicable","executed_evidence_ids":[],"summary":"synthetic","confidence":"high"}
         self.review_path.write_text(json.dumps(self.review),encoding="utf-8");self.gate_path=self.base/"gate.json";apply(self.review_bundle,self.review_path,self.gate_path)
-        paths={"candidate_dir":"/isolated/candidate","evaluator_dir":"/evaluator/run-1","source_repo":"/source/thinking-skills",
-          "ephemeral_home":"/isolated/home","codex_home":"/isolated/codex-home","temp_dir":"/isolated/tmp",
-          "real_home":"/home/real-user","control_codex_home":"/home/real-user/.codex"}
+        if os.name == "nt":
+            source_path=self.base/"source";source_path.mkdir()
+            paths={"candidate_dir":str(self.candidate.resolve()),"evaluator_dir":str(self.evaluator.resolve()),"source_repo":str(source_path.resolve()),
+              "ephemeral_home":str((self.base/"home").resolve()),"codex_home":str((self.base/"codex-home").resolve()),"temp_dir":str((self.base/"temp").resolve()),
+              "real_home":str((self.base/"real-home").resolve()),"control_codex_home":str((self.base/"real-home"/".codex").resolve())}
+            for key in ("ephemeral_home","codex_home","temp_dir","real_home","control_codex_home"):
+                Path(paths[key]).mkdir(parents=True,exist_ok=True)
+        else:
+            paths={"candidate_dir":"/isolated/candidate","evaluator_dir":"/evaluator/run-1","source_repo":"/source/thinking-skills",
+              "ephemeral_home":"/isolated/home","codex_home":"/isolated/codex-home","temp_dir":"/isolated/tmp",
+              "real_home":"/home/real-user","control_codex_home":"/home/real-user/.codex"}
         self.profile={"schema_version":1,"backend":"docker","backend_version":"28.0.4","image":"python:3.12-slim","image_id":"sha256:"+"6"*64,
           "network_mode":"none","read_only_root":True,"no_new_privileges":True,"capabilities":[],"run_as":"1000:1000",
           "read_write_mounts":["/isolated/candidate","/isolated/home","/isolated/codex-home","/isolated/tmp"],"read_only_mounts":[],
           "tmpfs_mounts":["/tmp"],"protected_roots_mounted":[],"candidate_env_keys":["HOME","CODEX_HOME","PATH","TMPDIR"],"scope":"synthetic result v4 profile"}
+        use_native_profile(self.profile,paths)
         self.profile_path=self.base/"profile.json";self.profile_path.write_text(json.dumps(self.profile,sort_keys=True),encoding="utf-8");self.profile_sha=sha(self.profile_path)
         self.attestation=attestation();self.attestation["paths"]=deepcopy(paths);self.attestation["boundary"].update({"backend":"docker","backend_version":"28.0.4","profile_sha256":self.profile_sha})
+        if os.name == "nt":
+            readable=[paths[x] for x in ("candidate_dir","ephemeral_home","codex_home","temp_dir")]
+            forbidden=[paths[x] for x in ("evaluator_dir","source_repo","real_home")]
+            self.attestation["filesystem"].update({"candidate_readable_data_roots":readable,"candidate_writable_roots":readable,
+              "platform_runtime_roots":[r"C:\Windows\System32"],"forbidden_read_roots":forbidden,"forbidden_write_roots":forbidden})
         self.attestation["digests"]["eval_plan_sha256"]=sha(self.plan_path);self.attestation["digests"]["candidate_prompt_sha256"]=self.planned["candidate_prompt_sha256"]
         self.report=boundary_report(self.attestation);self.report_path=self.base/"report.json";self.report_path.write_text(json.dumps(self.report),encoding="utf-8")
         self.attestation["digests"]["probe_report_sha256"]=sha(self.report_path);self.attestation_path=self.base/"att.json";self.attestation_path.write_text(json.dumps(self.attestation),encoding="utf-8")
@@ -43,6 +58,7 @@ class EvalResultV4LinkageTests(unittest.TestCase):
           "network":deepcopy(self.attestation["network"]),"authentication":{"mode":"chatgpt-subscription","control_plane_auth_source":"codex-session","api_key_auth_allowed":False,
             "candidate_auth_exposed":False,"candidate_tool_auth_env_keys":[],"candidate_readable_auth_paths":[],"auth_command_arguments":[]},
           "skills":{"expected_candidate_skills":[],"runtime_sha256":None},"digests":{"eval_plan_sha256":sha(self.plan_path),"candidate_prompt_sha256":self.planned["candidate_prompt_sha256"],"boundary_profile_sha256":self.profile_sha,"runtime_sha256":None},"scope":"synthetic pre-run subscription job"}
+        attach_native_mounts(self.runner_job,paths)
         self.job_path=self.base/"job.json";self._write_job_and_link()
     def tearDown(self):self.tmp.cleanup()
     def _write_job_and_link(self):

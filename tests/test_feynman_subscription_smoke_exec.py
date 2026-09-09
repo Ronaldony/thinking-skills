@@ -75,7 +75,9 @@ class SubscriptionSmokeExecTests(unittest.TestCase):
             "versions": {"model": "gpt-test", "codex_cli": "codex-cli fake 1.0"},
             "paths": {"candidate_dir": str(self.candidate.resolve()), "evaluator_dir": str(self.evaluator.resolve()), "control_codex_home": str(self.control.resolve())},
         }), encoding="utf-8")
-        self.state = self.base / "fake-codex-state.json"; self.codex = self.base / "fake-codex"; self._write_fake_codex(success=True)
+        self.state = self.base / "fake-codex-state.json"
+        self.codex = self.base / ("fake-codex.cmd" if os.name == "nt" else "fake-codex")
+        self._write_fake_codex(success=True)
 
     def tearDown(self):
         self.auth_patch.stop(); self.preflight_patch.stop(); self.env_patch.stop(); self.tmp.cleanup()
@@ -93,7 +95,15 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
             code += 'print(json.dumps({"type":"item.completed","item":{"id":"m1","type":"agent_message","text":"FAKE_SMOKE_OK"}}))\n'
             code += 'print(json.dumps({"type":"turn.completed","usage":{"input_tokens":12,"output_tokens":3}}))\n'
         code += f'raise SystemExit({0 if success else 7})\n'
-        self.codex.write_text(code, encoding="utf-8"); self.codex.chmod(0o755)
+        if os.name == "nt":
+            script = self.base / "fake-codex.py"
+            script.write_text(code, encoding="utf-8")
+            self.codex.write_text(
+                f'@echo off\r\n"{sys.executable}" "{script}" %*\r\n',
+                encoding="utf-8",
+            )
+        else:
+            self.codex.write_text(code, encoding="utf-8"); self.codex.chmod(0o755)
 
     def _run(self, **overrides):
         kwargs = dict(plan_path=self.plan, smoke_spec_path=self.smoke_spec, ordinal=1, evaluator_case_path=self.eval_case,
@@ -102,18 +112,24 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
         kwargs.update(overrides); return executor.execute_smoke_job(**kwargs)
 
     def test_success_uses_scrubbed_env_and_frozen_controls(self):
-        result = self._run(); state = json.loads(self.state.read_text())
+        result = self._run(); state = json.loads(self.state.read_text(encoding="utf-8"))
         self.assertEqual(result["verdict"], "subscription-codex-smoke-exec-completed")
         self.assertEqual(result["versions"]["model_reasoning_effort"], "model-default")
         self.assertEqual(result["conversation"]["thread_id"], "thread-smoke-1"); self.assertFalse(result["privacy"]["stderr_nonempty"])
         self.assertIn("smoke_spec_sha256", result["digests"]); self.assertNotIn("stderr_sha256", result["digests"])
-        self.assertEqual((self.evaluator / "exec-1" / "candidate-final.txt").read_text(), "FAKE_SMOKE_OK")
+        self.assertEqual((self.evaluator / "exec-1" / "candidate-final.txt").read_text(encoding="utf-8"), "FAKE_SMOKE_OK")
         argv = state["argv"]
         for flag in ("--json", "--ephemeral", "--strict-config", "--ignore-rules", "--skip-git-repo-check"): self.assertIn(flag, argv)
         self.assertEqual(argv[argv.index("--sandbox") + 1], "workspace-write"); self.assertEqual(argv[argv.index("--model") + 1], "gpt-test")
         self.assertIn('web_search="disabled"', argv); self.assertEqual(state["prompt"], "RUN THIS EXACT TASK\n")
         self.assertTrue({"HOME", "CODEX_HOME", "PATH", "TMPDIR"}.issubset(state["env"]))
-        self.assertTrue(set(state["env"]) <= {"HOME", "CODEX_HOME", "PATH", "TMPDIR", "LC_CTYPE"})
+        allowed_env = {"HOME", "CODEX_HOME", "PATH", "TMPDIR", "LC_CTYPE"}
+        if os.name == "nt":
+            allowed_env.update(executor.WINDOWS_SYSTEM_ENV_KEYS)
+            allowed_env.update({"USERPROFILE", "TEMP", "TMP"})
+            allowed_env.update({"COMSPEC", "PROCESSOR_ARCHITECTURE", "PROMPT", "SYSTEMROOT"})
+        self.assertTrue(set(state["env"]) <= allowed_env,
+                        sorted(set(state["env"]) - allowed_env))
         for key in ("OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN"): self.assertNotIn(key, state["env"])
         self.assertFalse(Path(state["env"]["TMPDIR"]).exists()); self.assertEqual(len(AUTH_CALLS), 1); self.assertEqual(len(PREFLIGHT_CALLS), 1)
 

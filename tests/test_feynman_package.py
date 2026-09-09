@@ -29,16 +29,16 @@ class PackageTests(unittest.TestCase):
     def test_allowlist_does_not_expose_evals_git_or_docs(self):
         for part in ["evals", ".git", "docs"]:
             (self.repo / part).mkdir()
-            (self.repo / part / "secret.txt").write_text("evaluator only")
+            (self.repo / part / "secret.txt").write_text("evaluator only", encoding="utf-8")
             (self.runtime / part).mkdir()
-            (self.runtime / part / "secret.txt").write_text("accidental extra")
+            (self.runtime / part / "secret.txt").write_text("accidental extra", encoding="utf-8")
         dest = self.base / "dist"
         build(self.repo, dest)
         observed = {p.relative_to(dest / SKILL_NAME).as_posix() for p in (dest / SKILL_NAME).rglob("*") if p.is_file()}
         self.assertEqual(observed, set(RUNTIME_FILES))
     def test_digest_ignores_unlisted_files(self):
         before = runtime_digest(self.runtime)[0]
-        (self.runtime / "unlisted.txt").write_text("metadata only")
+        (self.runtime / "unlisted.txt").write_text("metadata only", encoding="utf-8")
         self.assertEqual(before, runtime_digest(self.runtime)[0])
     def test_digest_changes_for_runtime_edit(self):
         before = runtime_digest(self.runtime)[0]
@@ -57,7 +57,10 @@ class PackageTests(unittest.TestCase):
     def test_symlink_rejected(self):
         original = self.runtime / "references/evidence-map.md"
         original.unlink()
-        original.symlink_to(self.runtime / "references/protocol.md")
+        try:
+            original.symlink_to(self.runtime / "references/protocol.md")
+        except OSError:
+            self.skipTest("file symlink privilege unavailable")
         with self.assertRaises(ValueError):
             validate_runtime(self.runtime)
     def test_escaping_link_rejected(self):
@@ -190,7 +193,7 @@ class EvidenceExtractorTests(unittest.TestCase):
         out = self.base / "evidence-bundle"
         index = extract(self.trace, out)
         self.assertEqual(index["trusted_execution_ids"], ["command_execution:cmd-1"])
-        self.assertEqual((out / "final.md").read_text(), "The test exposed the bug.")
+        self.assertEqual((out / "final.md").read_text(encoding="utf-8"), "The test exposed the bug.")
         copied = "\n".join(p.read_text(encoding="utf-8", errors="replace") for p in out.rglob("*") if p.is_file())
         self.assertNotIn("SECRET_REASONING", copied)
         self.assertIn("FAILED: expected 7 got 4", copied)
@@ -218,7 +221,7 @@ class EvidenceExtractorTests(unittest.TestCase):
         index = extract(self.trace, self.base / "bundle")
         self.assertEqual(index["records"][0]["kind"], "mcp_tool_call")
         payload = self.base / "bundle" / "evidence" / index["records"][0]["payload"]["file"]
-        self.assertIn("observed", payload.read_text())
+        self.assertIn("observed", payload.read_text(encoding="utf-8"))
 
 class EvalWorkspaceTests(unittest.TestCase):
     def setUp(self):
@@ -232,7 +235,7 @@ class EvalWorkspaceTests(unittest.TestCase):
         record = prepare(ROOT, "translation-13", candidate, evaluator, install_skill=True)
         self.assertTrue((candidate / ".agents/skills/feynman-thinking/SKILL.md").is_file())
         self.assertTrue((evaluator / "case.json").is_file())
-        self.assertIn("rubric", json.loads((evaluator / "case.json").read_text()))
+        self.assertIn("rubric", json.loads((evaluator / "case.json").read_text(encoding="utf-8")))
         self.assertTrue((evaluator / "review-schema.json").is_file())
         self.assertTrue((evaluator / "judge-prompt.md").is_file())
         candidate_text = "\n".join(p.read_text(encoding="utf-8", errors="replace")
@@ -251,8 +254,8 @@ class EvalWorkspaceTests(unittest.TestCase):
         candidate = self.base / "candidate"
         evaluator = self.base / "evaluator"
         prepare(ROOT, "revise-08", candidate, evaluator)
-        task = (candidate / "task.txt").read_text()
-        case_record = json.loads((evaluator / "case.json").read_text())
+        task = (candidate / "task.txt").read_text(encoding="utf-8")
+        case_record = json.loads((evaluator / "case.json").read_text(encoding="utf-8"))
         self.assertNotIn("교정 후 안정 처리량", task)
         self.assertIn("교정 후 안정 처리량", case_record["followup"])
     def test_no_skill_condition_has_no_agent_skill(self):
