@@ -10,6 +10,7 @@ It is deliberately limited to a trusted local or self-hosted control plane.
 - The candidate Docker/tool environment must not receive the control Codex login state.
 - The first real run is only the frozen two-job `tools-10` integration smoke. It is not evidence of skill benefit.
 - Do not commit, paste, upload, hash, or copy Codex session credential contents into repository artifacts or chat.
+- `MOCK_MODEL_TOKEN`, when seen in CI, is synthetic local mock transport data only. It is unrelated to ChatGPT authentication and must never be used as real-run authentication.
 
 ## Why a dedicated control CODEX_HOME
 
