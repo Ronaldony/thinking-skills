@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "purpose": "integration-only-chatgpt-subscription-smoke",
   "analysis_use": "not-for-skill-performance-inference",
   "cases": ["tools-10"],
@@ -10,6 +10,7 @@
   "control_plane_auth_source": "codex-session",
   "api_key_auth_allowed": false,
   "requires_trusted_local_or_self_hosted_control_plane": true,
+  "model_reasoning_effort_policy": "model-default",
   "required_success_evidence": [
     "control Codex starts using an existing ChatGPT-authenticated session without API-key input",
     "candidate tool boundary is externally verified and network-isolated for tools-10",
@@ -22,5 +23,5 @@
     "the public-development smoke is held-out evidence",
     "smoke success alone means the Feynman skill is behaviorally validated"
   ],
-  "scope": "integration-only smoke for ChatGPT-subscription Codex on a trusted local or self-hosted control plane; no OpenAI API key or API billing path"
+  "scope": "integration-only smoke for ChatGPT-subscription Codex on a trusted local or self-hosted control plane; model reasoning effort intentionally uses the model default for plumbing validation only; no OpenAI API key or API billing path"
 }
