@@ -11,6 +11,7 @@ It is deliberately limited to a trusted local or self-hosted control plane.
 - The first real run is only the frozen two-job `tools-10` integration smoke. It is not evidence of skill benefit.
 - Do not commit, paste, upload, hash, or copy Codex session credential contents into repository artifacts or chat.
 - `MOCK_MODEL_TOKEN`, when seen in CI, is synthetic local mock transport data only. It is unrelated to ChatGPT authentication and must never be used as real-run authentication.
+- Do not manually reconstruct the `codex exec` command for the real smoke. Use the repository's canonical smoke executor.
 
 ## Why a dedicated control CODEX_HOME
 
@@ -23,7 +24,7 @@ forced_login_method = "chatgpt"
 cli_auth_credentials_store = "file"
 ```
 
-The forced login policy is important: Codex documents that credentials which do not match a configured login restriction cause Codex to exit. The auth gate also launches `codex login status` from a scrubbed environment and preserves only the coarse `chatgpt-subscription-authenticated` verdict.
+The forced login policy is important: credentials that do not match the configured login method are rejected by Codex. The auth gate launches `codex login status` from a scrubbed environment and preserves only the coarse `chatgpt-subscription-authenticated` verdict.
 
 ## 1. Prepare a fresh control home
 
@@ -53,7 +54,7 @@ For a headless trusted machine, the supported device-code flow can be used when 
 CODEX_HOME="$CONTROL_CODEX_HOME" codex login --device-auth
 ```
 
-This is the only required human authentication step. No credential value is sent to the repository or to ChatGPT conversation text.
+This is the only authentication step that requires a human. No credential value is sent to the repository or to ChatGPT conversation text.
 
 ## 3. Verify the authentication method without preserving account details
 
@@ -74,7 +75,7 @@ The gate does not open credential files. It captures `codex login status` only i
 
 ## 4. Frozen first real run
 
-After the auth gate is green, the first real model execution remains:
+The smoke spec is schema v2 and remains frozen to:
 
 ```text
 case: tools-10
@@ -82,24 +83,104 @@ conditions:
   - baseline
   - feynman-v05
 repeats: 1 each
+authentication: ChatGPT subscription / Codex session
 analysis use: not-for-skill-performance-inference
+model reasoning effort policy: model-default
 ```
 
-Before each job, rerun `feynman_subscription_run_preflight.py` against that job's exact plan, workspace, boundary profile, and remote environment. The candidate tool environment must use a separate candidate `codex_home`; the dedicated control `CODEX_HOME` is a protected root and must never be mounted into the candidate container.
+`model-default` is intentionally permitted **only for integration plumbing validation**. It is not sufficiently controlled for the four-condition behavioral pilot. Before FYN-08 behavioral comparison, an explicit reasoning effort must be bound into a new versioned runner/attestation/link/result contract.
 
-## 5. Evidence required before any behavioral pilot
+For each condition, first prepare the exact frozen artifacts using the existing plan/workspace/profile/job/remote-environment tooling:
 
-Both smoke jobs must produce all of the following before moving to the four-condition public-development pilot:
+```text
+subscription smoke plan
+candidate workspace
+evaluator case
+runner-job v3
+boundary profile
+$CONTROL_CODEX_HOME/environments.toml
+```
 
-1. successful ChatGPT-subscription-authenticated model turn;
-2. same-profile external boundary canary/report;
-3. candidate tool trace with no control authentication exposure;
-4. runner-attestation schema v3;
-5. recomputed runner-job-link schema v3;
-6. evidence/review/gate chain;
-7. analysis-result schema v4.
+The runner-job must bind the same dedicated control `CODEX_HOME`, while the candidate uses its own separate candidate `codex_home`.
 
-Even if both jobs succeed, do not interpret their response difference as a Feynman skill effect. The smoke only validates the real execution plumbing.
+## 5. Execute one frozen job with the canonical executor
+
+Do not manually assemble Codex flags. Run:
+
+```bash
+python tooling/feynman_subscription_smoke_exec.py \
+  --plan <frozen-subscription-smoke-plan.json> \
+  --smoke-spec evals/feynman-thinking/subscription-smoke-spec.json \
+  --ordinal <job-ordinal> \
+  --evaluator-case <evaluator-dir>/case.json \
+  --runner-job <runner-job.json> \
+  --boundary-profile <boundary-profile.json> \
+  --remote-environment "$CONTROL_CODEX_HOME/environments.toml" \
+  --output-dir <evaluator-dir>/subscription-exec-<run-id> \
+  --codex-bin codex
+```
+
+The executor itself re-runs the structural preflight and auth gate, verifies the frozen smoke-spec hash, checks the requested model and Codex CLI version, rejects API/token-based ambient authentication, and launches the exact `task.txt` through a fixed non-interactive Codex configuration.
+
+Successful executor output includes:
+
+```text
+codex-trace.jsonl
+candidate-final.txt
+subscription-exec-result.json
+```
+
+Expected executor verdict:
+
+```text
+subscription-codex-smoke-exec-completed
+```
+
+The executor deliberately refuses real account-authenticated execution when `GITHUB_ACTIONS=true`. Use a trusted local or self-hosted control plane; do not copy the control login session into GitHub Actions.
+
+## 6. What the executor protects
+
+The executor fails closed if, among other things:
+
+- the smoke scope differs from `tools-10 × {baseline, feynman-v05} × 1`;
+- the plan is not byte-bound to the supplied smoke spec;
+- the control config differs from the auth-gate config;
+- the remote environment is not exactly `CONTROL_CODEX_HOME/environments.toml`;
+- auth gate or structural preflight fails;
+- runner-job and authenticated Codex CLI versions differ;
+- the requested model is a mock model;
+- the candidate contains project-local `.codex` config;
+- `OPENAI_API_KEY`, `CODEX_API_KEY`, or `CODEX_ACCESS_TOKEN` is ambient;
+- the output directory is not a new evaluator-owned directory;
+- Codex returns nonzero, an error event, a failed turn, no single thread ID, or no completed agent answer.
+
+The executor does not read credential files and does not preserve raw auth-status text, raw process environment, raw stderr, or control `CODEX_HOME` contents.
+
+## 7. Post-run evidence remains mandatory
+
+An executor success is **not yet a green integration smoke**. For each job, continue with:
+
+1. same-profile external boundary canary/report for the actual run;
+2. runner-attestation schema v3;
+3. recomputed runner-job-link schema v3;
+4. trace evidence extraction;
+5. evaluator review bundle;
+6. semantic review v2;
+7. grade gate;
+8. analysis-result schema v4.
+
+Only when both `baseline` and `feynman-v05` smoke jobs have complete lineage is the integration smoke complete.
+
+## 8. Claims prohibited after the smoke
+
+Even if both jobs succeed:
+
+- do not estimate Feynman skill effect from the two answers;
+- do not call the public-development smoke held-out evidence;
+- do not call the skill behaviorally validated;
+- do not start the four-condition behavioral pilot before explicit reasoning effort is frozen in the execution contract.
+
+The smoke validates real execution plumbing, not comparative skill quality.
 
 ## Cleanup
 
