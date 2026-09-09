@@ -1,0 +1,224 @@
+# Feynman 작업 인계 — 로컬 Codex용
+
+작성일: 2026-09-09 (Asia/Seoul). 이 문서는 개발 담당 Codex의 인계 자료다. 평가 대상 candidate에게 전달하지 않는다.
+
+## 1. 목표와 이번 재개 범위
+
+목표는 역사적 인물의 사고 방법을 문제 해결 스킬로 만드는 `Ronaldony/thinking-skills`에 리처드 파인만 스킬을 설계·구현·검증하는 것이다. 원본은 `Ronaldony/feynman-thinking` v0.4.0이다. 현재 v0.5.0-draft는 설치·평가 구조를 구현한 research preview이지, 행동 성능이 입증된 릴리스가 아니다.
+
+**다음 첫 목표는 Windows 사용자 PC에서 최신 수정의 auth gate를 재검증하는 것**이다. 바로 모델 평가를 실행하거나 처음부터 프로젝트를 재설계하지 않는다. 사용자 로그인 보고와 실제 gate 성공을 구분한다.
+
+## 2. 확인한 저장소 기준점
+
+| 항목 | 인계 작성 시 확인한 값 |
+|---|---|
+| 저장소 | `Ronaldony/thinking-skills` |
+| 작업 브랜치 | `feat/feynman-thinking-v0.5-draft` |
+| PR | #1, open / draft / not merged |
+| base | `main` |
+| 인계 파일 추가 전 원격 HEAD | `1613abd87b813be2aedfaee5ac360046397ad1ca` |
+| Windows auth gate 수정 커밋 | `b412e9fa807458d428745c5e63a6fccd38885927` |
+| 최신 선행 작업 로그 | `docs/feynman-work-log/LOG-020-windows-auth-gate-fix-and-green-ci.md` |
+| 사용자 환경 | Windows PowerShell, `C:\DevWorks\thinking-skills` |
+| 평가 전용 홈의 예정 위치 | `Join-Path $HOME '.codex-feynman-eval'` |
+
+이 HEAD는 **인계 전 기준점**이다. 인계 문서 커밋이나 이후 작업으로 HEAD가 앞으로 이동하는 것이 정상이다. 이 SHA로 reset하지 말고 현재 브랜치와 변경 내역을 확인한다. 로컬 사용자가 수정 커밋을 pull했는지는 아직 확인되지 않았다.
+
+GitHub에 코드가 저장돼 있어도 사용자 로컬 clone에 자동 반영되지는 않는다. 원격 feature branch 저장과 main 병합은 별개다. 마지막 조회의 PR 본문에는 이전 검증 head/261-test 수치가 남아 있으므로 최신 로그·실제 코드·해당 SHA의 CI를 우선한다.
+
+## 3. 변경하지 말아야 할 정책
+
+- **OpenAI Platform API 및 API-key 기반 평가 경로는 폐기됐다. 복구하거나 대안으로 제안하지 않는다.** 모델 사용은 공식 Codex의 ChatGPT 구독 로그인만 허용한다. 다른 유료 모델 API나 로컬 HTTP로 우회한 유료 호출도 금지한다.
+- `OPENAI_API_KEY`, `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN`을 실행 경로에 주입하지 않는다. 발견 시 값은 출력하지 말고 해당 실행을 차단한다. 공식 Codex의 정상 구독 연결과 저장소 관리를 위한 Git/GitHub 통신은 이 금지와 구분한다.
+- 로컬 mock reference의 `MOCK_MODEL_TOKEN`은 합성 테스트 데이터다. 실제 인증이나 모델 성능의 증거가 아니다.
+- 로그인 토큰, `auth.json` 내용, 쿠키, session credential을 읽어 출력·복사·해시·커밋·업로드하지 않는다. 전체 환경변수나 control home의 재귀 덤프도 금지한다. 정상 Codex 프로그램이 자신의 인증 상태를 사용하는 것은 허용한다.
+- 평가용 `control_codex_home`을 candidate의 mount/env/argv에 노출하지 않는다. candidate/evaluator/source/사용자 HOME 경계를 유지한다.
+- 안전장치를 해제해서 검사를 통과시키지 않는다. 전체 환경 상속, 무검토 `shell=True`, 임의의 sandbox 해제, `GITHUB_ACTIONS`를 지워 실제 계정 실행 차단을 우회하는 방법은 사용하지 않는다.
+- 이 개발 대화를 baseline 답변 생성에 재사용하지 않는다. 개발 담당 Codex와 평가 candidate는 다른 역할이다. 평가 candidate에는 허용된 스킬·문제·fixture만 제공한다.
+- 기존 파일·로컬 변경·다른 브랜치를 덮어쓰거나 삭제하지 않는다. `reset --hard`, `clean -fd`, force push, 무단 merge, 로그인 홈 삭제를 하지 않는다. PR #1의 draft를 유지한다.
+- 추가 크레딧 구매·자동충전·유료 서비스 신청은 하지 않는다. 구독 사용 한도에 걸리면 멈추고 기록한다.
+
+## 4. 실제로 어디에서 멈췄는가
+
+사용자 보고의 순서는 다음과 같다.
+
+1. ChatGPT Codex 로그인 완료라고 보고했다. 평가 전용 홈에서의 로그인인지는 당시 검증되지 않았다.
+2. PowerShell에서 Bash식/미설정 변수 때문에 `--control-codex-home: expected one argument`가 발생했다.
+3. 경로를 직접 주자 전용 디렉터리가 없다는 오류가 발생했다.
+4. 전용 홈 준비와 해당 홈 로그인 절차를 안내한 뒤, 마지막으로 받은 실행 결과는 아래였다.
+
+```text
+error: Codex version command failed
+```
+
+이 오류는 **gate 내부의 `codex --version` subprocess가 nonzero로 종료된 지점**이다. login-status 검사 이전이므로 로그인 실패나 구독 권한 부족으로 단정할 수 없다.
+
+그 뒤 `b412e9f...`에서 auth gate의 Windows 최소 실행 환경과 경로 처리를 보강했다. Windows에서 `SystemRoot`, `ComSpec`, `PATHEXT`, `WINDIR`, `TEMP`, `TMP`, `USERPROFILE` 등을 제한적으로 처리하고, 실패 시 exit code만 보고하도록 수정했다.
+
+**사용자 PC에서 수정 후 성공 결과는 아직 없다.** 이전 대화의 “Windows 구현 결함으로 판단했다”는 표현은 코드에서 확인한 결함과 원인 가설이다. 그것이 사용자 오류의 유일한 원인이었다는 현장 검증은 아직 없다.
+
+## 5. 이번 인계 검토에서 확인한 추가 주의점
+
+### 5.1 auth gate 수정은 실제 executor까지 적용된 것이 아니다
+
+`tooling/feynman_subscription_auth_gate.py::_safe_env()`는 Windows 분기를 갖는다. 반면 인계 기준의 `tooling/feynman_subscription_smoke_exec.py::_safe_exec_env()`는 아직 `HOME / CODEX_HOME / PATH / TMPDIR` 네 값만 만든다. gate 성공만으로 Windows의 실제 smoke executor가 동작한다고 판단하지 않는다.
+
+### 5.2 Windows 검증 범위가 제한돼 있다
+
+`tests/test_feynman_subscription_auth_gate.py`의 Windows 검사는 `_safe_env(platform_name='nt', source_env=...)`의 반환값을 검사한다. 실제 subprocess용 fake는 여전히 `#!/bin/sh`다. Linux CI success와 Windows 실기기 실행 성공을 구분한다. Windows에서 전체 suite를 곧바로 실행하면 POSIX fixture 의존 실패가 생길 수 있으므로 이를 제품 버그/플랫폼별 fixture 한계와 나눠 기록한다.
+
+### 5.3 CLI launcher와 Linux 경로 계약은 별도 확인 대상이다
+
+PowerShell이 선택하는 `codex.ps1`/`codex.cmd`/`codex.exe`와 Python `shutil.which('codex')`의 결과가 다를 수 있다. 이 가능성은 **확인할 가설**이지 재현된 추가 버그가 아니다. 설치된 CLI의 실제 경로·종류·버전, Python 호출과 scrubbed 환경 차이를 비밀정보 없이 확인한다.
+
+현재 boundary validator는 POSIX 경로와 Linux Docker 참조 구조를 사용한다. Windows auth gate 성공이 `C:\...` 경로의 Docker end-to-end 지원을 뜻하지 않는다. native Windows 유지와 WSL2/Linux 경로 사용 중 최소 변경으로 가능한 방안을 실제 환경에서 판정한다. WSL 설치·새 로그인·권한 승인이 필요하면 그 지점만 사용자에게 요청한다. Windows의 credential 파일을 WSL로 복사하지 않는다.
+
+## 6. 읽을 자료와 순서
+
+먼저 적용되는 저장소 `AGENTS.md`가 있는지 확인하고 따른다. 인계를 위해 기존 AGENTS.md를 덮어쓰거나 전역 Codex 설정을 변경하지 않는다.
+
+**현재 중단 지점:**
+
+- 이 문서
+- `docs/feynman-work-log/LOG-020-windows-auth-gate-fix-and-green-ci.md`
+- `docs/feynman-work-log/LOG-019-windows-auth-gate-version-command-failure.md`
+- `tooling/feynman_subscription_auth_gate.py`
+- `tests/test_feynman_subscription_auth_gate.py`
+
+**실제 smoke 준비 전:**
+
+- `docs/feynman-subscription-local-smoke.md`
+- `docs/feynman-work-log/LOG-015-subscription-smoke-executor.md`
+- `tooling/feynman_subscription_smoke_exec.py`
+- `tooling/feynman_subscription_run_preflight.py`
+- `tooling/feynman_remote_exec_environment.py`
+- `tooling/feynman_boundary_profile.py`
+- `tooling/feynman_runner_job.py` 및 관련 validate/link/attestation 모듈
+- `evals/feynman-thinking/subscription-smoke-spec.json`
+
+**프로젝트 전체 맥락이 필요할 때:**
+
+- `docs/feynman-work-status.md`
+- `docs/feynman-work-log/LOG-013-api-retirement-subscription-pivot.md`
+- `docs/feynman-work-log/LOG-014-subscription-pivot-stabilization.md`
+- `skills/feynman-thinking/SKILL.md` 및 references
+- `docs/feynman-audit-2026-09-08.md`
+
+LOG-008/010~012의 API 인증 절차는 역사 기록이며 새 작업 지시가 아니다. 모든 로그를 먼저 정독하느라 첫 진단을 지연시키지 않는다.
+
+## 7. 다음 작업: 작은 완료 단위로 진행
+
+### A. 환경과 현재 파일을 확인한다
+
+로컬 Windows에 실제 접근할 수 있는 개발 Codex인지 확인한다. cloud/원격 세션이면 사용자 PC와 동일한 세션이라고 가정하지 않는다. 로컬 접근이 없다면 인증 파일을 요구하지 말고 그 한계를 보고한다.
+
+```powershell
+git status --short
+git branch --show-current
+git rev-parse HEAD
+python --version
+Get-Command codex -All | Select-Object Name, CommandType, Source
+codex --version
+python -c "import shutil; print(shutil.which('codex'))"
+```
+
+원격 상태 확인이 가능하면 fetch 후 비교한다. 로컬 변경이나 브랜치 분기가 있으면 보존하고 원인을 확인한다. 업데이트는 필요한 경우에만 fast-forward로 한다. 원격 URL에 자격증명이 포함될 수 있으므로 검증용 출력은 마스킹한다.
+
+### B. 전용 홈을 보존한 채 gate를 재검증한다
+
+사용자 예정 경로가 실제로 존재하는지 먼저 확인한다. 이미 있는 홈에 `prepare`를 다시 실행하거나 credential을 복사하지 않는다. 다른 경로에서 로그인했다는 증거가 있으면 경로를 임의로 바꾸지 않는다.
+
+```powershell
+$controlHome = Join-Path $HOME '.codex-feynman-eval'
+if (-not (Test-Path -LiteralPath $controlHome -PathType Container)) {
+    throw '평가 전용 홈이 없습니다. 기존 로그인 위치와 prepare 결과를 먼저 확인하세요.'
+}
+$report = Join-Path $env:TEMP ('feynman-auth-gate-' + [guid]::NewGuid().ToString('N') + '.json')
+python tooling/feynman_subscription_auth_gate.py check --control-codex-home "$controlHome" --codex-bin codex --output "$report"
+if ($LASTEXITCODE -ne 0) { throw 'Auth gate 실패. 같은 명령을 반복하지 말고 실패 단계를 진단하세요.' }
+```
+
+새 출력 파일명을 써서 기존 증거를 덮어쓰지 않는다. 정상 목표는 `chatgpt-subscription-authenticated`다. JSON에는 로컬 경로가 있으므로 공개 로그에는 필요한 판정·버전만 남기고 개인 경로를 마스킹한다.
+
+실패하면 일반 `codex --version`과 gate의 버전 subprocess를 구분한다. 런처 차이, 최소 환경, 출력 인코딩, 인자 전달을 **하나씩** 검사한다. `codex doctor` 같은 추가 명령도 설치된 CLI의 `--help`로 존재 여부를 확인한 후 사용한다. 민감한 진단 원문을 그대로 채팅/로그에 내보내지 않는다.
+
+**A/B 완료:** 성공 verdict 또는 원인·재현·최소 패치·검증 결과가 기록되고 다음 한 행동이 정해진 상태. 사용자 재로그인은 정말 인증이 필요한 경우만 요청한다.
+
+### C. 모델 호출 없이 실제 실행 경로를 확인한다
+
+실행기의 Windows 최소 환경, Python/CLI 버전, 지원 플래그, Docker backend, POSIX path/mount mapping을 먼저 확인한다. 도구가 Linux에 있어야 한다면 Linux Codex/Python/Docker와 별도 정상 구독 로그인이 필요할 수 있음을 명시한다.
+
+기존 plan/workspace/profile/job/environment 생성 도구를 재사용한다. 일반 Codex 옵션을 수동으로 조합해 canonical executor를 우회하지 않는다. 필요한 호환성 패치만 구현하고 관련 회귀 테스트를 추가한다. 환경 설치·권한 변경은 사용자 승인 범위에서만 수행한다.
+
+### D. 조건이 모두 갖춰졌을 때만 최초 실제 smoke를 실행한다
+
+```text
+case = tools-10
+conditions = baseline, feynman-v05
+repeats = 각 1회
+authentication = chatgpt-subscription / codex-session
+analysis_use = not-for-skill-performance-inference
+reasoning policy = model-default (integration smoke에만 허용)
+```
+
+실행 직전 해당 환경의 boundary 검사와 auth/preflight가 통과해야 한다. frozen plan의 순서를 지키고 두 job을 넘어 임의로 늘리지 않는다. 실패한 실행도 사용량을 쓸 수 있으므로 모델 요청의 자동 반복/성공 결과만 남기기를 하지 않는다.
+
+각 job에 actual trace/final, same-profile boundary evidence, runner-attestation v3, runner-job-link v3, evidence, review bundle, semantic review v2, grade gate, analysis-result v4를 연결한다. 어느 하나가 없으면 그 단계까지만 완료로 기록한다. 해시 연결 자체는 실행 진위의 독립적인 증명을 대신하지 않는다.
+
+후속 의미 채점에서 개발 담당의 자체 판단을 독립·블라인드 심사라고 부르지 않는다. 독립 검토가 없으면 pending 상태를 남기며 합격을 꾸며내지 않는다.
+
+### E. 실제 성능 비교는 그다음이다
+
+4조건은 `baseline / generic / legacy-clean / feynman-v05`다. pilot 전에 explicit reasoning effort를 plan→runner→attestation→link→result에 일관되게 고정하는 versioned contract 보강이 필요하다. mock, 두-job smoke, 공개 개발 사례를 held-out 성능 근거로 섞지 않는다. 새 인프라 확장보다 파인만 스킬의 실질적 효용 검증을 우선한다.
+
+## 8. 작업 로그와 재개 규칙
+
+`docs/feynman-work-log/`에서 실제 파일 목록을 확인해 다음 번호를 고른다. 이 인계는 LOG-021에 기록한다. 다음 번호를 맹목적으로 덮어쓰지 않는다.
+
+각 작업 단위의 시작과 결과 직후 같은 로그에 다음을 기록한다. 단계가 길면 중간 checkpoint를 추가한다.
+
+```text
+작업 ID / 시각(Asia/Seoul) / STARTED·DONE·FAILED·BLOCKED·SKIPPED
+목적 / 시작 branch·HEAD / 수정 전 git status
+환경: OS·shell·Python·Codex·Docker 버전, real 또는 mock
+수행: 실제 실행한 명령(비밀정보 제거), 종료 코드
+관찰: 필요한 출력 요약, 재현 조건, 실패 단계
+판단: 확인된 원인과 아직 검증할 가설을 구분
+변경: 파일과 변경 이유, 유지한 보안 조건
+검증: 테스트 명령·개수·성공/실패/skip·환경·CI head·run ID
+산출물: 비민감 artifact 경로와 필요 시 해시
+저장: local commit SHA / push 여부 / 확인한 remote SHA
+남은 문제 / 다음에 실행할 정확한 한 행동 / 사람 개입 필요 이유
+```
+
+일반 터미널 출력을 통째로 저장하지 않는다. 계정·토큰·개인 경로를 공개 로그에서 제거한다. 실행 전 예상 결과와 실행 후 관찰을 구분하며 raw credential은 해시도 남기지 않는다.
+
+사용자에게 단계별 진행을 짧게 알리고, 종료 전에 완료·미완료·커밋·push·다음 행동을 보고한다. CI를 무한 polling하지 않는다. 아직 실행 중인 CI는 pending으로 남긴다. 커밋된 코드와 실제 push된 원격 HEAD를 분리해 확인한다.
+
+## 9. 검증된 근거와 한계
+
+2026-09-09 인계 준비 중 GitHub에서 수정 커밋 `b412e9f...`의 다음 PR-triggered CI가 모두 `completed / success`인 것을 다시 조회했다.
+
+| workflow | run ID |
+|---|---:|
+| validate-feynman-subscription-readiness | 34327616872 |
+| validate-feynman | 34327616881 |
+| validate-feynman-docker-reference | 34327616926 |
+| validate-feynman-remote-exec-reference | 34327616941 |
+| validate-feynman-codex-reference | 34327616828 |
+| validate-feynman-remote-patch-reference | 34327616875 |
+| validate-feynman-unit-diagnostic | 34327616793 |
+
+이 조회는 새 테스트 실행도, Windows 실기기 성공도, 모델 성능 측정도 아니다. 이전 261개 테스트 수치를 이 수정의 최신 수치로 재사용하지 않는다.
+
+근거 위치:
+
+- PR: https://github.com/Ronaldony/thinking-skills/pull/1
+- 기준 코드: https://github.com/Ronaldony/thinking-skills/tree/1613abd87b813be2aedfaee5ac360046397ad1ca
+- 수정: https://github.com/Ronaldony/thinking-skills/commit/b412e9fa807458d428745c5e63a6fccd38885927
+- Codex CLI 공식 안내: https://learn.chatgpt.com/docs/codex/cli
+- 인증 공식 안내: https://learn.chatgpt.com/docs/auth
+- Windows 공식 안내: https://learn.chatgpt.com/docs/windows/windows-sandbox
+- AGENTS.md 공식 안내: https://learn.chatgpt.com/docs/agent-configuration/agents-md
+
+공식 문서는 제품 사용법의 근거이지 이 저장소의 성공 증거가 아니다. 현재 설치된 CLI의 help/실제 결과를 함께 확인한다.
