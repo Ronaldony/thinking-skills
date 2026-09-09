@@ -142,7 +142,7 @@ PowerShell에서는 Docker Desktop 절대 CLI와 빈 임시 DOCKER_CONFIG를 사
 - main 병합 없음
 - force push 없음
 
-이 LOG-025 추가 commit은 구현 commit을 설명하기 위한 후속 문서 commit으로 push할 예정이다.
+LOG-025 문서 commit은 bd52681로 생성했고 origin/feat/feynman-thinking-v0.5-draft에 push 완료했다.
 
 ## 미완료 사항과 다음 행동
 
@@ -150,4 +150,4 @@ PowerShell에서는 Docker Desktop 절대 CLI와 빈 임시 DOCKER_CONFIG를 사
 - Windows 전체 unit suite: POSIX fake executable과 symlink privilege fixture의 Windows 대응은 별도 작업이다. native mapping 구현과 Linux full suite에는 영향을 주지 않지만, 실제 Windows smoke executor를 평가하려면 Windows-native fake launcher/권한 독립 fixture가 필요하다.
 - Docker CLI PATH: 현재 사용자 shell PATH에는 Docker Desktop CLI가 없어 canonical smoke 실행 시 scrubbed PATH 보강은 추가했지만, 최종 실행 전 generated remote environment가 같은 프로세스 PATH에서 docker를 찾는지 structural preflight에서 확인해야 한다.
 - 기존 exited container: 이름 충돌을 일으킨 별도 exited project-generated container는 보존했다. 사용자 데이터/credential로 단정하지 않고 삭제하지 않았으므로, 필요하면 명시적 정리 작업으로 분리한다.
-- 다음 행동은 이 로그 commit push 후, native profile/job/remote environment를 실제 smoke artifact에 생성하는 model-free structural preflight까지 수행하는 것이다. 그 결과가 pass일 때만 사용자에게 실제 smoke 실행 여부를 묻거나 허용된 범위에서 다음 단계로 진행한다.
+- 다음 행동은 native profile/job/remote environment를 실제 smoke artifact에 생성하는 model-free structural preflight까지 수행하는 것이다. 그 결과가 pass일 때만 사용자에게 실제 smoke 실행 여부를 묻거나 허용된 범위에서 다음 단계로 진행한다.
