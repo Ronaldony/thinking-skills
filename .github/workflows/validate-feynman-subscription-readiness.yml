@@ -61,7 +61,8 @@ jobs:
             tests.test_feynman_eval_results \
             tests.test_feynman_subscription_smoke_plan \
             tests.test_feynman_subscription_run_preflight \
-            tests.test_feynman_subscription_auth_gate -v
+            tests.test_feynman_subscription_auth_gate \
+            tests.test_feynman_subscription_smoke_exec -v
 
       - name: Assert canonical subscription path contains no retired API credential contract
         shell: bash
@@ -77,12 +78,14 @@ jobs:
             tooling/feynman_subscription_smoke_plan.py
             tooling/feynman_subscription_run_preflight.py
             tooling/feynman_subscription_auth_gate.py
+            tooling/feynman_subscription_smoke_exec.py
             evals/feynman-thinking/runner-job.schema.json
             evals/feynman-thinking/runner-attestation.schema.json
             evals/feynman-thinking/runner-job-link.schema.json
             evals/feynman-thinking/analysis-result.schema.json
             evals/feynman-thinking/subscription-smoke-spec.json
             evals/feynman-thinking/subscription-run-readiness.schema.json
+            evals/feynman-thinking/subscription-smoke-exec-result.schema.json
           )
           if grep -nE 'api\.openai\.com|control_plane_credential_env_key|control_plane_credential_source' "${files[@]}"; then
             echo "retired API credential contract found in canonical subscription files" >&2
@@ -94,6 +97,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -q '"api_key_auth_allowed": false' evals/feynman-thinking/subscription-smoke-spec.json
+          grep -q '"model_reasoning_effort_policy": "model-default"' evals/feynman-thinking/subscription-smoke-spec.json
           grep -q '"const":false' evals/feynman-thinking/runner-job.schema.json
 
       - name: Assert local mock workflows use mock-specific transport token naming
