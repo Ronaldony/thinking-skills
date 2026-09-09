@@ -4,7 +4,8 @@
 Runner-job schema v3 has no API-key mode. The host control-plane Codex must use
 an already authenticated ChatGPT subscription session stored under a protected
 control CODEX_HOME. Candidate tools use a separate CODEX_HOME, receive no auth
-material, and run under the referenced external boundary profile.
+material, and run under the referenced external boundary profile. Native
+Windows jobs record host mount sources separately from Linux destinations.
 """
 from __future__ import annotations
 
@@ -17,8 +18,10 @@ from typing import Any
 
 try:
     from .feynman_boundary_profile import validate_profile_file
+    from .feynman_path_mapping import build_mounts
 except ImportError:
     from feynman_boundary_profile import validate_profile_file
+    from feynman_path_mapping import build_mounts
 
 PRIMARY_CONDITIONS = {"baseline", "generic", "legacy-clean", "feynman-v05"}
 SKILL_CONDITIONS = {"legacy-clean", "feynman-v05"}
@@ -158,6 +161,9 @@ def build_job(*, plan_path: Path, ordinal: int, evaluator_case_path: Path,
     if secretish:
         raise ValueError("candidate env allowlist contains secret-like names: " + ", ".join(secretish))
 
+    path_strings = {name: str(path) for name, path in paths.items()}
+    mount_paths = build_mounts(path_strings, profile)
+
     return {
         "schema_version": 3,
         "run_id": run_id,
@@ -169,13 +175,14 @@ def build_job(*, plan_path: Path, ordinal: int, evaluator_case_path: Path,
             "has_followup": planned.get("has_followup") is True,
         },
         "versions": {"model": model, "codex_cli": codex_cli},
-        "paths": {name: str(path) for name, path in paths.items()},
+        "paths": path_strings,
         "boundary": {
             "profile_sha256": profile_sha,
             "backend": profile["backend"],
             "backend_version": profile["backend_version"],
             "network_mode": network_mode,
             "candidate_env_keys": sorted(profile_env_keys),
+            "mounts": mount_paths,
         },
         "network": {
             "case_requires_tool_network": case_requires_tool_network,

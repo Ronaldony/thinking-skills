@@ -287,6 +287,7 @@ def assemble(
     )
     if remote_validation.get("verdict") != "remote-exec-environment-valid":
         raise ValueError("remote execution environment is not canonical")
+    runner_job = _load_object(runner_job_path, "runner job")
 
     network_reference = _load_object(network_reference_path, "network reference")
     network_host, network_port = _validate_network_reference(network_reference)
@@ -316,7 +317,15 @@ def assemble(
         raise ValueError("candidate proof file does not contain expected remote exec marker")
 
     inspect_payload = _load_json(docker_inspect_path, "Docker inspect")
-    inspect_result = verify_reference(profile, inspect_payload)
+    inspect_result = verify_reference(
+        profile,
+        inspect_payload,
+        expected_mounts=(
+            runner_validation.get("mounts")
+            if runner_job.get("boundary", {}).get("mounts") is not None
+            else None
+        ),
+    )
     if inspect_result.get("verdict") != "docker-inspect-matches-profile":
         raise ValueError("Docker inspect does not match boundary profile")
 
@@ -324,7 +333,6 @@ def assemble(
     tool_version = _version(tool_codex_version_path, "tool Codex version")
     if control_version != tool_version:
         raise ValueError("control-plane and tool-boundary Codex versions differ")
-    runner_job = _load_object(runner_job_path, "runner job")
     runner_version = runner_job.get("versions", {}).get("codex_cli")
     if runner_version != control_version:
         raise ValueError("runner job Codex version differs from observed control/tool versions")

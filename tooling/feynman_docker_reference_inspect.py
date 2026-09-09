@@ -4,7 +4,8 @@
 Docker may represent tmpfs mounts both in HostConfig.Tmpfs and in the generic
 Mounts list. This wrapper validates tmpfs entries separately, removes them from
 the bind/volume comparison, then delegates the remaining launch checks to
-`feynman_docker_inspect.verify_inspect`.
+`feynman_docker_inspect.verify_inspect`. When `--runner-job` is supplied, bind
+sources are also compared with the native host-to-container mapping.
 """
 from __future__ import annotations
 
@@ -17,9 +18,11 @@ from typing import Any
 try:
     from .feynman_boundary_profile import validate_profile_file
     from .feynman_docker_inspect import verify_inspect
+    from .feynman_path_mapping import mounts_for_job
 except ImportError:
     from feynman_boundary_profile import validate_profile_file
     from feynman_docker_inspect import verify_inspect
+    from feynman_path_mapping import mounts_for_job
 
 
 def _load(path: Path) -> Any:
@@ -72,9 +75,14 @@ def normalize_inspect(profile: dict[str, Any], payload: Any) -> tuple[Any, dict[
     }
 
 
-def verify_reference(profile: dict[str, Any], inspect_payload: Any) -> dict[str, Any]:
+def verify_reference(
+    profile: dict[str, Any],
+    inspect_payload: Any,
+    *,
+    expected_mounts: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
     normalized, tmpfs = normalize_inspect(profile, inspect_payload)
-    result = verify_inspect(profile, normalized)
+    result = verify_inspect(profile, normalized, expected_mounts=expected_mounts)
     return {
         **result,
         "tmpfs": tmpfs,
@@ -89,11 +97,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", type=Path, required=True)
     parser.add_argument("--inspect", type=Path, required=True)
+    parser.add_argument("--runner-job", type=Path)
     args = parser.parse_args()
     try:
         profile, profile_sha, _ = validate_profile_file(args.profile.resolve())
         payload = _load(args.inspect.resolve())
-        result = verify_reference(profile, payload)
+        expected_mounts = None
+        if args.runner_job is not None:
+            job = _load(args.runner_job.resolve())
+            expected_mounts = mounts_for_job(job, profile)
+        result = verify_reference(profile, payload, expected_mounts=expected_mounts)
         result["boundary_profile_sha256"] = profile_sha
     except (ValueError, OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         parser.exit(2, f"error: {exc}\n")

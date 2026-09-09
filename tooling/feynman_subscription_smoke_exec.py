@@ -194,6 +194,26 @@ def _source_env_get(source: Mapping[str, str], key: str) -> str | None:
     return None
 
 
+def _windows_docker_path_entry(source: Mapping[str, str]) -> str | None:
+    """Find Docker Desktop's CLI without inheriting the host environment."""
+    roots: list[Path] = []
+    for key in ("LOCALAPPDATA", "ProgramFiles", "ProgramW6432"):
+        value = _source_env_get(source, key)
+        if value:
+            roots.append(Path(value))
+    candidates = [
+        root / "Programs" / "DockerDesktop" / "resources" / "bin" / "docker.exe"
+        for root in roots
+    ] + [
+        root / "Docker" / "resources" / "bin" / "docker.exe"
+        for root in roots
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate.parent)
+    return None
+
+
 def _safe_exec_env(
     control_home: Path,
     temp_dir: Path,
@@ -207,6 +227,9 @@ def _safe_exec_env(
         r"C:\Windows\System32" if platform_name == "nt" else "/usr/local/bin:/usr/bin:/bin"
     )
     if platform_name == "nt":
+        docker_dir = _windows_docker_path_entry(source)
+        if docker_dir and docker_dir not in path_value.split(os.pathsep):
+            path_value = docker_dir + os.pathsep + path_value
         temp_value = str(temp_dir)
         result = {
             "HOME": str(control_home.parent),

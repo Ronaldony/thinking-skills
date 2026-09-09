@@ -11,8 +11,10 @@ from pathlib import Path
 from typing import Any
 try:
     from .feynman_boundary_profile import validate_profile_file
+    from .feynman_path_mapping import mounts_for_job
 except ImportError:
     from feynman_boundary_profile import validate_profile_file
+    from feynman_path_mapping import mounts_for_job
 
 SHA_PATTERN = re.compile(r"[0-9a-f]{64}")
 ENV_KEY_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
@@ -106,14 +108,16 @@ def validate_job(job: dict[str,Any], profile: dict[str,Any], profile_sha: str)->
     if secretish:
         raise ValueError("candidate env allowlist contains secret-like names: "+", ".join(secretish))
 
-    profile_rw=profile.get("read_write_mounts")
-    if not isinstance(profile_rw,list):
-        raise ValueError("boundary profile read_write_mounts must be a list")
-    normalized={_absolute_string(v,"profile.read_write_mounts[]") for v in profile_rw}
-    if normalized!=candidate_owned:
-        raise ValueError("boundary profile writable mounts must equal candidate-owned roots")
-    if any(any(_overlap(p,r) for p in protected) for r in normalized):
-        raise ValueError("protected path appears in boundary profile writable mounts")
+    mounts = mounts_for_job(job, profile)
+    writable_sources = {
+        _absolute_string(item["source"], "boundary.mounts[].source")
+        for item in mounts
+        if item["access"] == "rw"
+    }
+    if writable_sources != candidate_owned:
+        raise ValueError("boundary writable mount sources must equal candidate-owned roots")
+    if any(any(_overlap(p,r) for p in protected) for r in writable_sources):
+        raise ValueError("protected path appears in boundary writable mount sources")
 
     expected_auth={
         "mode":"chatgpt-subscription",
@@ -163,6 +167,7 @@ def validate_job(job: dict[str,Any], profile: dict[str,Any], profile_sha: str)->
         "candidate_owned_roots":sorted(candidate_owned),"protected_roots":sorted(protected),
         "tool_network":expected_tool,"authentication_mode":"chatgpt-subscription",
         "control_plane_auth_source":"codex-session","api_key_auth_allowed":False,
+        "mounts": mounts,
         "scope":"pre-execution subscription runner-job/profile consistency; does not inspect login token material",
     }
 

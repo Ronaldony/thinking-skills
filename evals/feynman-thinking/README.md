@@ -32,8 +32,8 @@
 
 1. `tooling/feynman_eval_workspace.py`는 한 사례의 후보 작업공간과 평가자 디렉터리를 별도로 만든다. 후보에는 초기 prompt, 해당 fixture, 선택한 런타임 스킬만 들어간다. evaluator 쪽에는 원 prompt, rubric, follow-up, runtime digest와 evaluator assets가 남는다. 후보/평가 디렉터리는 소스 저장소 밖에 있어야 하고 fixture symlink는 거부한다.
 2. `tooling/feynman_eval_preflight.py`는 후보 내부 예상 스킬 집합과 사용자/CODEX_HOME/상위 경로의 `SKILL.md` 오염을 검사한다. 이 검사는 filesystem skill root만 다루며 plugin/system skill의 부재를 증명하지 않는다.
-3. `tooling/feynman_runner_job.py`는 frozen plan의 한 ordinal, evaluator condition record, boundary profile에서 **pre-run `runner-job.json` schema v2**를 만든다. model/CLI, case/condition/repeat/followup, prompt/runtime/plan digest, candidate-owned paths, network policy와 control-plane-only 인증 구조를 실행 전에 고정한다. credential 값은 기록하지 않는다.
-4. `tooling/feynman_runner_job_validate.py`는 runner job과 boundary profile을 fail-closed로 검증한다. candidate/HOME/CODEX_HOME/temp가 profile의 전체 rw mount 집합과 정확히 일치해야 하며 evaluator/source/real-HOME, candidate auth env/file/argv 노출, network/runtime/skill drift를 거부한다.
+3. `tooling/feynman_runner_job.py`는 frozen plan의 한 ordinal, evaluator condition record, boundary profile에서 **pre-run `runner-job.json` schema v3**를 만든다. model/CLI, case/condition/repeat/followup, prompt/runtime/plan digest, candidate-owned paths, network policy와 control-plane-only 인증 구조를 실행 전에 고정한다. credential 값은 기록하지 않는다. native Windows에서는 `paths`가 호스트 경로이고 `boundary.mounts`가 별도의 Linux container destination을 기록한다.
+4. `tooling/feynman_runner_job_validate.py`는 runner job과 boundary profile을 fail-closed로 검증한다. candidate/HOME/CODEX_HOME/temp의 호스트 source가 profile의 컨테이너 destination과 명시적 mount mapping으로 일치해야 하며 evaluator/source/real-HOME, candidate auth env/file/argv 노출, network/runtime/skill drift를 거부한다.
 5. 실제 후보 프로세스는 `docs/eval-runner-contract.md`의 외부 경계를 따라야 한다. `boundary-profile.schema.json`, inside-boundary probe, outside verifier, Docker inspect와 `runner-attestation.schema.json` v2를 사용해 filesystem/network/env canary와 실제 launch config를 보존한다. reference workflow 성공은 architecture 검증이지 실제 행동 run 증거가 아니다.
 6. 실행 뒤 `tooling/feynman_runner_job_link.py`는 raw pre-run runner job과 raw post-run attestation을 profile/probe report와 함께 다시 검증해 `runner-job-link.json` schema v2를 만든다. run/case/condition, model/CLI, paths, profile/network, authentication architecture, prompt/runtime/plan digest가 모두 같아야 한다.
 7. `tooling/codex_exec_evidence.py`는 `codex exec --json` JSONL에서 완료된 command/MCP/web-search/file-change 항목과 최종 메시지만 평가자 증거 번들로 축약한다. reasoning 항목은 복사하지 않는다. command는 `completed`와 `failed` 모두 “실행됨”의 증거가 될 수 있지만, 성공 여부는 status/exit code를 별도로 본다. 저장된 증거 파일과 최종 답변은 SHA-256으로 evidence index에 결속된다.
@@ -52,18 +52,30 @@
 
 ```json
 {
-  "mode": "control-plane-only",
-  "control_plane_credential_source": "environment",
-  "control_plane_credential_env_key": "OPENAI_API_KEY",
+  "mode": "chatgpt-subscription",
+  "control_plane_auth_source": "codex-session",
+  "api_key_auth_allowed": false,
+  "candidate_auth_exposed": false,
   "candidate_tool_auth_env_keys": [],
-  "candidate_readable_credential_files": [],
-  "credential_command_arguments": []
+  "candidate_readable_auth_paths": [],
+  "auth_command_arguments": []
 }
 ```
 
-`OPENAI_API_KEY`는 기본 **키 이름 예시/기본값**이며 실제 credential 값은 runner job, attestation, link, analysis result에 저장하지 않는다. 실제 run에서 다른 env-key 이름을 사용하면 그 이름을 pre-run job과 post-run attestation에 동일하게 기록한다. candidate tool env allowlist에 같은 키 이름이 나타나면 run을 거부한다.
+OpenAI Platform API와 API-key 인증은 이 경로에서 허용하지 않는다. 실제 ChatGPT 구독 세션은 보호된 control `CODEX_HOME`에서 공식 Codex가 사용하며, candidate에는 인증 경로·환경변수·명령 인자를 전달하지 않는다.
 
-synthetic-auth reference는 이 architecture에서 bearer credential이 control-plane request에는 존재하지만 network-none remote tool env/file/argv 및 보존 artifact exact-byte scan에는 나타나지 않는 경로를 검증했다. 이는 실제 OpenAI 계정/auth semantics의 성공을 의미하지 않는다.
+### Native Windows Docker path mapping
+
+Windows control plane이 만든 호스트 경로는 Linux container 경로로 재사용하지 않는다. canonical mapping은 다음 네 destination을 사용한다.
+
+```text
+paths.candidate_dir   -> /run/candidate
+paths.ephemeral_home  -> /run/home
+paths.codex_home      -> /run/codex
+paths.temp_dir        -> /run/temp
+```
+
+`boundary.read_write_mounts`는 container destination 집합이고, `runner-job.boundary.mounts`가 각 destination의 호스트 `source`와 `rw`/`ro` access를 결속한다. remote environment generator는 이 mapping으로 `C:\...:/run/...:rw`, Linux `HOME`, `CODEX_HOME`, `TMPDIR`, `--workdir`를 생성한다. 기존 POSIX synthetic fixture의 identity mapping은 호환용으로만 읽으며 native Windows 실행에는 canonical mapping이 필요하다.
 
 ## 공개 개발 루브릭의 고정 항목
 

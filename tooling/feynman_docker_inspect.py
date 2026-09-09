@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -54,7 +55,16 @@ def _env_keys_from_cmd(cmd: Any) -> set[str]:
     return keys
 
 
-def verify_inspect(profile: dict[str, Any], inspect_payload: Any) -> dict[str, Any]:
+def _same_host_path(left: str, right: str) -> bool:
+    return os.path.normcase(os.path.normpath(left)) == os.path.normcase(os.path.normpath(right))
+
+
+def verify_inspect(
+    profile: dict[str, Any],
+    inspect_payload: Any,
+    *,
+    expected_mounts: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
     if not isinstance(inspect_payload, list) or len(inspect_payload) != 1:
         raise ValueError("docker inspect JSON must contain exactly one container")
     item = inspect_payload[0]
@@ -92,6 +102,7 @@ def verify_inspect(profile: dict[str, Any], inspect_payload: Any) -> dict[str, A
 
     observed_rw: set[str] = set()
     observed_ro: set[str] = set()
+    observed_sources: dict[str, tuple[str, bool]] = {}
     for mount in mounts:
         if not isinstance(mount, dict):
             raise ValueError("Docker inspect mount must be object")
@@ -99,11 +110,27 @@ def verify_inspect(profile: dict[str, Any], inspect_payload: Any) -> dict[str, A
         rw = mount.get("RW")
         if not isinstance(destination, str) or type(rw) is not bool:
             raise ValueError("Docker inspect mount lacks Destination/RW")
+        source = mount.get("Source")
+        if expected_mounts is not None and (not isinstance(source, str) or not source):
+            raise ValueError("Docker inspect mount lacks Source for runner-job mapping verification")
+        if isinstance(source, str):
+            observed_sources[destination] = (source, rw)
         (observed_rw if rw else observed_ro).add(destination)
     if observed_rw != set(profile.get("read_write_mounts", [])):
         raise ValueError("Docker read-write mount destinations differ from boundary profile")
     if observed_ro != set(profile.get("read_only_mounts", [])):
         raise ValueError("Docker read-only mount destinations differ from boundary profile")
+    if expected_mounts is not None:
+        expected_sources = {
+            mount["destination"]: (mount["source"], mount["access"] == "rw")
+            for mount in expected_mounts
+        }
+        if set(observed_sources) != set(expected_sources):
+            raise ValueError("Docker inspect mount destinations differ from runner-job mapping")
+        for destination, (expected_source, expected_rw) in expected_sources.items():
+            observed_source, observed_rw_flag = observed_sources[destination]
+            if expected_rw != observed_rw_flag or not _same_host_path(expected_source, observed_source):
+                raise ValueError(f"Docker inspect source mapping differs from runner job: {destination}")
 
     tmpfs = host.get("Tmpfs") or {}
     if not isinstance(tmpfs, dict):

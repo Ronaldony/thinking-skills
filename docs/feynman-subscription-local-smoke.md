@@ -103,6 +103,28 @@ $CONTROL_CODEX_HOME/environments.toml
 
 The runner-job must bind the same dedicated control `CODEX_HOME`, while the candidate uses its own separate candidate `codex_home`.
 
+### Native Windows path mapping
+
+On a native Windows control plane, `runner-job.paths` contains the real host
+directories. Those strings are not valid Linux container workdirs. The job's
+`boundary.mounts` therefore binds each host source to a canonical POSIX
+destination:
+
+```text
+candidate_dir   -> /run/candidate
+ephemeral_home  -> /run/home
+codex_home      -> /run/codex
+temp_dir        -> /run/temp
+```
+
+The boundary profile's `read_write_mounts` lists the container destinations;
+the runner job carries the host `source` values and access mode. The generated
+remote environment uses the container destinations for `HOME`, `CODEX_HOME`,
+`TMPDIR`, and `--workdir`, while Docker receives the separate Windows source
+paths. Do not hand-edit a `C:\...:C:\...` identity mount for a Linux image.
+The compatibility identity mapping in old POSIX fixtures is not a native
+Windows execution contract.
+
 ## 5. Execute one frozen job with the canonical executor
 
 Do not manually assemble Codex flags. Run:

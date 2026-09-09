@@ -77,6 +77,8 @@ def validate_profile(profile: dict[str, Any]) -> dict[str, Any]:
     if protected_mounted:
         raise ValueError("protected roots must not be mounted into the candidate boundary")
 
+    # These are Linux container destinations. Native host sources live in the
+    # runner job's explicit boundary.mounts mapping.
     rw_mounts = _strings(profile.get("read_write_mounts"), "read_write_mounts", allow_empty=False)
     # A production tool boundary may need no separate read-only bind mounts when
     # the runtime is entirely inside the content-addressed image. Keep the field

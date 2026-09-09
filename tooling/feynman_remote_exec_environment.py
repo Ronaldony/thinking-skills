@@ -4,7 +4,9 @@
 The control-plane Codex process stays outside the candidate tool boundary. The
 selected environment launches `docker run -i ... codex exec-server --listen
 stdio` with `include_local=false`, so shell/filesystem execution is delegated to
-the network-disabled container. This tool does not launch Codex or Docker.
+the network-disabled container. Host paths and Linux container destinations are
+resolved from the runner-job mount mapping. This tool does not launch Codex or
+Docker.
 """
 from __future__ import annotations
 
@@ -17,10 +19,12 @@ from typing import Any
 
 try:
     from .feynman_boundary_profile import validate_profile_file
+    from .feynman_path_mapping import PATH_KEYS, CONTAINER_DESTINATIONS, container_path_for_key, mounts_for_job
     from .feynman_runner_job_validate import _load as load_job_json
     from .feynman_runner_job_validate import validate_job
 except ImportError:
     from feynman_boundary_profile import validate_profile_file
+    from feynman_path_mapping import PATH_KEYS, CONTAINER_DESTINATIONS, container_path_for_key, mounts_for_job
     from feynman_runner_job_validate import _load as load_job_json
     from feynman_runner_job_validate import validate_job
 
@@ -43,12 +47,11 @@ def _container_name(run_id: str) -> str:
 
 
 def _env_assignments(job: dict[str, Any], profile: dict[str, Any]) -> list[str]:
-    paths = job["paths"]
     values = {
-        "HOME": paths["ephemeral_home"],
-        "CODEX_HOME": paths["codex_home"],
+        "HOME": container_path_for_key(job, profile, "ephemeral_home"),
+        "CODEX_HOME": container_path_for_key(job, profile, "codex_home"),
         "PATH": "/usr/local/bin:/usr/bin:/bin",
-        "TMPDIR": paths["temp_dir"],
+        "TMPDIR": container_path_for_key(job, profile, "temp_dir"),
         "PYTHONDONTWRITEBYTECODE": "1",
     }
     keys = profile["candidate_env_keys"]
@@ -66,13 +69,16 @@ def expected_docker_args(job: dict[str, Any], profile: dict[str, Any]) -> list[s
     if profile["tmpfs_mounts"] != ["/tmp"]:
         raise ValueError("stdio remote-exec reference currently requires tmpfs_mounts=[/tmp]")
 
-    paths = job["paths"]
-    rw_order = [
-        paths["candidate_dir"],
-        paths["ephemeral_home"],
-        paths["codex_home"],
-        paths["temp_dir"],
-    ]
+    mounts = mounts_for_job(job, profile)
+    if any(mount["access"] != "rw" for mount in mounts):
+        raise ValueError("stdio remote-exec reference currently supports only writable candidate mounts")
+    mounts_by_destination = {mount["destination"]: mount for mount in mounts}
+    if set(profile.get("read_write_mounts", [])) == set(CONTAINER_DESTINATIONS.values()):
+        expected_destinations = [CONTAINER_DESTINATIONS[key] for key in PATH_KEYS]
+    else:
+        expected_destinations = sorted(mounts_by_destination)
+    if set(mounts_by_destination) != set(expected_destinations):
+        raise ValueError("runner job candidate mounts must use the canonical destination set")
     args = [
         "run",
         "--name", _container_name(job["run_id"]),
@@ -84,10 +90,11 @@ def expected_docker_args(job: dict[str, Any], profile: dict[str, Any]) -> list[s
         "--user", profile["run_as"],
         "--tmpfs", "/tmp:rw,nosuid,nodev",
     ]
-    for path in rw_order:
-        args.extend(["-v", f"{path}:{path}:rw"])
+    for destination in expected_destinations:
+        mount = mounts_by_destination[destination]
+        args.extend(["-v", f"{mount['source']}:{mount['destination']}:rw"])
     args.extend([
-        "--workdir", paths["candidate_dir"],
+        "--workdir", container_path_for_key(job, profile, "candidate_dir"),
         profile["image"],
         "env", "-i",
         *_env_assignments(job, profile),

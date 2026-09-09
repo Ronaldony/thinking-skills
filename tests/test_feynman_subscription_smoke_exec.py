@@ -144,6 +144,23 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
              "SystemRoot", "ComSpec", "PATHEXT", "WINDIR"},
         )
 
+    def test_windows_safe_exec_env_adds_local_docker_desktop_cli(self):
+        local_app_data = self.base / "localappdata"
+        docker_dir = local_app_data / "Programs" / "DockerDesktop" / "resources" / "bin"
+        docker_dir.mkdir(parents=True)
+        (docker_dir / "docker.exe").write_bytes(b"synthetic executable marker")
+        env = executor._safe_exec_env(
+            self.control,
+            self.base / "temp",
+            platform_name="nt",
+            source_env={
+                "Path": r"C:\Windows\System32",
+                "LOCALAPPDATA": str(local_app_data),
+            },
+        )
+        self.assertTrue(env["PATH"].startswith(str(docker_dir)))
+        self.assertIn(r"C:\Windows\System32", env["PATH"])
+
     def test_retired_auth_envs_are_rejected(self):
         for key in ("OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN"):
             with self.subTest(key=key), patch.dict(os.environ, {key: "forbidden"}, clear=False):
