@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -53,6 +54,12 @@ class ConditionWorkspaceTests(unittest.TestCase):
         self.assertEqual(record["expected_skills"], ["feynman-thinking"])
         self.assertIsInstance(record["runtime_manifest"], dict)
 
+    def test_candidate_prompt_digest_uses_lf_canonical_bytes(self):
+        candidate, _, record = self._prepare("feynman-v05")
+        expected = (candidate / "task.txt").read_bytes()
+        self.assertEqual(record["candidate_prompt_sha256"], hashlib.sha256(expected).hexdigest())
+        self.assertNotIn(b"\r\n", expected)
+
     def test_legacy_condition_requires_pinned_checkout_path(self):
         with self.assertRaises(ValueError):
             prepare_condition(ROOT, "mechanism-01", "legacy-clean",
@@ -70,7 +77,7 @@ class ConditionWorkspaceTests(unittest.TestCase):
         review_input = json.loads((review / "review-input.json").read_text(encoding="utf-8"))
         self.assertNotIn("condition_id", review_input)
         self.assertNotIn("skill_source", review_input)
-        self.assertEqual(review_input["task"], json.loads((evaluator / "case.json").read_text())["prompt"])
+        self.assertEqual(review_input["task"], json.loads((evaluator / "case.json").read_text(encoding="utf-8"))["prompt"])
 
 
 if __name__ == "__main__":

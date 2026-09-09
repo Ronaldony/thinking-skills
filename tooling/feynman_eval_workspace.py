@@ -34,6 +34,12 @@ def _load_jsonl(path: Path) -> dict[str, dict[str, Any]]:
     return result
 
 
+def _write_utf8_exact(path: Path, text: str) -> None:
+    """Write canonical UTF-8 bytes without platform newline translation."""
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        handle.write(text)
+
+
 def _ensure_disjoint(candidate_dir: Path, evaluator_dir: Path) -> None:
     c = candidate_dir.absolute()
     e = evaluator_dir.absolute()
@@ -65,7 +71,7 @@ def prepare(repo_root: Path, case_id: str, candidate_dir: Path, evaluator_dir: P
     candidate_dir.mkdir(parents=True)
     evaluator_dir.mkdir(parents=True)
     try:
-        (candidate_dir / "task.txt").write_text(prompt_text + "\n", encoding="utf-8")
+        _write_utf8_exact(candidate_dir / "task.txt", prompt_text + "\n")
         fixture_source = base / "fixtures" / case_id
         fixture_hashes: dict[str, str] = {}
         if fixture_source.is_dir():

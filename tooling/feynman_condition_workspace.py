@@ -47,7 +47,8 @@ def prepare_condition(repo_root: Path, case_id: str, condition_id: str,
                 shutil.copytree(package / "feynman-thinking", target)
 
         candidate_prompt = job["candidate_prompt"]
-        (candidate_dir / "task.txt").write_text(candidate_prompt + "\n", encoding="utf-8")
+        with (candidate_dir / "task.txt").open("w", encoding="utf-8", newline="") as handle:
+            handle.write(candidate_prompt + "\n")
         case_path = evaluator_dir / "case.json"
         evaluator_record = json.loads(case_path.read_text(encoding="utf-8"))
         evaluator_record.update({
