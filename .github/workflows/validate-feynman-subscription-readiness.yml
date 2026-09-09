@@ -16,6 +16,8 @@ on:
       - 'tests/test_feynman_analysis_result_schema.py'
       - 'tests/test_feynman_subscription_*.py'
       - 'docs/feynman-subscription-local-smoke.md'
+      - '.github/workflows/validate-feynman-remote-exec-reference.yml'
+      - '.github/workflows/validate-feynman-remote-patch-reference.yml'
       - '.github/workflows/validate-feynman-subscription-readiness.yml'
   pull_request:
     paths:
@@ -32,6 +34,8 @@ on:
       - 'tests/test_feynman_analysis_result_schema.py'
       - 'tests/test_feynman_subscription_*.py'
       - 'docs/feynman-subscription-local-smoke.md'
+      - '.github/workflows/validate-feynman-remote-exec-reference.yml'
+      - '.github/workflows/validate-feynman-remote-patch-reference.yml'
       - '.github/workflows/validate-feynman-subscription-readiness.yml'
 
 permissions:
@@ -91,3 +95,18 @@ jobs:
           set -euo pipefail
           grep -q '"api_key_auth_allowed": false' evals/feynman-thinking/subscription-smoke-spec.json
           grep -q '"const":false' evals/feynman-thinking/runner-job.schema.json
+
+      - name: Assert local mock workflows use mock-specific transport token naming
+        shell: bash
+        run: |
+          set -euo pipefail
+          mock_workflows=(
+            .github/workflows/validate-feynman-remote-exec-reference.yml
+            .github/workflows/validate-feynman-remote-patch-reference.yml
+          )
+          if grep -n 'OPENAI_API_KEY' "${mock_workflows[@]}"; then
+            echo "retired API-key name found in local mock transport workflow" >&2
+            exit 1
+          fi
+          grep -q 'MOCK_MODEL_TOKEN' .github/workflows/validate-feynman-remote-exec-reference.yml
+          grep -q 'MOCK_MODEL_TOKEN' .github/workflows/validate-feynman-remote-patch-reference.yml
