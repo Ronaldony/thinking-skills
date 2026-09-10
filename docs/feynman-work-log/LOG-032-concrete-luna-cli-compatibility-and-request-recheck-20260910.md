@@ -166,3 +166,18 @@ working tree: clean after the follow-up log update
 ```
 
 The ordinal-1 `environments.toml` created for the failed attempt was moved to the transient artifact as `remote-environment-staged.toml`; the original control-home path is absent again. The existing dedicated auth/config files were not modified.
+
+## 8. Bounded model-probe follow-up
+
+After the service-transient classification, one final read-only neutral probe was allowed to distinguish a transient service error from an account usage boundary. It sent no candidate task, no development conversation, and no handoff document. The sanitized result was:
+
+```text
+thread.started → turn.started → error → turn.failed
+exit_code=1
+model_turn_observed=false
+safe_error_summary=You've hit your usage limit ... try again at Sep 15th, 2026 12:15 PM
+```
+
+This is now classified as a ChatGPT Codex usage-limit blocker. No further model request is authorized in this continuation, no usage reset or credit redemption was performed, and the baseline job remains unstarted. The temporary probe source was removed from the repository.
+
+The next action is to wait for the displayed usage reset or receive explicit user authorization for an available reset/credit. Once usage is available, rerun the same model-free gates and then one canonical ordinal-1 smoke; do not switch authentication planes or substitute another model.
