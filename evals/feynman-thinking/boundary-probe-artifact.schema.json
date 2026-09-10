@@ -7,6 +7,7 @@
     "run_id": {"type": "string", "minLength": 1},
     "boundary_profile_sha256": {"$ref": "#/$defs/sha256"},
     "probe_program_sha256": {"$ref": "#/$defs/sha256"},
+    "path_namespace": {"enum": ["shared", "container"]},
     "observations": {
       "type": "object",
       "properties": {
@@ -72,6 +73,7 @@
       "type": "object",
       "properties": {
         "path": {"type": "string", "minLength": 1},
+        "path_namespace": {"enum": ["shared", "container"]},
         "succeeded": {"type": "boolean"},
         "denied": {"type": "boolean"},
         "bytes": {"type": "integer", "minimum": 0},
@@ -87,6 +89,7 @@
       "type": "object",
       "properties": {
         "path": {"type": "string", "minLength": 1},
+        "path_namespace": {"enum": ["shared", "container"]},
         "succeeded": {"type": "boolean"},
         "denied": {"type": "boolean"},
         "marker_sha256": {"$ref": "#/$defs/sha256"},

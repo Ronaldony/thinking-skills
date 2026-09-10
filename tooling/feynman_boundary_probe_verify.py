@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from pathlib import PurePosixPath
 import re
 from typing import Any
 
@@ -30,6 +31,7 @@ BOUNDARY_PROBES = {
     "secret_env_scan",
     "tool_network_denied",
 }
+PATH_NAMESPACES = {"shared", "container"}
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -68,13 +70,31 @@ def _regular_marker(path: Path, marker: str, label: str) -> dict[str, Any]:
     return {"path": str(path.absolute()), "sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw)}
 
 
-def _expected_path(observation: dict[str, Any], path: Path, label: str) -> None:
-    if observation.get("path") != str(path.absolute()):
+def _container_path(value: str, label: str) -> str:
+    if not isinstance(value, str) or not value.startswith("/"):
+        raise ValueError(f"{label} must be an absolute POSIX container path")
+    parsed = PurePosixPath(value)
+    if parsed.as_posix() != value or any(part in {"", ".", ".."} for part in parsed.parts):
+        raise ValueError(f"{label} must be a normalized POSIX container path")
+    return value
+
+
+def _expected_path(observation: dict[str, Any], path: Path, label: str,
+                   container_path: str | None = None) -> None:
+    if container_path is None:
+        if observation.get("path_namespace") not in {None, "shared"}:
+            raise ValueError(f"{label} observation path namespace mismatch")
+        expected = str(path.absolute())
+    else:
+        if observation.get("path_namespace") != "container":
+            raise ValueError(f"{label} observation is missing container path namespace")
+        expected = container_path
+    if observation.get("path") != expected:
         raise ValueError(f"{label} observation path mismatch")
 
 
 def _probe(name: str, passed: bool, source_sha: str, observation: Any,
-           host_check: Any) -> dict[str, Any]:
+           host_check: Any, *, method_tag: str = "v1") -> dict[str, Any]:
     evidence = {
         "probe": name,
         "source_artifact_sha256": source_sha,
@@ -84,13 +104,15 @@ def _probe(name: str, passed: bool, source_sha: str, observation: Any,
     return {
         "passed": bool(passed),
         "artifact_sha256": _canonical_sha(evidence),
-        "method": f"boundary-probe+evaluator-postcheck:v1:{name}",
+        "method": f"boundary-probe+evaluator-postcheck:{method_tag}:{name}",
     }
 
 
 def validate_report(report: dict[str, Any]) -> dict[str, Any]:
     if report.get("schema_version") != 1:
         raise ValueError("unsupported boundary probe report schema_version")
+    if report.get("path_namespace") not in {None, "shared", "container"}:
+        raise ValueError("boundary probe report path_namespace must be shared or container")
     if not isinstance(report.get("run_id"), str) or not report["run_id"].strip():
         raise ValueError("boundary probe report run_id must be nonempty")
     if not _valid_sha(report.get("boundary_profile_sha256")):
@@ -149,7 +171,13 @@ def verify(*, artifact_path: Path, expected_run_id: str,
            real_home_read: Path, real_home_read_marker: str,
            candidate_write: Path, candidate_write_marker: str,
            forbidden_writes: list[Path], network_reference: Path | None = None,
-           require_network_denied: bool = True) -> dict[str, Any]:
+           require_network_denied: bool = True,
+           container_candidate_read: str | None = None,
+           container_evaluator_read: str | None = None,
+           container_source_read: str | None = None,
+           container_real_home_read: str | None = None,
+           container_candidate_write: str | None = None,
+           container_forbidden_writes: list[str] | None = None) -> dict[str, Any]:
     if not _valid_sha(expected_boundary_profile_sha256):
         raise ValueError("expected boundary profile digest must be SHA-256")
     artifact_path = artifact_path.resolve()
@@ -159,6 +187,33 @@ def verify(*, artifact_path: Path, expected_run_id: str,
         raise ValueError("probe artifact schema/run_id mismatch")
     if artifact.get("boundary_profile_sha256") != expected_boundary_profile_sha256:
         raise ValueError("probe artifact boundary profile digest mismatch")
+    container_paths: dict[str, str | None] = {
+        "candidate_read": container_candidate_read,
+        "evaluator_read": container_evaluator_read,
+        "source_read": container_source_read,
+        "real_home_read": container_real_home_read,
+        "candidate_write": container_candidate_write,
+    }
+    native_namespace = any(value is not None for value in container_paths.values()) or container_forbidden_writes is not None
+    if native_namespace:
+        if any(value is None for value in container_paths.values()) or container_forbidden_writes is None:
+            raise ValueError("native container path verification requires every container path")
+        container_paths = {
+            key: _container_path(value, f"container_{key}")
+            for key, value in container_paths.items()
+        }
+        if len(container_forbidden_writes) != len(forbidden_writes):
+            raise ValueError("container_forbidden_writes count mismatch")
+        container_forbidden_writes = [
+            _container_path(value, "container_forbidden_write")
+            for value in container_forbidden_writes
+        ]
+        if len(set(container_forbidden_writes)) != len(container_forbidden_writes):
+            raise ValueError("container_forbidden_writes must not contain duplicates")
+        if artifact.get("path_namespace") != "container":
+            raise ValueError("native container path verification requires container artifact namespace")
+    elif artifact.get("path_namespace") not in {None, "shared"}:
+        raise ValueError("shared path verification cannot accept a container artifact namespace")
     if probe_program.is_symlink() or not probe_program.is_file():
         raise ValueError("probe program must be a regular file")
     program_sha = _sha(probe_program.resolve())
@@ -169,11 +224,12 @@ def verify(*, artifact_path: Path, expected_run_id: str,
         raise ValueError("probe artifact has no observations object")
 
     probes: dict[str, dict[str, Any]] = {}
+    method_tag = "v1-native-container-namespace" if native_namespace else "v1"
 
     candidate_obs = observations.get("candidate_read")
     if not isinstance(candidate_obs, dict):
         raise ValueError("missing candidate_read observation")
-    _expected_path(candidate_obs, candidate_read, "candidate_read")
+    _expected_path(candidate_obs, candidate_read, "candidate_read", container_paths["candidate_read"])
     candidate_host = _regular_marker(candidate_read, candidate_read_marker, "candidate read")
     expected_marker_sha = hashlib.sha256(candidate_read_marker.encode("utf-8")).hexdigest()
     candidate_ok = (
@@ -182,47 +238,63 @@ def verify(*, artifact_path: Path, expected_run_id: str,
         and candidate_obs.get("sha256") == candidate_host["sha256"]
         and candidate_obs.get("expected_marker_sha256") == expected_marker_sha
     )
-    probes["candidate_read"] = _probe("candidate_read", candidate_ok, source_sha, candidate_obs, candidate_host)
+    probes["candidate_read"] = _probe(
+        "candidate_read", candidate_ok, source_sha, candidate_obs, candidate_host, method_tag=method_tag
+    )
 
     protected = observations.get("protected_reads")
     if not isinstance(protected, dict):
         raise ValueError("missing protected_reads observations")
     protected_specs = {
-        "evaluator_read_denied": ("evaluator", evaluator_read, evaluator_read_marker),
-        "source_read_denied": ("source", source_read, source_read_marker),
-        "real_home_read_denied": ("real_home", real_home_read, real_home_read_marker),
+        "evaluator_read_denied": (
+            "evaluator", evaluator_read, evaluator_read_marker, container_paths["evaluator_read"]
+        ),
+        "source_read_denied": (
+            "source", source_read, source_read_marker, container_paths["source_read"]
+        ),
+        "real_home_read_denied": (
+            "real_home", real_home_read, real_home_read_marker, container_paths["real_home_read"]
+        ),
     }
-    for probe_name, (obs_name, path, marker) in protected_specs.items():
+    for probe_name, (obs_name, path, marker, container_path) in protected_specs.items():
         obs = protected.get(obs_name)
         if not isinstance(obs, dict):
             raise ValueError(f"missing protected read observation: {obs_name}")
-        _expected_path(obs, path, probe_name)
+        _expected_path(obs, path, probe_name, container_path)
         host = _regular_marker(path, marker, probe_name)
         passed = obs.get("succeeded") is False and obs.get("denied") is True
-        probes[probe_name] = _probe(probe_name, passed, source_sha, obs, host)
+        probes[probe_name] = _probe(probe_name, passed, source_sha, obs, host, method_tag=method_tag)
 
     candidate_write_obs = observations.get("candidate_write")
     if not isinstance(candidate_write_obs, dict):
         raise ValueError("missing candidate_write observation")
-    _expected_path(candidate_write_obs, candidate_write, "candidate_write")
+    _expected_path(candidate_write_obs, candidate_write, "candidate_write", container_paths["candidate_write"])
     candidate_write_host = _regular_marker(candidate_write, candidate_write_marker, "candidate write")
     candidate_write_ok = (
         candidate_write_obs.get("succeeded") is True
         and candidate_write_obs.get("marker_sha256") == candidate_write_host["sha256"]
     )
     probes["candidate_write"] = _probe(
-        "candidate_write", candidate_write_ok, source_sha, candidate_write_obs, candidate_write_host
+        "candidate_write", candidate_write_ok, source_sha, candidate_write_obs, candidate_write_host,
+        method_tag=method_tag,
     )
 
     forbidden_obs = observations.get("forbidden_writes")
     if not isinstance(forbidden_obs, list) or len(forbidden_obs) != len(forbidden_writes):
         raise ValueError("forbidden write observation count mismatch")
+    expected_forbidden_paths = (
+        container_forbidden_writes
+        if native_namespace
+        else [None] * len(forbidden_writes)
+    )
     forbidden_checks: list[dict[str, Any]] = []
     forbidden_ok = True
-    for obs, path in zip(forbidden_obs, forbidden_writes, strict=True):
+    for obs, path, container_path in zip(
+        forbidden_obs, forbidden_writes, expected_forbidden_paths, strict=True
+    ):
         if not isinstance(obs, dict):
             raise ValueError("forbidden write observation must be object")
-        _expected_path(obs, path, "forbidden_write")
+        _expected_path(obs, path, "forbidden_write", container_path)
         parent = path.parent
         parent_ready = parent.exists() and parent.is_dir() and not parent.is_symlink()
         if not parent_ready:
@@ -236,7 +308,8 @@ def verify(*, artifact_path: Path, expected_run_id: str,
             "absent_after_probe": absent,
         })
     probes["forbidden_write_denied"] = _probe(
-        "forbidden_write_denied", forbidden_ok, source_sha, forbidden_obs, forbidden_checks
+        "forbidden_write_denied", forbidden_ok, source_sha, forbidden_obs, forbidden_checks,
+        method_tag=method_tag,
     )
 
     env_obs = observations.get("environment")
@@ -251,7 +324,8 @@ def verify(*, artifact_path: Path, expected_run_id: str,
     observed_secretish = env_obs.get("secret_like_keys")
     env_ok = isinstance(observed_secretish, list) and sorted(observed_secretish) == recomputed_secretish == []
     probes["secret_env_scan"] = _probe(
-        "secret_env_scan", env_ok, source_sha, env_obs, {"recomputed_secret_like_keys": recomputed_secretish}
+        "secret_env_scan", env_ok, source_sha, env_obs, {"recomputed_secret_like_keys": recomputed_secretish},
+        method_tag=method_tag,
     )
 
     network_obs = observations.get("network")
@@ -286,7 +360,8 @@ def verify(*, artifact_path: Path, expected_run_id: str,
     else:
         not_required.append("tool_network_denied")
     probes["tool_network_denied"] = _probe(
-        "tool_network_denied", network_ok, source_sha, network_obs, network_host_check
+        "tool_network_denied", network_ok, source_sha, network_obs, network_host_check,
+        method_tag=method_tag,
     )
 
     if set(probes) != BOUNDARY_PROBES:
@@ -307,6 +382,8 @@ def verify(*, artifact_path: Path, expected_run_id: str,
         "probes": probes,
         "scope": "evaluator-side verification of synthetic boundary canaries; not cryptographic proof of runner honesty",
     }
+    if native_namespace:
+        report["path_namespace"] = "container"
     return validate_report(report)
 
 
@@ -327,6 +404,12 @@ def main() -> int:
     parser.add_argument("--candidate-write", type=Path, required=True)
     parser.add_argument("--candidate-write-marker", required=True)
     parser.add_argument("--forbidden-write", type=Path, action="append", required=True)
+    parser.add_argument("--container-candidate-read")
+    parser.add_argument("--container-evaluator-read")
+    parser.add_argument("--container-source-read")
+    parser.add_argument("--container-real-home-read")
+    parser.add_argument("--container-candidate-write")
+    parser.add_argument("--container-forbidden-write", action="append")
     parser.add_argument("--network-reference", type=Path)
     parser.add_argument("--allow-tool-network", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
@@ -348,6 +431,12 @@ def main() -> int:
             candidate_write=args.candidate_write,
             candidate_write_marker=args.candidate_write_marker,
             forbidden_writes=args.forbidden_write,
+            container_candidate_read=args.container_candidate_read,
+            container_evaluator_read=args.container_evaluator_read,
+            container_source_read=args.container_source_read,
+            container_real_home_read=args.container_real_home_read,
+            container_candidate_write=args.container_candidate_write,
+            container_forbidden_writes=args.container_forbidden_write,
             network_reference=args.network_reference,
             require_network_denied=not args.allow_tool_network,
         )

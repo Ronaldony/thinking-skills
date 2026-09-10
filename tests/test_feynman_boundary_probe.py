@@ -130,8 +130,37 @@ class BoundaryProbeTests(unittest.TestCase):
         path.write_text(json.dumps(value), encoding="utf-8")
         return path
 
-    def _verify(self, artifact: Path, *, profile_sha: str = PROFILE_SHA):
-        return verify(
+    def _native_artifact(self) -> dict:
+        artifact = self._artifact()
+        artifact["path_namespace"] = "container"
+        observations = artifact["observations"]
+        observations["candidate_read"].update({
+            "path": "/run/candidate/read-canary.txt",
+            "path_namespace": "container",
+        })
+        for name, path in {
+            "evaluator": "/run/evaluator/read-canary.txt",
+            "source": "/run/source/read-canary.txt",
+            "real_home": "/run/real-home/read-canary.txt",
+        }.items():
+            observations["protected_reads"][name].update({
+                "path": path,
+                "path_namespace": "container",
+            })
+        observations["candidate_write"].update({
+            "path": "/run/candidate/write-canary.txt",
+            "path_namespace": "container",
+        })
+        for obs, path in zip(
+            observations["forbidden_writes"],
+            ("/run/evaluator/forbidden-write.txt", "/run/source/forbidden-write.txt", "/run/real-home/forbidden-write.txt"),
+            strict=True,
+        ):
+            obs.update({"path": path, "path_namespace": "container"})
+        return artifact
+
+    def _verify(self, artifact: Path, *, profile_sha: str = PROFILE_SHA, native: bool = False):
+        kwargs = dict(
             artifact_path=artifact,
             expected_run_id="run-boundary",
             expected_boundary_profile_sha256=profile_sha,
@@ -150,6 +179,20 @@ class BoundaryProbeTests(unittest.TestCase):
             network_reference=self.network_reference,
             require_network_denied=True,
         )
+        if native:
+            kwargs.update({
+                "container_candidate_read": "/run/candidate/read-canary.txt",
+                "container_evaluator_read": "/run/evaluator/read-canary.txt",
+                "container_source_read": "/run/source/read-canary.txt",
+                "container_real_home_read": "/run/real-home/read-canary.txt",
+                "container_candidate_write": "/run/candidate/write-canary.txt",
+                "container_forbidden_writes": [
+                    "/run/evaluator/forbidden-write.txt",
+                    "/run/source/forbidden-write.txt",
+                    "/run/real-home/forbidden-write.txt",
+                ],
+            })
+        return verify(**kwargs)
 
     def test_synthetic_denials_and_postchecks_produce_passed_report(self):
         report = self._verify(self._write_artifact(self._artifact()))
@@ -161,6 +204,37 @@ class BoundaryProbeTests(unittest.TestCase):
     def test_profile_digest_mismatch_is_rejected(self):
         with self.assertRaises(ValueError):
             self._verify(self._write_artifact(self._artifact()), profile_sha="8" * 64)
+
+    def test_native_container_namespace_keeps_host_postchecks_separate(self):
+        report = self._verify(self._write_artifact(self._native_artifact()), native=True)
+        self.assertEqual(report["verdict"], "passed")
+        self.assertEqual(report["path_namespace"], "container")
+        self.assertTrue(all("native-container-namespace" in item["method"] for item in report["probes"].values()))
+
+    def test_native_container_namespace_rejects_host_path_equivalence(self):
+        artifact = self._native_artifact()
+        artifact["observations"]["candidate_read"]["path"] = str(self.candidate_read.absolute())
+        with self.assertRaises(ValueError):
+            self._verify(self._write_artifact(artifact), native=True)
+
+    def test_probe_records_explicit_container_namespace(self):
+        artifact = run_probe(
+            run_id="container-run",
+            boundary_profile_sha256=PROFILE_SHA,
+            candidate_read=self.candidate_read,
+            candidate_read_marker=self.markers["candidate"],
+            evaluator_read=self.evaluator_read,
+            source_read=self.source_read,
+            real_home_read=self.real_home_read,
+            candidate_write=self.base / "container-write.txt",
+            candidate_write_marker="container-write",
+            forbidden_writes=[self.base / "container-forbidden.txt"],
+            forbidden_write_marker="blocked",
+            path_namespace="container",
+        )
+        self.assertEqual(artifact["path_namespace"], "container")
+        self.assertEqual(artifact["observations"]["candidate_read"]["path_namespace"], "container")
+        self.assertEqual(artifact["observations"]["candidate_write"]["path_namespace"], "container")
 
     def test_mount_namespace_hidden_paths_can_pass_when_host_fixtures_exist(self):
         artifact = self._artifact()

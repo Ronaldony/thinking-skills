@@ -24,6 +24,7 @@ SECRET_KEY_PATTERN = re.compile(
 )
 SHA_PATTERN = re.compile(r"[0-9a-f]{64}")
 BLOCKED_ERRNOS = {errno.EACCES, errno.EPERM, errno.EROFS, errno.ENOENT, errno.ENOTDIR}
+PATH_NAMESPACES = {"shared", "container"}
 
 
 def _sha_bytes(data: bytes) -> str:
@@ -44,8 +45,19 @@ def _error(exc: OSError) -> dict[str, Any]:
     return {"type": type(exc).__name__, "errno": exc.errno, "message": str(exc)[:240]}
 
 
-def _read(path: Path, expected_marker: str | None) -> dict[str, Any]:
-    record: dict[str, Any] = {"path": str(path.absolute()), "succeeded": False, "denied": False}
+def _path_observation(path: Path, path_namespace: str) -> dict[str, Any]:
+    record = {"path": str(path.absolute())}
+    if path_namespace != "shared":
+        record["path_namespace"] = path_namespace
+    return record
+
+
+def _read(path: Path, expected_marker: str | None, path_namespace: str) -> dict[str, Any]:
+    record: dict[str, Any] = {
+        **_path_observation(path, path_namespace),
+        "succeeded": False,
+        "denied": False,
+    }
     try:
         data = path.read_bytes()
     except OSError as exc:
@@ -62,10 +74,10 @@ def _read(path: Path, expected_marker: str | None) -> dict[str, Any]:
     return record
 
 
-def _write(path: Path, marker: str) -> dict[str, Any]:
+def _write(path: Path, marker: str, path_namespace: str) -> dict[str, Any]:
     data = marker.encode("utf-8")
     record: dict[str, Any] = {
-        "path": str(path.absolute()),
+        **_path_observation(path, path_namespace),
         "succeeded": False,
         "denied": False,
         "marker_sha256": _sha_bytes(data),
@@ -103,27 +115,32 @@ def run_probe(*, run_id: str, boundary_profile_sha256: str,
               candidate_write: Path, candidate_write_marker: str,
               forbidden_writes: list[Path], forbidden_write_marker: str,
               network_host: str | None = None, network_port: int | None = None,
-              network_timeout: float = 1.5) -> dict[str, Any]:
+              network_timeout: float = 1.5,
+              path_namespace: str = "shared") -> dict[str, Any]:
     if not run_id.strip():
         raise ValueError("run_id must be nonempty")
     _require_sha(boundary_profile_sha256, "boundary_profile_sha256")
     if not forbidden_writes:
         raise ValueError("at least one forbidden write path is required")
+    if path_namespace not in PATH_NAMESPACES:
+        raise ValueError("path_namespace must be shared or container")
     env_keys = sorted(os.environ)
-    return {
+    result: dict[str, Any] = {
         "schema_version": 1,
         "run_id": run_id,
         "boundary_profile_sha256": boundary_profile_sha256,
         "probe_program_sha256": _program_sha(),
         "observations": {
-            "candidate_read": _read(candidate_read, candidate_read_marker),
+            "candidate_read": _read(candidate_read, candidate_read_marker, path_namespace),
             "protected_reads": {
-                "evaluator": _read(evaluator_read, None),
-                "source": _read(source_read, None),
-                "real_home": _read(real_home_read, None),
+                "evaluator": _read(evaluator_read, None, path_namespace),
+                "source": _read(source_read, None, path_namespace),
+                "real_home": _read(real_home_read, None, path_namespace),
             },
-            "candidate_write": _write(candidate_write, candidate_write_marker),
-            "forbidden_writes": [_write(path, forbidden_write_marker) for path in forbidden_writes],
+            "candidate_write": _write(candidate_write, candidate_write_marker, path_namespace),
+            "forbidden_writes": [
+                _write(path, forbidden_write_marker, path_namespace) for path in forbidden_writes
+            ],
             "environment": {
                 "keys": env_keys,
                 "secret_like_keys": [key for key in env_keys if SECRET_KEY_PATTERN.search(key)],
@@ -132,6 +149,9 @@ def run_probe(*, run_id: str, boundary_profile_sha256: str,
         },
         "scope": "direct observations inside the supplied boundary; not a proof that the boundary or runner is honest",
     }
+    if path_namespace != "shared":
+        result["path_namespace"] = path_namespace
+    return result
 
 
 def main() -> int:
@@ -150,6 +170,7 @@ def main() -> int:
     parser.add_argument("--network-host")
     parser.add_argument("--network-port", type=int)
     parser.add_argument("--network-timeout", type=float, default=1.5)
+    parser.add_argument("--path-namespace", choices=sorted(PATH_NAMESPACES), default="shared")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
@@ -170,6 +191,7 @@ def main() -> int:
             network_host=args.network_host,
             network_port=args.network_port,
             network_timeout=args.network_timeout,
+            path_namespace=args.path_namespace,
         )
         if args.output.exists() or args.output.is_symlink():
             raise FileExistsError(f"refusing to overwrite: {args.output}")

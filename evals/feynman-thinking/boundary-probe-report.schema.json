@@ -6,6 +6,7 @@
     "schema_version": {"const": 1},
     "run_id": {"type": "string", "minLength": 1},
     "boundary_profile_sha256": {"$ref": "#/$defs/sha256"},
+    "path_namespace": {"enum": ["shared", "container"]},
     "verdict": {"type": "string", "enum": ["passed", "failed"]},
     "failed_probes": {"type": "array", "items": {"$ref": "#/$defs/probeId"}, "uniqueItems": true},
     "not_required_probes": {"type": "array", "items": {"$ref": "#/$defs/probeId"}, "uniqueItems": true},
