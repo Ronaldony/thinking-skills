@@ -152,3 +152,17 @@ Still incomplete:
 4. Generate post-run boundary canaries, runner attestation/link, evidence, review, gate, and analysis-result lineage.
 
 Next action after commit/push is a bounded service/request diagnosis or a later single retry under the same selected model; do not switch to the Platform API or substitute another model.
+
+## 7. Final repository handoff status
+
+The pending change was committed and pushed after the checks above:
+
+```text
+commit: eb45138 fix: update subscription executor for current Codex CLI
+push: origin/feat/feynman-thinking-v0.5-draft completed
+main merge: not performed
+force push: not performed
+working tree: clean after the follow-up log update
+```
+
+The ordinal-1 `environments.toml` created for the failed attempt was moved to the transient artifact as `remote-environment-staged.toml`; the original control-home path is absent again. The existing dedicated auth/config files were not modified.
