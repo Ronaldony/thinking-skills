@@ -119,7 +119,8 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
         self.assertIn("smoke_spec_sha256", result["digests"]); self.assertNotIn("stderr_sha256", result["digests"])
         self.assertEqual((self.evaluator / "exec-1" / "candidate-final.txt").read_text(encoding="utf-8"), "FAKE_SMOKE_OK")
         argv = state["argv"]
-        for flag in ("--json", "--ephemeral", "--strict-config", "--ignore-rules", "--skip-git-repo-check"): self.assertIn(flag, argv)
+        for flag in ("--json", "--ephemeral", "--strict-config", "--ignore-rules", "--skip-git-repo-check", "--approve-for-me"): self.assertIn(flag, argv)
+        self.assertNotIn("--ask-for-approval", argv)
         self.assertEqual(argv[argv.index("--sandbox") + 1], "workspace-write"); self.assertEqual(argv[argv.index("--model") + 1], "gpt-test")
         self.assertIn('web_search="disabled"', argv); self.assertEqual(state["prompt"], "RUN THIS EXACT TASK\n")
         self.assertTrue({"HOME", "CODEX_HOME", "PATH", "TMPDIR"}.issubset(state["env"]))

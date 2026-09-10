@@ -382,7 +382,9 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
         "--strict-config",
         "--ignore-rules",
         "--skip-git-repo-check",
-        "--ask-for-approval", "never",
+        # Codex CLI 0.153.4 replaced the removed --ask-for-approval option
+        # with --approve-for-me for non-interactive automatic approval.
+        "--approve-for-me",
         "--sandbox", "workspace-write",
         "--model", model,
         "--cd", str(candidate_dir),
