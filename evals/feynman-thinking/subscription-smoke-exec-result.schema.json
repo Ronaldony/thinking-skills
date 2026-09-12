@@ -1,10 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Feynman ChatGPT-subscription integration smoke execution result v1",
+  "title": "Feynman ChatGPT-subscription integration smoke execution result v2",
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
     "verdict": {"const": "subscription-codex-smoke-exec-completed"},
     "run_id": {"type": "string", "minLength": 1},
     "job": {
@@ -68,6 +68,17 @@
       },
       "required": ["thread_id", "event_count", "reasoning_events_observed"]
     },
+    "candidate_tool_activity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "completed_tool_item_count": {"type": "integer", "minimum": 0},
+        "completed_tool_item_types": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "tool_use_verdict": {"enum": ["candidate-tool-use-observed", "candidate-tool-use-not-observed"]},
+        "postrun_evidence_eligibility": {"enum": ["eligible-for-trace-evidence-extraction", "blocked-no-candidate-tool-call"]}
+      },
+      "required": ["completed_tool_item_count", "completed_tool_item_types", "tool_use_verdict", "postrun_evidence_eligibility"]
+    },
     "usage": {"type": "object"},
     "digests": {
       "type": "object",
@@ -97,10 +108,10 @@
       },
       "required": ["process_environment_inherited", "raw_stderr_preserved", "stderr_nonempty", "raw_auth_status_preserved", "control_codex_home_contents_serialized"]
     },
-    "limitations": {"type": "array", "minItems": 3, "items": {"type": "string", "minLength": 1}},
+    "limitations": {"type": "array", "minItems": 4, "items": {"type": "string", "minLength": 1}},
     "scope": {"type": "string", "minLength": 1}
   },
-  "required": ["schema_version", "verdict", "run_id", "job", "versions", "authentication", "execution_controls", "conversation", "usage", "digests", "privacy", "limitations", "scope"],
+  "required": ["schema_version", "verdict", "run_id", "job", "versions", "authentication", "execution_controls", "conversation", "candidate_tool_activity", "usage", "digests", "privacy", "limitations", "scope"],
   "$defs": {
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
   }

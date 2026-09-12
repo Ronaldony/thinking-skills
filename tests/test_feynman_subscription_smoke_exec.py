@@ -82,7 +82,8 @@ class SubscriptionSmokeExecTests(unittest.TestCase):
     def tearDown(self):
         self.auth_patch.stop(); self.preflight_patch.stop(); self.env_patch.stop(); self.tmp.cleanup()
 
-    def _write_fake_codex(self, *, success: bool, failed_event: bool = False):
+    def _write_fake_codex(self, *, success: bool, failed_event: bool = False,
+                          tool_item_type: str | None = None):
         code = f'''#!/usr/bin/env python3
 import json, os, pathlib, sys
 state=pathlib.Path({str(self.state)!r});args=sys.argv[1:]
@@ -92,6 +93,8 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
 '''
         if failed_event: code += 'print(json.dumps({"type":"turn.failed","error":{"message":"fake"}}))\n'
         elif success:
+            if tool_item_type:
+                code += f'print(json.dumps({{"type":"item.completed","item":{{"id":"t1","type":{tool_item_type!r}}}}}))\n'
             code += 'print(json.dumps({"type":"item.completed","item":{"id":"m1","type":"agent_message","text":"FAKE_SMOKE_OK"}}))\n'
             code += 'print(json.dumps({"type":"turn.completed","usage":{"input_tokens":12,"output_tokens":3}}))\n'
         code += f'raise SystemExit({0 if success else 7})\n'
@@ -114,8 +117,15 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
     def test_success_uses_scrubbed_env_and_frozen_controls(self):
         result = self._run(); state = json.loads(self.state.read_text(encoding="utf-8"))
         self.assertEqual(result["verdict"], "subscription-codex-smoke-exec-completed")
+        self.assertEqual(result["schema_version"], 2)
         self.assertEqual(result["versions"]["model_reasoning_effort"], "model-default")
         self.assertEqual(result["conversation"]["thread_id"], "thread-smoke-1"); self.assertFalse(result["privacy"]["stderr_nonempty"])
+        self.assertEqual(result["candidate_tool_activity"], {
+            "completed_tool_item_count": 0,
+            "completed_tool_item_types": [],
+            "tool_use_verdict": "candidate-tool-use-not-observed",
+            "postrun_evidence_eligibility": "blocked-no-candidate-tool-call",
+        })
         self.assertIn("smoke_spec_sha256", result["digests"]); self.assertNotIn("stderr_sha256", result["digests"])
         self.assertEqual((self.evaluator / "exec-1" / "candidate-final.txt").read_text(encoding="utf-8"), "FAKE_SMOKE_OK")
         argv = state["argv"]
@@ -136,6 +146,16 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
                         sorted(set(state["env"]) - allowed_env))
         for key in ("OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN"): self.assertNotIn(key, state["env"])
         self.assertFalse(Path(state["env"]["TMPDIR"]).exists()); self.assertEqual(len(AUTH_CALLS), 1); self.assertEqual(len(PREFLIGHT_CALLS), 1)
+
+    def test_completed_candidate_tool_call_is_only_eligible_for_evidence_extraction(self):
+        self._write_fake_codex(success=True, tool_item_type="mcp_tool_call")
+        result = self._run()
+        self.assertEqual(result["candidate_tool_activity"], {
+            "completed_tool_item_count": 1,
+            "completed_tool_item_types": ["mcp_tool_call"],
+            "tool_use_verdict": "candidate-tool-use-observed",
+            "postrun_evidence_eligibility": "eligible-for-trace-evidence-extraction",
+        })
 
     def test_windows_safe_exec_env_keeps_launch_requirements_only(self):
         env = executor._safe_exec_env(
@@ -247,10 +267,13 @@ class SubscriptionSmokeExecSchemaTests(unittest.TestCase):
 
     def test_schema_tracks_privacy_and_reasoning_policy(self):
         schema = json.loads((ROOT / "evals" / "feynman-thinking" / "subscription-smoke-exec-result.schema.json").read_text(encoding="utf-8"))
-        self.assertEqual(schema["properties"]["schema_version"]["const"], 1)
+        self.assertEqual(schema["properties"]["schema_version"]["const"], 2)
         digests = schema["properties"]["digests"]; self.assertIn("smoke_spec_sha256", digests["required"]); self.assertNotIn("stderr_sha256", digests["properties"])
         self.assertEqual(schema["properties"]["versions"]["properties"]["model_reasoning_effort"]["const"], "model-default")
         self.assertIn("stderr_nonempty", schema["properties"]["privacy"]["required"])
+        activity = schema["properties"]["candidate_tool_activity"]
+        self.assertIn("candidate_tool_activity", schema["required"])
+        self.assertIn("postrun_evidence_eligibility", activity["required"])
 
 
 if __name__ == "__main__": unittest.main()

@@ -2,14 +2,14 @@
 
 최신 실행 checkpoint: 2026-09-12, `feat/feynman-thinking-v0.5-draft` research preview.
 
-현재 재개 지점은 [LOG-036](feynman-work-log/LOG-036-model-free-rpc-preflight-green-20260912.md)이다.
+현재 재개 지점은 [LOG-037](feynman-work-log/LOG-037-no-tool-trace-nonpromotion-20260912.md)이다.
 전용 홈 인증, native Docker 경계, ordinal 1 구조 검사 및 실제 모델 턴은 통과했다.
-그러나 candidate는 작업을 완료하지 못했고 Linux exec-server가 Windows file URI를
-20건 거부했다. field-specific Windows→Linux RPC proxy, `/tmp` 초기화 수정,
-그리고 documented `initialize`→`initialized`→`fs/readFile`→`process/start`
-preflight가 모두 통과했다. repaired ordinal 1 transport는 완료됐으나 tool event와
-fixture 변경이 없어 execution-required task 성공이 아니다. baseline은 아직 실행하지
-않는다.
+field-specific Windows→Linux RPC proxy, `/tmp` 초기화 수정, 그리고 documented
+`initialize`→`initialized`→`fs/readFile`→`process/start` preflight도 통과했다.
+그러나 repaired ordinal 1 trace에는 candidate tool event가 0개였다. fixture/test를
+서술한 final answer는 trusted execution evidence가 아니므로 execution-required task
+성공으로 승격할 수 없다. result schema v2가 이 상태를
+`blocked-no-candidate-tool-call`로 명시한다. baseline은 아직 실행하지 않는다.
 
 이 문서는 구현 상태와 행동 성능 주장을 분리해 기록한다. 구조 검사나 integration smoke가 성공하더라도 실제 Feynman skill의 인과적 성능 향상으로 해석하지 않는다.
 
@@ -172,7 +172,12 @@ control CODEX_HOME contents
 
 result schema:
 
-`evals/feynman-thinking/subscription-smoke-exec-result.schema.json` v1.
+`evals/feynman-thinking/subscription-smoke-exec-result.schema.json` v2.  It
+separates `subscription-codex-smoke-exec-completed` (the invocation completed)
+from `candidate_tool_activity`.  For the execution-required `tools-10` case,
+zero completed candidate tool items is
+`blocked-no-candidate-tool-call`: it cannot advance to trace evidence,
+semantic review, or a performance conclusion.
 
 ## executor 성공 뒤에도 필요한 lineage
 

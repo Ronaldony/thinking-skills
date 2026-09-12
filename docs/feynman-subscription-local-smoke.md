@@ -152,11 +152,19 @@ candidate-final.txt
 subscription-exec-result.json
 ```
 
-Expected executor verdict:
+The Codex-process completion verdict is:
 
 ```text
 subscription-codex-smoke-exec-completed
 ```
+
+This says only that the fixed Codex invocation completed.  Result schema v2
+also records `candidate_tool_activity`.  For `tools-10`, a
+`candidate-tool-use-not-observed` / `blocked-no-candidate-tool-call` result
+must not advance to post-run evidence extraction or semantic review: a final
+answer that describes a test is not trusted execution evidence.  Conversely,
+`candidate-tool-use-observed` only makes trace-evidence extraction eligible;
+it does not prove that the requested test ran or passed.
 
 The executor deliberately refuses real account-authenticated execution when `GITHUB_ACTIONS=true`. Use a trusted local or self-hosted control plane; do not copy the control login session into GitHub Actions.
 
@@ -175,6 +183,11 @@ The executor fails closed if, among other things:
 - `OPENAI_API_KEY`, `CODEX_API_KEY`, or `CODEX_ACCESS_TOKEN` is ambient;
 - the output directory is not a new evaluator-owned directory;
 - Codex returns nonzero, an error event, a failed turn, no single thread ID, or no completed agent answer.
+
+It also records the count and stable type labels of completed candidate tool
+items, without preserving tool arguments, command text, tool output, or
+process environment.  A zero count is a non-promotion outcome for an
+execution-required case, even when the Codex process itself completed.
 
 The executor does not read credential files and does not preserve raw auth-status text, raw process environment, raw stderr, or control `CODEX_HOME` contents.
 

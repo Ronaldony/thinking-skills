@@ -31,6 +31,16 @@ EXPECTED_CONDITIONS = {"baseline", "feynman-v05"}
 RETIRED_API_ENV_KEYS = {"OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN"}
 EXPECTED_REASONING_POLICY = "model-default"
 WINDOWS_SYSTEM_ENV_KEYS = ("SystemRoot", "ComSpec", "PATHEXT", "WINDIR")
+# These are the only completed item types that the executor treats as a
+# candidate-initiated tool call.  The list intentionally covers the stable
+# Codex trace names without retaining a command, tool name, arguments, or
+# output in the result record.
+CANDIDATE_TOOL_ITEM_TYPES = frozenset({
+    "command_execution",
+    "function_call",
+    "mcp_tool_call",
+    "tool_call",
+})
 
 
 def _no_symlink_components(path: Path, label: str, *, must_exist: bool) -> Path:
@@ -272,6 +282,8 @@ def _parse_trace(path: Path) -> dict[str, Any]:
     final_messages: list[str] = []
     usage: dict[str, Any] | None = None
     reasoning_events = 0
+    completed_tool_item_types: set[str] = set()
+    completed_tool_item_count = 0
     failures: list[str] = []
     events = 0
     for line_no, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
@@ -300,6 +312,10 @@ def _parse_trace(path: Path) -> dict[str, Any]:
             if isinstance(item, dict):
                 if item.get("type") == "reasoning":
                     reasoning_events += 1
+                item_type = item.get("type")
+                if kind == "item.completed" and item_type in CANDIDATE_TOOL_ITEM_TYPES:
+                    completed_tool_item_count += 1
+                    completed_tool_item_types.add(item_type)
                 if kind == "item.completed" and item.get("type") == "agent_message":
                     text = item.get("text")
                     if isinstance(text, str):
@@ -318,6 +334,8 @@ def _parse_trace(path: Path) -> dict[str, Any]:
         "usage": usage or {},
         "reasoning_events_observed": reasoning_events,
         "event_count": events,
+        "completed_tool_item_count": completed_tool_item_count,
+        "completed_tool_item_types": sorted(completed_tool_item_types),
     }
 
 
@@ -431,8 +449,9 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
             raise ValueError(f"Codex exec failed with exit code {proc.returncode}; category={category}; raw stderr was not preserved")
         trace = _parse_trace(trace_path)
         final_path.write_text(trace["final_message"], encoding="utf-8")
+        tool_use_observed = trace["completed_tool_item_count"] > 0
         result = {
-            "schema_version": 1,
+            "schema_version": 2,
             "verdict": "subscription-codex-smoke-exec-completed",
             "run_id": job["run_id"],
             "job": dict(job["job"]),
@@ -465,6 +484,21 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
                 "event_count": trace["event_count"],
                 "reasoning_events_observed": trace["reasoning_events_observed"],
             },
+            "candidate_tool_activity": {
+                "completed_tool_item_count": trace["completed_tool_item_count"],
+                "completed_tool_item_types": trace["completed_tool_item_types"],
+                "tool_use_verdict": (
+                    "candidate-tool-use-observed" if tool_use_observed
+                    else "candidate-tool-use-not-observed"
+                ),
+                # A tool-call trace is only the minimum condition for
+                # extracting post-run evidence.  It is not a claim that the
+                # requested test actually ran or that it passed.
+                "postrun_evidence_eligibility": (
+                    "eligible-for-trace-evidence-extraction" if tool_use_observed
+                    else "blocked-no-candidate-tool-call"
+                ),
+            },
             "usage": trace["usage"],
             "digests": {
                 "eval_plan_sha256": _sha(plan_path),
@@ -488,6 +522,7 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
                 "integration smoke only; result must not be used for Feynman skill-effect inference",
                 "model reasoning effort policy is explicitly model-default for integration smoke; behavioral pilot requires a new contract that freezes an explicit effort",
                 "successful model execution does not by itself prove the post-run boundary canary/attestation lineage",
+                "candidate tool activity is a trace-level eligibility signal only; test execution and outcome require separately extracted trusted evidence",
             ],
             "scope": (
                 "single-turn tools-10 ChatGPT-subscription integration smoke execution after structural/auth gates; "
