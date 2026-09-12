@@ -237,3 +237,33 @@ traversal 및 config 내용 우회 차단, 실제 response-size 검사, live gat
 전체 환경 덤프를 사용하지 않았다. Docker image는 공식 npm package 설치만 했다.
 개발 문서는 baseline/candidate 입력에 포함하지 않았다. main merge/force push 없음.
 구현/log commit과 일반 push 결과는 아래 저장 checkpoint에서 기록한다.
+
+## 8. 저장 checkpoint
+
+구현 commit **`85a2815`** (`fix: gate subscription probes on runtime and actual read bounds`),
+18 files changed. 아래 명령으로 stage/diff/commit/push했고 모두 exit 0이었다.
+
+```powershell
+git add -- docs/feynman-codex-handoff.md docs/feynman-codex-resume-prompt.md docs/feynman-work-status.md docs/feynman-remote-compatibility.md docs/feynman-work-log/LOG-046-three-model-runtime-and-read-boundary-20260912.md tests/test_feynman_subscription_tool_use_probe.py tests/test_feynman_rpc_compatibility.py tooling/feynman_rpc_discovery_diagnostic.py tooling/feynman_rpc_path_mapping.py tooling/feynman_rpc_path_proxy.py tooling/feynman_runner_job.py tooling/feynman_subscription_tool_use_probe.py tooling/feynman_guarded_rpc_preflight.py tooling/feynman_rpc_compat_prepare.py tooling/feynman_rpc_version_gate.py tooling/feynman_subscription_models.py tooling/docker/codex-remote/Dockerfile tooling/docker/codex-remote/.dockerignore
+git diff --cached --check
+git commit -m 'fix: gate subscription probes on runtime and actual read bounds'
+git push origin feat/feynman-thinking-v0.5-draft
+```
+
+remote는 `af798a3..85a2815`로 갱신됐다. 마지막 전체 targeted 묶음도 41 tests OK.
+hosted CI 결과는 조회하지 않았으므로 이번 commit의 CI green을 주장하지 않는다.
+이 저장 사실을 기록하는 문서 전용 후속 commit/push 및 최종 확인 명령:
+
+```powershell
+git add -- docs/feynman-work-log/LOG-046-three-model-runtime-and-read-boundary-20260912.md
+git diff --cached --check
+git commit -m 'docs: record three-model compatibility checkpoint'
+git push origin feat/feynman-thinking-v0.5-draft
+git status --short
+git log -1 --oneline
+git ls-remote origin refs/heads/feat/feynman-thinking-v0.5-draft
+```
+
+최종 SHA는 self-referential hash를 이 문서에 삽입하지 않고 Git 결과로 확인한다.
+현재 차단은 사용자 재로그인이나 모델 ID 미제공이 아니라 위 제한 read/tool adapter의
+미완성이다. 다음 개발 세션은 이 checkpoint에서 시작하며 자동 model retry를 하지 않는다.
