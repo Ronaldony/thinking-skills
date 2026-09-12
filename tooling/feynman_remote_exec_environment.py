@@ -2,9 +2,10 @@
 """Generate/validate a Codex stdio remote environment from a runner job.
 
 The control-plane Codex process stays outside the candidate tool boundary. The
-selected environment launches `docker run -i ... codex exec-server --listen
-stdio` with `include_local=false`, so shell/filesystem execution is delegated to
-the network-disabled container. Host paths and Linux container destinations are
+selected environment launches a host-side field-specific RPC proxy, which in
+turn starts `docker run -i ... codex exec-server --listen stdio` with
+`include_local=false`. Shell/filesystem execution is delegated to the
+network-disabled container. Host paths and Linux container destinations are
 resolved from the runner-job mount mapping. This tool does not launch Codex or
 Docker.
 """
@@ -14,6 +15,7 @@ import argparse
 import json
 from pathlib import Path
 import re
+import sys
 import tomllib
 from typing import Any
 
@@ -51,7 +53,11 @@ def _env_assignments(job: dict[str, Any], profile: dict[str, Any]) -> list[str]:
         "HOME": container_path_for_key(job, profile, "ephemeral_home"),
         "CODEX_HOME": container_path_for_key(job, profile, "codex_home"),
         "PATH": "/usr/local/bin:/usr/bin:/bin",
-        "TMPDIR": container_path_for_key(job, profile, "temp_dir"),
+        # The read-only rootfs exposes a writable, non-host-backed tmpfs at
+        # /tmp. The mounted /run/temp path is retained for the boundary
+        # contract but causes this exec-server build to exit before RPC init
+        # when used as TMPDIR.
+        "TMPDIR": "/tmp",
         "PYTHONDONTWRITEBYTECODE": "1",
     }
     keys = profile["candidate_env_keys"]
@@ -94,7 +100,6 @@ def expected_docker_args(job: dict[str, Any], profile: dict[str, Any]) -> list[s
         mount = mounts_by_destination[destination]
         args.extend(["-v", f"{mount['source']}:{mount['destination']}:rw"])
     args.extend([
-        "--workdir", container_path_for_key(job, profile, "candidate_dir"),
         profile["image"],
         "env", "-i",
         *_env_assignments(job, profile),
@@ -112,8 +117,12 @@ def build_document(job: dict[str, Any], profile: dict[str, Any], profile_sha: st
         "include_local": False,
         "environments": [{
             "id": ENVIRONMENT_ID,
-            "program": "docker",
-            "args": expected_docker_args(job, profile),
+            "program": str(Path(sys.executable).resolve()),
+            "args": [
+                str(Path(__file__).with_name("feynman_rpc_path_proxy.py").resolve()),
+                "--docker", "docker", "--",
+                *expected_docker_args(job, profile),
+            ],
         }],
     }
 

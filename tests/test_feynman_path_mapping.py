@@ -151,16 +151,16 @@ class NativeWindowsPathMappingTests(unittest.TestCase):
         joined = "\n".join(args)
         for key, destination in (("candidate_dir", "/run/candidate"), ("ephemeral_home", "/run/home"), ("codex_home", "/run/codex"), ("temp_dir", "/run/temp")):
             self.assertIn(f"{self.paths[key]}:{destination}:rw", joined)
-        self.assertIn("--workdir\n/run/candidate", joined)
+        self.assertNotIn("--workdir\n/run/candidate", joined)
         self.assertIn("HOME=/run/home", joined)
         self.assertIn("CODEX_HOME=/run/codex", joined)
-        self.assertIn("TMPDIR=/run/temp", joined)
+        self.assertIn("TMPDIR=/tmp", joined)
         self.assertNotIn(f"--workdir\n{self.paths['candidate_dir']}", joined)
 
     def test_document_stays_local_execution_disabled(self) -> None:
         document = build_document(self.job, self.profile, self.profile_sha)
         self.assertFalse(document["include_local"])
-        self.assertEqual(document["environments"][0]["program"], "docker")
+        self.assertEqual(document["environments"][0]["program"], str(Path(sys.executable).resolve()))
 
     def test_docker_inspect_binds_sources_to_the_job_mapping(self) -> None:
         mounts = [
