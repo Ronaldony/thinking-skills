@@ -11,7 +11,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from tooling.feynman_subscription_auth_gate import CONFIG_TEXT, _safe_env, check, prepare
+from tooling.feynman_subscription_auth_gate import CONFIG_TEXT, _resolve_executable, _safe_env, check, prepare
 
 
 class SubscriptionAuthGateTests(unittest.TestCase):
@@ -170,6 +170,19 @@ class SubscriptionAuthGateTests(unittest.TestCase):
         self.assertEqual(env["TEMP"], str(home.parent))
         self.assertEqual(env["TMP"], str(home.parent))
         self.assertEqual(env["TMPDIR"], str(home.parent))
+
+    def test_windows_powershell_launcher_resolves_to_cmd_companion(self):
+        powershell_launcher = self.base / "codex.ps1"
+        cmd_launcher = self.base / "codex.cmd"
+        powershell_launcher.write_text("# launcher", encoding="utf-8")
+        cmd_launcher.write_text("@echo off", encoding="utf-8")
+        self.assertEqual(
+            _resolve_executable(str(powershell_launcher), platform_name="nt"),
+            str(cmd_launcher.resolve()),
+        )
+        cmd_launcher.unlink()
+        with self.assertRaises(ValueError):
+            _resolve_executable(str(powershell_launcher), platform_name="nt")
 
 
 if __name__ == "__main__":

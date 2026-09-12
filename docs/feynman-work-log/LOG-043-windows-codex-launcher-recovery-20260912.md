@@ -27,30 +27,39 @@
 `tooling/feynman_subscription_smoke_exec.py::_resolve_executable()`은 Windows에서
 명시 `.ps1` launcher가 입력되면 동일 경로의 regular `.cmd` companion만
 선택한다. companion이 없거나 symlink이면 고정 `ValueError`로 멈춘다. 따라서
-PowerShell script를 Win32 executable처럼 시작하지 않는다. probe는 canonical
-executor resolver를 재사용하므로 같은 수정의 적용 대상이다.
+PowerShell script를 Win32 executable처럼 시작하지 않는다.
+
+이 수정 뒤 exact frozen plan probe는 output directory 생성 전 다시 `WinError 193`으로
+끝났다. probe의 순서상 이는 auth gate의 version/status subprocess임을 확인했다.
+`tooling/feynman_subscription_auth_gate.py::_resolve_executable()`에도 같은
+`.ps1 → .cmd` policy를 적용했다. canonical executor와 auth gate의 launcher
+정책이 다시 일치한다.
 
 ## 검증
 
 ```powershell
-python -m unittest tests.test_feynman_subscription_smoke_exec tests.test_feynman_subscription_tool_use_probe tests.test_feynman_rpc_path_proxy
+python -m unittest tests.test_feynman_subscription_auth_gate tests.test_feynman_subscription_smoke_exec tests.test_feynman_subscription_tool_use_probe
 python -m unittest discover -s tests -p 'test_*.py'
 codex.cmd --version
+python tooling/feynman_subscription_auth_gate.py check --control-codex-home <dedicated control home> --codex-bin <npm codex.ps1>
 git diff --check
 ```
 
-- targeted: 27 tests, exit 0, OK
-- full: 304 tests, 10 skipped, exit 0, OK
+- prior targeted resolver set: 27 tests, exit 0, OK
+- targeted after auth-gate resolver: 32 tests, 1 skipped, exit 0, OK
+- full after auth-gate resolver: 305 tests, 10 skipped, exit 0, OK
 - actual npm `codex.cmd --version`: exit 0, `codex-cli 0.154.0`
+- actual dedicated-home auth gate: `chatgpt-subscription-authenticated`,
+  `codex-cli 0.154.0`; raw status/account/token은 보존하지 않음
 - model request: 이 log 작성 시점까지 0회
 
 ## 다음 실행
 
 새 evaluator-owned output directory에서 exact
 `frozen-subscription-smoke-plan.json`과 기존 `codex.ps1` argument를 사용한다.
-resolver가 `codex.cmd`를 선택하므로 command surface는 고정되고, read-scope
-policy (`candidate.py`, offset 0, len 1, fs/readFile only)는 유지된다. 이 한
-실행이 실패하면 자동 반복하지 않는다.
+auth gate와 executor resolver가 모두 `codex.cmd`를 선택하므로 command surface는
+고정되고, read-scope policy (`candidate.py`, offset 0, len 1, fs/readFile only)는
+유지된다. 이 한 실행이 실패하면 자동 반복하지 않는다.
 
 ## 저장 상태
 
