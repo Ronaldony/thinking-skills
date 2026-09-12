@@ -3,6 +3,8 @@
 작성일: 2026-09-09 (Asia/Seoul). 이 문서는 개발 담당 Codex의 인계 자료다. 평가 대상 candidate에게 전달하지 않는다.
 
 > 최신 상태(2026-09-13)는 [LOG-047](feynman-work-log/LOG-047-bounded-read-adapter-and-mcp-catalog-20260913.md)를 우선한다.
+> 이후 [LOG-048](feynman-work-log/LOG-048-remote-container-mcp-catalog-20260913.md)에서
+> 동일 Docker runtime의 격리 `/run/codex` MCP catalog도 model-free로 확인했다.
 > LOG-047에서 one-byte diagnostic MCP adapter와 blank-home App Server catalog
 > 노출을 model-free로 확인했지만 canonical remote exec/model tool-use는 아직
 > 검증하지 않았다.

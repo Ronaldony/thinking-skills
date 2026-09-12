@@ -2,7 +2,7 @@
 
 최신 실행 checkpoint: 2026-09-13, `feat/feynman-thinking-v0.5-draft` research preview.
 
-최신 checkpoint는 [LOG-047](feynman-work-log/LOG-047-bounded-read-adapter-and-mcp-catalog-20260913.md)이다.
+최신 checkpoint는 [LOG-048](feynman-work-log/LOG-048-remote-container-mcp-catalog-20260913.md)이다.
 Luna/Terra/Sol의 별도 작업 자료를 준비했고 새 검사 환경의 control/server/job을
 0.154.0으로 정렬했다. config 경로 그룹 및 canonicalize 경로 매핑도 보정했다.
 하지만 1바이트 요청에 117-byte 응답이 돌아오는 것을 발견했다. proxy는 이제
@@ -12,6 +12,9 @@ LOG-047에서는 이를 우회하지 않고 고정 1회·1바이트 MCP diagnost
 추가해 Docker protocol과 blank-home App Server catalog를 model-free로 확인했다.
 canonical remote exec/model tool-use와 tools-10용 전체 권한 adapter는 여전히
 미완료다.
+LOG-048에서 동일 Docker runtime의 격리 `/run/codex` MCP catalog visibility는
+model-free로 확인했다. `codex exec` 구독 세션의 실제 model tool-call은 여전히
+확인하지 않았고 protected control home도 수정하지 않았다.
 이번 추가 작업의 모델 호출은 0회이며, 아래 LOG-045 설명은 이전 checkpoint다.
 [현재 계약과 남은 작업](feynman-remote-compatibility.md)을 우선한다.
 전용 홈 인증, native Docker 경계, ordinal 1 구조 검사 및 실제 모델 턴은 통과했다.

@@ -1,6 +1,10 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 2026-09-13 재개 우선순위: 아래 최초 인계보다
+> `docs/feynman-work-log/LOG-048-remote-container-mcp-catalog-20260913.md`도 함께
+> 읽어라. 동일 Docker runtime의 격리 `/run/codex`에서 MCP catalog visibility가
+> 확인됐지만 `codex exec` 구독 세션의 model tool-call 성공은 아니다. protected
+> control home을 수정하거나 인증을 복사하지 마라.
 > `docs/feynman-work-log/LOG-047-bounded-read-adapter-and-mcp-catalog-20260913.md`,
 > `docs/feynman-remote-compatibility.md`를 먼저 읽어라. LOG-047의 one-byte
 > diagnostic MCP adapter와 blank-home App Server catalog 노출은 model-free

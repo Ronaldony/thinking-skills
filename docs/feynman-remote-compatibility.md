@@ -42,6 +42,12 @@ catalog 계약의 증거이지 기존 exec-server remote 환경이나 실제 모
 증거가 아니다. 이 diagnostic adapter는 tools-10 전체 평가 실행기에 연결하지
 않는다.
 
+LOG-048에서 같은 adapter를 새 `arm64/linux` Docker image의 격리 `/run/codex`에
+설정하고, container 내부 Codex App Server의 `mcpServerStatus/list`에서도
+`feynman_read_probe_byte`가 보이는 것을 확인했다. `network=none`, 모델/turn 0회,
+auth 0회다. 다만 이 검사는 canonical protected control home의 설정이나
+`codex exec` 구독 세션의 실제 model tool-call을 변경·증명하지 않는다.
+
 새 Docker image:
 
 - 태그: `feynman-codex-remote:0.154.0-20260912`
