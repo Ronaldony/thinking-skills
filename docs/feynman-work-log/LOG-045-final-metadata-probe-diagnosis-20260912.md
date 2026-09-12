@@ -188,5 +188,33 @@ candidate 전달도 하지 않았다. 재로그인을 요청하지 않는다.
 3. 위 조건을 통과한 뒤에만 별도 승인된 model probe를 고려한다.
    baseline은 실제 tool-use 증거 확보 전 계속 보류한다.
 
-commit/push: 작성 시 pending. 아래에 실제 저장 결과를 추가한다.
-main merge/force push는 하지 않는다.
+## 7. 실제 저장 결과
+
+```powershell
+git add -- tooling/feynman_rpc_discovery_diagnostic.py tests/test_feynman_rpc_discovery_diagnostic.py docs/feynman-work-log/LOG-045-final-metadata-probe-diagnosis-20260912.md docs/feynman-work-log/LOG-044-guarded-probe-metadata-discovery-20260912.md docs/feynman-work-status.md docs/feynman-codex-resume-prompt.md docs/feynman-codex-handoff.md
+git diff --cached --check
+git commit -m 'diagnose: close final guarded probe with RPC evidence'
+git push origin feat/feynman-thinking-v0.5-draft
+```
+
+- 진단/테스트/문서 commit: **`76320ed`**, 7 files changed.
+- ordinary push 성공: remote branch가 `8e4fd83..76320ed`로 갱신됐다.
+- `git diff --check`, staged diff check 모두 exit 0. CRLF 변환 warning만 있었고
+  formatting 오류는 없었다. 새 HEAD의 hosted CI 결과는 이번에 조회하지 않았다.
+- 이 저장 결과를 기록하는 문서 전용 후속 checkpoint를 별도로 커밋/push한다.
+  최종 SHA는 self-referential hash를 문서에 넣지 않고 `git log -1`로 확인한다.
+
+종료 저장/검증 명령:
+
+```powershell
+git add -- docs/feynman-work-log/LOG-045-final-metadata-probe-diagnosis-20260912.md
+git diff --cached --check
+git commit -m 'docs: record final probe diagnostic checkpoint'
+git push origin feat/feynman-thinking-v0.5-draft
+git status --short
+git log -1 --oneline
+git ls-remote origin refs/heads/feat/feynman-thinking-v0.5-draft
+```
+
+main merge/force push는 하지 않는다. 남은 기술 목표는 위 6절에 기록했으며,
+이번 요청의 진단 작업 종료와 Feynman 평가 프로젝트 완료는 구분한다.
