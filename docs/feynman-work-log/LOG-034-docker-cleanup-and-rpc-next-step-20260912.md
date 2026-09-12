@@ -83,3 +83,10 @@ the repaired ordinal 1 completes its actual task and evidence lineage.
 
 Commit/push status at file creation: pending. Main merge and force push are not
 performed.
+
+## Storage confirmation
+
+`git diff --check` completed without a whitespace error. This log was committed
+as `8c1f2b0` (`docs: record Docker cleanup and RPC next step`) and pushed to
+`origin/feat/feynman-thinking-v0.5-draft`. The exact remote HEAD and final clean
+working-tree state are verified in the documentation follow-up commit.
