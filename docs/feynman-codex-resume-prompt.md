@@ -4,9 +4,10 @@
 > `docs/feynman-work-log/LOG-051-full-runner-mcp-contract-model-free-20260913.md`를
 > 읽어라. 승인된 Luna 비평가 probe 1회에서 실제 완료 `mcp_tool_call` 1개와
 > `trace-tool-use-observed`를 확인했다. 이후 3-tool full-runner contract와 실제
-> network-disabled Docker fixed-test, Codex catalog를 model-free로 검증했다. 반복
+> network-disabled Docker fixed-test, Codex catalog, existing tools-10 runner-job/
+> profile binding을 model-free로 검증했다. 반복
 > 모델 실행, Terra/Sol fallback, baseline/frozen evaluation은 시작하지 마라. 다음은
-> 이 contract를 tools-10 runner-job/profile artifact chain에 model-free로 결속하는 것이다.
+> skill/command wiring을 모델 없이 검증하는 것이다.
 >
 > 이전 model-free checkpoint:
 > `docs/feynman-work-log/LOG-049-transient-mcp-exec-preflight-20260913.md`를 읽어라.

@@ -7,8 +7,9 @@
 > `mcp_tool_call` 1개를 관찰했다. 자동 재시도는 없었다. 이는 bounded 1-byte
 > diagnostic tool의 model-facing 노출 성공이며 full evaluation runner나 성능
 > 검증 성공은 아니다. 이후 full-runner 3-tool MCP contract의 model-free Docker 및
-> Codex catalog preflight도 통과했다. 다음은 existing tools-10 artifact chain과의
-> model-free 결속이다.
+> Codex catalog preflight와 existing tools-10 artifact chain 결속까지 통과했다.
+> 상세 결속 결과는 LOG-052이며, 다음은 모델 없이 skill/command wiring을 검증하는
+> 단계다.
 > [LOG-051](feynman-work-log/LOG-051-full-runner-mcp-contract-model-free-20260913.md)은
 > Python runtime 누락을 확인하고 새 local image를 검증한 상세 기록이다.
 > 이전 [LOG-049](feynman-work-log/LOG-049-transient-mcp-exec-preflight-20260913.md)에서
@@ -32,9 +33,9 @@
 
 목표는 역사적 인물의 사고 방법을 문제 해결 스킬로 만드는 `Ronaldony/thinking-skills`에 리처드 파인만 스킬을 설계·구현·검증하는 것이다. 원본은 `Ronaldony/feynman-thinking` v0.4.0이다. 현재 v0.5.0-draft는 설치·평가 구조를 구현한 research preview이지, 행동 성능이 입증된 릴리스가 아니다.
 
-**다음 첫 목표는 검증된 full-runner MCP contract를 existing tools-10
-runner-job/profile의 model-free artifact chain에 결속하는 것**이다. 실제 모델
-평가와 baseline은 아직 시작하지 않는다.
+**full-runner MCP contract를 existing tools-10 runner-job/profile에 결속하는
+model-free 목표는 LOG-052에서 완료됐다.** 실제 모델 평가와 baseline은 아직
+시작하지 않는다. 다음 목표는 스킬 노출·명령 wiring을 모델 없이 검증하는 것이다.
 
 ## 2. 확인한 저장소 기준점
 
@@ -237,7 +238,8 @@ reasoning policy = model-default (integration smoke에만 허용)
 | validate-feynman-remote-patch-reference | 34327616875 |
 | validate-feynman-unit-diagnostic | 34327616793 |
 
-이 조회는 새 테스트 실행도, Windows 실기기 성공도, 모델 성능 측정도 아니다. 이전 261개 테스트 수치를 이 수정의 최신 수치로 재사용하지 않는다.
+이 조회는 새 테스트 실행도, Windows 실기기 성공도, 모델 성능 측정도 아니다. 최신
+로컬 회귀는 349 tests이며, 과거 CI 수치는 해당 실행의 역사적 기록으로만 본다.
 
 근거 위치:
 

@@ -26,6 +26,24 @@ Docker external tool boundary
 
 핵심은 **모델 API를 호출하는 frontend와 모델이 조작할 수 있는 tool process의 filesystem/network boundary를 분리**하는 것이다. control-plane credential material을 candidate tool environment/file/argv에 전달하지 않는다.
 
+### full-runner MCP 결속
+
+tools-10의 native Windows artifact chain에 고정 MCP runner를 연결할 때는
+`tooling/feynman_full_runner_binding.py`를 사용한다. 이 도구는 기존
+`runner-job.json`과 `boundary-profile.json`을 수정하지 않고, 다음을 다시 검증한
+payload-free binding manifest를 생성한다.
+
+- job/profile의 schema·digest·ChatGPT subscription auth contract
+- host path → `/run/candidate`, `/run/home`, `/run/codex`, `/run/temp` native mapping
+- full-runner 3-tool catalog preflight와 실제 network-disabled Docker preflight
+- model/auth 호출 0회 및 credential/task payload 비보존
+
+full-runner adapter가 사용할 Docker image는 기존 remote-exec profile image와
+다를 수 있다. 두 image digest는 manifest에 별도 기록하며, 불일치를 숨겨
+기존 profile이 full-runner image를 실행했다고 주장하지 않는다. 이 binding은
+실행 전 plumbing evidence일 뿐 actual model turn이나 skill performance evidence가
+아니다.
+
 2026-09-08 reference에서 다음을 실제 GitHub Actions로 분리 검증했다.
 
 - control-plane Codex → network-none stdio remote `exec_command` → tool output → mock final 왕복

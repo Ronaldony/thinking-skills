@@ -168,3 +168,30 @@ baseline/smoke 직접 실행도 보류한다.
 shell 권한이나 full evaluation 권한은 아직 없으므로, 다음에는 별도 full-runner
 tool contract를 설계한다. 현재 checkpoint로 Feynman 효과 또는 baseline 비교
 결과를 주장하지 않는다.
+
+## LOG-052 결과 — existing tools-10 artifact chain 결속
+
+기존 `C:\DevWorks\feynman-remote-compat-20260912-01`의 Luna/Terra/Sol
+`runner-job.json`을 읽기 전용 입력으로 사용해 `tooling/feynman_full_runner_binding.py`
+를 추가했다. 각 job은 먼저 기존 strict validator를 통과했고, 실제 candidate의
+`candidate.py`/`test_candidate.py`를 사용한 full-runner catalog preflight를 모델 없이
+별도 1회씩 실행했다. 기존 synthetic Docker preflight도 고정 image에 대해 재사용했다.
+
+세 모델 모두 다음 manifest를 생성했다.
+
+- verdict: `full-runner-mcp-artifact-chain-bound`
+- case: `tools-10`, condition: `feynman-v05`
+- native mount: 4개, `/run/candidate`, `/run/home`, `/run/codex`, `/run/temp`
+- catalog/Docker preflight: 모두 true
+- `model_calls=0`, `authentication_used=false`
+
+기존 runner profile의 remote-exec image와 새 full-runner image
+`sha256:2b5c626cca0edbf1338b1adb31bcb941f20ac32e354d1973f1756d6b66933b3a`는
+서로 다르다. 이를 별도 필드로 기록했으며 기존 profile을 덮어쓰지 않았다. 따라서
+이번 결과는 artifact lineage와 Windows mapping의 model-free 결속이지 실제 모델
+turn, subscription auth gate 성공, baseline/Feynman 비교가 아니다. 산출물은
+`C:\DevWorks\feynman-full-runner-binding-20260913-01` 아래에 저장됐다.
+
+자동 검증은 새 binding unit 2개와 전체 `349 tests OK, 11 skipped`로 통과했다.
+다음 단계는 binding에 연결된 candidate skill 노출·고정 command wiring을 모델 없이
+검증하는 것이며, 그 전에는 실제 smoke나 baseline을 시작하지 않는다.
