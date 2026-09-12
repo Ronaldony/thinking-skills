@@ -192,3 +192,19 @@ based on actual local CLI and candidate server evidence, not inferred from docs.
 failed. `git diff --check`: exit 0, CRLF conversion warnings only. No new CI
 success claim is made. The five changed files are the executor, its test,
 this log, status document, and resume prompt; runtime skill contents are unchanged.
+
+## Commit and remote confirmation
+
+Executed `git add --` for the five files above, then:
+
+```powershell
+git commit -m "fix: preserve smoke approval policy without conflicting CLI flags"
+git push origin feat/feynman-thinking-v0.5-draft
+git ls-remote --heads origin feat/feynman-thinking-v0.5-draft
+git status --short --branch
+```
+
+All exit 0. Implementation checkpoint `8194ead804176d4ef29ba9a285fdb000388ddb68`
+was confirmed on the remote feature branch; tree clean at that check. This
+commit/push confirmation is a subsequent documentation-only update. No main
+merge, force push, model substitution, or credential handling occurred.
