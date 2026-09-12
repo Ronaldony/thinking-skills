@@ -1,7 +1,7 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 2026-09-12 재개 우선순위: 아래 최초 인계보다
-> `docs/feynman-work-log/LOG-039-tool-probe-no-trace-20260912.md`를 우선한다.
+> `docs/feynman-work-log/LOG-041-remote-tool-telemetry-and-preflight-20260912.md`를 우선한다.
 > 인증·Docker canary·ordinal 1 모델 턴은 통과했으나 task는 실패했다.
 > field-specific proxy가 Windows file URI를 Linux 경로로 변환하고 model-free task/skill
 > read 및 harmless process까지 통과했다. repaired ordinal 1 transport는 완료됐지만
@@ -13,8 +13,9 @@
 > 성공했지만 tool item은 0개였고 `PROBE_TOOL_USED` 텍스트만 반환됐다. 이는
 > execution evidence가 아니며 response-vs-trace verdict로 차단한다. 다른
 > model/version 선택이나 remote-tool exposure 조사는 별도 결정 없이는 하지 않는다.
-> baseline은 미실행이며,
-> 이 결함이 해결되기 전에는 추가 모델 호출을 하지 않는다.
+> 이후 raw trace 비보존과 payload-free RPC telemetry를 구현했고, 새 telemetry를
+> 사용한 model-free native preflight도 통과했다. 계측 보강 후 추가 one-byte model
+> probe는 별도 명시 승인 경계에서 중단됐다. baseline은 미실행이다.
 
 아래 구분선 뒤의 내용을 새 **개발 담당** Codex 세션에 붙여넣는다. 평가 candidate나 baseline 프롬프트로 사용하지 않는다.
 

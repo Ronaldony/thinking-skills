@@ -10,7 +10,9 @@ rejected path in output.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
+from pathlib import Path
 import subprocess
 import sys
 import threading
@@ -49,18 +51,100 @@ def _docker_mounts(docker_args: list[str]) -> list[dict[str, str]]:
     return mounts
 
 
-def _split_cli(argv: list[str]) -> tuple[str, list[str]]:
+def _split_cli(argv: list[str]) -> tuple[str, Path | None, list[str]]:
     try:
         separator = argv.index("--")
     except ValueError as exc:
         raise ValueError("proxy requires `--` before Docker arguments") from exc
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--docker", default="docker")
+    parser.add_argument("--telemetry-file", type=Path)
     options = parser.parse_args(argv[:separator])
     docker_args = argv[separator + 1 :]
     if not docker_args:
         raise ValueError("proxy requires Docker arguments")
-    return options.docker, docker_args
+    return options.docker, options.telemetry_file, docker_args
+
+
+class _ProxyTelemetry:
+    """Thread-safe, payload-free proxy activity counters."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._request_methods: Counter[str] = Counter()
+        self._response_error_codes: Counter[str] = Counter()
+        self._values: Counter[str] = Counter()
+        self._child_exit_code: int | None = None
+
+    def request_seen(self, method: str | None) -> None:
+        with self._lock:
+            self._values["requests_seen"] += 1
+            self._request_methods[method if isinstance(method, str) else "unknown"] += 1
+
+    def request_forwarded(self) -> None:
+        with self._lock:
+            self._values["requests_forwarded"] += 1
+
+    def request_rejected(self, *, malformed: bool) -> None:
+        with self._lock:
+            self._values["request_mapping_rejections"] += 1
+            if malformed:
+                self._values["malformed_requests"] += 1
+
+    def response_seen(self, error_code: Any = None, *, malformed: bool = False) -> None:
+        with self._lock:
+            self._values["responses_seen"] += 1
+            if isinstance(error_code, int) and not isinstance(error_code, bool):
+                self._response_error_codes[str(error_code)] += 1
+            if malformed:
+                self._values["malformed_responses"] += 1
+
+    def response_forwarded(self) -> None:
+        with self._lock:
+            self._values["responses_forwarded"] += 1
+
+    def response_rejected(self) -> None:
+        with self._lock:
+            self._values["response_mapping_rejections"] += 1
+
+    def child_exit(self, value: int | None) -> None:
+        with self._lock:
+            self._child_exit_code = value
+
+    def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            values = dict(self._values)
+            return {
+                "schema_version": 1,
+                "request_methods": dict(sorted(self._request_methods.items())),
+                "response_error_codes": dict(sorted(self._response_error_codes.items())),
+                "requests_seen": values.get("requests_seen", 0),
+                "requests_forwarded": values.get("requests_forwarded", 0),
+                "request_mapping_rejections": values.get("request_mapping_rejections", 0),
+                "malformed_requests": values.get("malformed_requests", 0),
+                "responses_seen": values.get("responses_seen", 0),
+                "responses_forwarded": values.get("responses_forwarded", 0),
+                "response_mapping_rejections": values.get("response_mapping_rejections", 0),
+                "malformed_responses": values.get("malformed_responses", 0),
+                "child_exit_code": self._child_exit_code,
+            }
+
+
+def _json_object(raw: bytes) -> dict[str, Any] | None:
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _write_telemetry(path: Path | None, telemetry: _ProxyTelemetry) -> None:
+    if path is None:
+        return
+    if path.is_symlink():
+        raise OSError("refusing to write telemetry through symlink")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(telemetry.snapshot(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def _fixed_error(request_id: Any = None) -> bytes:
@@ -97,13 +181,14 @@ def _map_request_payload(mapper: RpcPathMapper, raw: bytes) -> tuple[bytes | Non
         return None, _fixed_error(_request_id(raw.decode("utf-8", errors="replace")))
 
 
-def run_proxy(docker: str, docker_args: list[str]) -> int:
+def run_proxy(docker: str, docker_args: list[str], telemetry_path: Path | None = None) -> int:
     mapper = RpcPathMapper.from_mounts(_docker_mounts(docker_args))
+    telemetry = _ProxyTelemetry()
     child = subprocess.Popen(
         [docker, *docker_args],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
-        stderr=None,
+        stderr=subprocess.DEVNULL,
         bufsize=0,
     )
     assert child.stdin is not None
@@ -116,11 +201,15 @@ def run_proxy(docker: str, docker_args: list[str]) -> int:
             for raw in sys.stdin.buffer:
                 if stop.is_set():
                     break
+                request = _json_object(raw)
+                telemetry.request_seen(request.get("method") if request else None)
                 payload, rejection = _map_request_payload(mapper, raw)
                 if rejection is not None:
+                    telemetry.request_rejected(malformed=request is None)
                     _write_stdout(output_lock, rejection)
                     continue
                 assert payload is not None
+                telemetry.request_forwarded()
                 child.stdin.write(payload)
                 child.stdin.flush()
         finally:
@@ -134,15 +223,22 @@ def run_proxy(docker: str, docker_args: list[str]) -> int:
             for raw in child.stdout:
                 if stop.is_set():
                     break
+                response = _json_object(raw)
+                error_code = None
+                if response and isinstance(response.get("error"), dict):
+                    error_code = response["error"].get("code")
+                telemetry.response_seen(error_code, malformed=response is None)
                 try:
                     line = raw.decode("utf-8")
                     mapped = map_json_line(mapper, line, response=True)
                     payload = (mapped + "\n").encode("utf-8")
                 except (UnicodeDecodeError, RpcPathMappingError, ValueError):
+                    telemetry.response_rejected()
                     stop.set()
                     child.terminate()
                     break
                 _write_stdout(output_lock, payload)
+                telemetry.response_forwarded()
         finally:
             stop.set()
 
@@ -155,13 +251,16 @@ def run_proxy(docker: str, docker_args: list[str]) -> int:
     if child.poll() is None:
         child.terminate()
     request_thread.join(timeout=5)
-    return child.wait()
+    exit_code = child.wait()
+    telemetry.child_exit(exit_code)
+    _write_telemetry(telemetry_path, telemetry)
+    return exit_code
 
 
 def main() -> int:
     try:
-        docker, docker_args = _split_cli(sys.argv[1:])
-        return run_proxy(docker, docker_args)
+        docker, telemetry_path, docker_args = _split_cli(sys.argv[1:])
+        return run_proxy(docker, docker_args, telemetry_path)
     except (ValueError, OSError, subprocess.SubprocessError) as exc:
         # Keep failures fixed-label and avoid echoing command/path payloads.
         print(f"feynman RPC proxy failed: {type(exc).__name__}", file=sys.stderr)

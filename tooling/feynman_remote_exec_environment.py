@@ -87,6 +87,7 @@ def expected_docker_args(job: dict[str, Any], profile: dict[str, Any]) -> list[s
         raise ValueError("runner job candidate mounts must use the canonical destination set")
     args = [
         "run",
+        "--rm",
         "--name", _container_name(job["run_id"]),
         "-i",
         "--network", "none",
@@ -120,7 +121,9 @@ def build_document(job: dict[str, Any], profile: dict[str, Any], profile_sha: st
             "program": str(Path(sys.executable).resolve()),
             "args": [
                 str(Path(__file__).with_name("feynman_rpc_path_proxy.py").resolve()),
-                "--docker", "docker", "--",
+                "--docker", "docker",
+                "--telemetry-file", str(Path(job["paths"]["evaluator_dir"]) / "rpc-proxy-telemetry.json"),
+                "--",
                 *expected_docker_args(job, profile),
             ],
         }],

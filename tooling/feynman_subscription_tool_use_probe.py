@@ -99,10 +99,14 @@ def probe(*, plan_path: Path, ordinal: int, evaluator_case_path: Path,
     if (candidate_dir / ".codex").exists() or not (candidate_dir / "candidate.py").is_file():
         raise ValueError("tool-use probe fixture is not safe or complete")
     output = smoke._prepare_output_dir(output_dir, evaluator_dir)
-    trace_path = output / "codex-trace.jsonl"
     result_path = output / "subscription-tool-use-probe.json"
     control_temp = output / ".control-tmp"
     control_temp.mkdir(mode=0o700)
+    # The model trace can contain model-authored text.  Keep it only in the
+    # ephemeral control area while extracting fixed activity signals; never
+    # turn it into a result artifact.
+    trace_path = control_temp / "codex-trace.jsonl"
+    telemetry_path = evaluator_dir / "rpc-proxy-telemetry.json"
     command = [
         smoke._resolve_executable(codex_bin), "exec", "--json", "--ephemeral",
         "--strict-config", "--ignore-rules", "--skip-git-repo-check",
@@ -125,6 +129,11 @@ def probe(*, plan_path: Path, ordinal: int, evaluator_case_path: Path,
             raise ValueError(f"Codex tool-use probe failed with exit code {completed.returncode}; category={category}; raw stderr was not preserved")
         trace = smoke._parse_trace(trace_path)
         tool_count = trace["completed_tool_item_count"]
+        telemetry: dict[str, Any] | None = None
+        if telemetry_path.is_file() and not telemetry_path.is_symlink():
+            parsed_telemetry = json.loads(telemetry_path.read_text(encoding="utf-8"))
+            if isinstance(parsed_telemetry, dict):
+                telemetry = parsed_telemetry
         result = {
             "schema_version": 1,
             "verdict": "subscription-tool-use-probe-completed",
@@ -137,6 +146,7 @@ def probe(*, plan_path: Path, ordinal: int, evaluator_case_path: Path,
                       "completed_tool_item_types": trace["completed_tool_item_types"],
                       "verdict": "tool-use-observed" if tool_count else "tool-use-not-observed",
                       "response_claim_verdict": _response_claim_verdict(trace["final_message"], tool_count)},
+            "rpc_telemetry": telemetry,
             "conversation": {"event_count": trace["event_count"], "reasoning_events_observed": trace["reasoning_events_observed"]},
             "privacy": {"process_environment_inherited": False, "raw_stderr_preserved": False,
                         "stderr_nonempty": bool(stderr_text), "raw_model_final_preserved": False,

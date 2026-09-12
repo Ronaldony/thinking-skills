@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from tooling.feynman_rpc_path_mapping import RpcPathMapper
-from tooling.feynman_rpc_path_proxy import _docker_mounts, _fixed_error, _map_request_payload, _split_cli
+from tooling.feynman_rpc_path_proxy import _ProxyTelemetry, _docker_mounts, _fixed_error, _map_request_payload, _split_cli
 
 
 class RpcPathProxyTests(unittest.TestCase):
@@ -24,11 +24,25 @@ class RpcPathProxyTests(unittest.TestCase):
         ])
 
     def test_cli_requires_explicit_docker_separator(self):
-        docker, args = _split_cli(["--docker", "docker.exe", "--", "run", "image"])
+        docker, telemetry, args = _split_cli(["--docker", "docker.exe", "--telemetry-file", "telemetry.json", "--", "run", "image"])
         self.assertEqual(docker, "docker.exe")
+        self.assertEqual(str(telemetry), "telemetry.json")
         self.assertEqual(args, ["run", "image"])
         with self.assertRaises(ValueError):
             _split_cli(["--docker", "docker.exe", "run", "image"])
+
+    def test_telemetry_contains_only_fixed_safe_counters(self):
+        telemetry = _ProxyTelemetry()
+        telemetry.request_seen("fs/readFile")
+        telemetry.request_forwarded()
+        telemetry.response_seen(-32001)
+        telemetry.response_forwarded()
+        snapshot = telemetry.snapshot()
+        self.assertEqual(snapshot["request_methods"], {"fs/readFile": 1})
+        self.assertEqual(snapshot["response_error_codes"], {"-32001": 1})
+        self.assertEqual(snapshot["requests_forwarded"], 1)
+        self.assertNotIn("path", json.dumps(snapshot))
+        self.assertNotIn("id", json.dumps(snapshot))
 
     def test_mapping_error_response_contains_no_rejected_value(self):
         payload = _fixed_error(7)

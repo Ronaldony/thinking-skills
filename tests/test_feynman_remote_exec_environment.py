@@ -29,7 +29,10 @@ class RemoteExecEnvironmentTests(unittest.TestCase):
         d=build_document(deepcopy(self.job),deepcopy(self.profile),self.profile_sha);self.assertFalse(d["include_local"]);args=d["environments"][0]["args"]
         self.assertEqual(args[args.index("--network")+1],"none");self.assertEqual(args[-4:],["codex","exec-server","--listen","stdio"])
         joined=" ".join(args)
-        for p in (self.paths["evaluator_dir"],self.paths["source_repo"],self.paths["real_home"],self.paths["control_codex_home"]):self.assertNotIn(p,joined)
+        self.assertIn(str(Path(self.paths["evaluator_dir"]) / "rpc-proxy-telemetry.json"), joined)
+        docker_args=args[args.index("--")+1:]
+        for p in (self.paths["evaluator_dir"],self.paths["source_repo"],self.paths["real_home"],self.paths["control_codex_home"]):self.assertNotIn(p," ".join(docker_args))
+        self.assertIn("--rm", docker_args)
     def test_candidate_roots_exact_rw(self):
         joined="\n".join(expected_docker_args(deepcopy(self.job),deepcopy(self.profile)))
         for k,dest in (("candidate_dir","/run/candidate"),("ephemeral_home","/run/home"),("codex_home","/run/codex"),("temp_dir","/run/temp")):
