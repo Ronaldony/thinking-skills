@@ -168,10 +168,26 @@ LF→CRLF 안내는 Windows working-tree 변환 경고이며 whitespace error는
 
 ## 저장 상태
 
-- 구현·스키마·테스트·문서만 명시적으로 stage할 예정이다.
-- 사용자 PNG 2개는 계속 untracked로 보존한다.
-- local commit: pending
-- push/remote HEAD/CI: pending
+- 구현·스키마·테스트·문서 9개 파일만 명시적으로 stage했다.
+- 사용자 PNG 2개는 계속 untracked로 보존했다.
+- 구현 commit: `9365063a299d1b92b5c74134c27397848efd0945`
+  (`feat: preflight candidate skill and tool wiring`)
+- push: `origin/feat/feynman-thinking-v0.5-draft`에 완료했다.
+- `git ls-remote`로 원격 feature branch가 같은 `9365063a...`임을 확인했다.
+- 해당 구현 commit의 최신 PR-triggered workflow 7개가 모두 success였다.
+
+| workflow | run ID |
+|---|---:|
+| validate-feynman | 34713772662 |
+| validate-feynman-subscription-readiness | 34713772692 |
+| validate-feynman-unit-diagnostic | 34713772678 |
+| validate-feynman-docker-reference | 34713772655 |
+| validate-feynman-codex-reference | 34713772672 |
+| validate-feynman-remote-exec-reference | 34713772724 |
+| validate-feynman-remote-patch-reference | 34713772685 |
+
+- 이 저장 상태를 반영하는 docs-only 마감 커밋은 이 로그 변경으로 남기며, 그
+  commit SHA와 최종 push 상태는 Git history와 최종 작업 보고에서 확인한다.
 - main merge와 force push는 하지 않는다.
 
 ## 다음 정확한 행동

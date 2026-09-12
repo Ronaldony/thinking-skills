@@ -89,7 +89,7 @@ verdict 보강은 구현·회귀 검증됐다. raw probe trace는 이제 임시 
 | FYN-03 `thinking-skills` 통합 | **완료(draft)** | feature branch + draft PR + runtime allowlist | 병합은 행동 검증 뒤 |
 | FYN-04 평가 격리 | **부분 완료 — skill/tool wiring까지 model-free 검증** | Docker/Codex remote boundary + protected `control_codex_home` + full-runner binding + two-pass exact skill exposure + fixed test wiring | actual executor command binding, repaired ordinal-1 smoke와 two-job smoke 필요 |
 | FYN-05 실행 증거/합격 판정 연결 | **완료(구조 v4)** | runner-job v3 → attestation v3 → link v3 + trace/evidence/review/gate → result v4 | 실제 model run lineage 필요 |
-| FYN-06 자동 검사/회귀 | **완료(구조)** | 353-unit diagnostic + 7 active workflows green at prior head | LOG-053 head CI와 실제 subscription-backed smoke artifact는 별도 확인 |
+| FYN-06 자동 검사/회귀 | **완료(구조)** | 353-unit diagnostic + LOG-053 구현 head의 7 workflows green | 실제 subscription-backed smoke artifact는 FYN-08에서 추가 |
 | FYN-07 평가 데이터 보강 | **개발 세트 완료** | 18 public-development cases, 20 hard failures | independent held-out final set 필요 |
 | FYN-08 통제된 신·구 비교 | **미실행** | frozen 4 conditions + two-job smoke launcher 준비 | 실제 smoke 후, explicit reasoning-effort contract migration 후 pilot |
 | FYN-09 실패 분석/규칙 축소 | **대기** | ablation 원칙 사전등록 | FYN-08 결과 필요 |
