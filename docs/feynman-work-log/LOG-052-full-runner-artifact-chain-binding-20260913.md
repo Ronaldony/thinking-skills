@@ -130,9 +130,15 @@ catalog/Docker checks true, `model_calls=0`, `authentication_used=false`.
 
 ## 저장 상태
 
-- 이번 구현과 문서 변경은 아직 commit 전이며 다음 단계에서 diff 확인 후 commit한다.
-- push 전에는 사용자 PNG 2개가 계속 untracked인지 확인한다.
-- main merge와 force push는 하지 않는다.
+- 구현·스키마·테스트·문서 9개 파일을 명시적으로 stage했고 사용자 PNG 2개는
+  계속 untracked로 보존했다.
+- commit: `29548b31cb3a289e1b91a57c8e978a890d3f1be9`
+  (`feat: bind full-runner to tools-10 artifacts`)
+- push: `origin/feat/feynman-thinking-v0.5-draft`에 완료.
+- `git ls-remote`로 remote HEAD가 동일한 `29548b3...`임을 확인했다.
+- 해당 commit의 7개 PR workflow가 모두 success로 완료됐다. 마지막
+  `validate-feynman-remote-exec-reference` run id는 `34712580542`다.
+- main merge와 force push는 하지 않았다.
 
 ## 다음 정확한 행동
 
