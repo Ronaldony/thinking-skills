@@ -111,7 +111,8 @@ Feynman evaluation을 시작하지 않는다.
 - 수정 파일: `tooling/feynman_subscription_tool_use_probe.py`,
   `tooling/feynman_rpc_path_proxy.py`, `tooling/feynman_remote_exec_environment.py`,
   관련 두 테스트 파일, 이 log 및 상태 포인터
-- local commit: `3821fcc` (`feat: instrument remote tool probe boundary`), push pending
+- implementation commit: `800493e` (`feat: instrument remote tool probe boundary`);
+  this documentation checkpoint is finalized before push
 - 미완료: 계측이 붙은 fixed one-byte model probe 1회. 목적은 RPC telemetry와
   CLI trace를 대조해 tool catalog/selection/trace 문제를 분리하는 것.
 - 다음 한 행동: 사용자가 추가 candidate-byte model probe를 명시 승인하면
