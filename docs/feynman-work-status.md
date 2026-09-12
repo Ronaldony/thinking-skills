@@ -2,7 +2,14 @@
 
 최신 실행 checkpoint: 2026-09-12, `feat/feynman-thinking-v0.5-draft` research preview.
 
-현재 종료 checkpoint는 [LOG-045](feynman-work-log/LOG-045-final-metadata-probe-diagnosis-20260912.md)이다.
+최신 checkpoint는 [LOG-046](feynman-work-log/LOG-046-three-model-runtime-and-read-boundary-20260912.md)이다.
+Luna/Terra/Sol의 별도 작업 자료를 준비했고 새 검사 환경의 control/server/job을
+0.154.0으로 정렬했다. config 경로 그룹 및 canonicalize 경로 매핑도 보정했다.
+하지만 1바이트 요청에 117-byte 응답이 돌아오는 것을 발견했다. proxy는 이제
+초과 응답을 전달 전에 거부하고 probe는 live version/guarded gate 실패 시 모델
+호출 전에 멈춘다. bundled 세 모델의 `code_mode_only` 도구 연결도 미검증이다.
+이번 추가 작업의 모델 호출은 0회이며, 아래 LOG-045 설명은 이전 checkpoint다.
+[현재 계약과 남은 작업](feynman-remote-compatibility.md)을 우선한다.
 전용 홈 인증, native Docker 경계, ordinal 1 구조 검사 및 실제 모델 턴은 통과했다.
 field-specific Windows→Linux RPC proxy, `/tmp` 초기화 수정, 그리고 documented
 `initialize`→`initialized`→`fs/readFile`→`process/start` preflight도 통과했다.

@@ -62,7 +62,8 @@ def _validate_job(job: dict[str, Any]) -> None:
 def probe(*, plan_path: Path, ordinal: int, evaluator_case_path: Path,
           runner_job_path: Path, boundary_profile_path: Path,
           remote_environment_path: Path, output_dir: Path,
-          codex_bin: str = "codex", timeout_seconds: int = 180) -> dict[str, Any]:
+          codex_bin: str = "codex", timeout_seconds: int = 180,
+          docker_config: Path | None = None) -> dict[str, Any]:
     if type(timeout_seconds) is not int or not 30 <= timeout_seconds <= 3600:
         raise ValueError("timeout_seconds must be an integer in 30..3600")
     smoke._assert_invocation_context()
@@ -80,6 +81,24 @@ def probe(*, plan_path: Path, ordinal: int, evaluator_case_path: Path,
     )
     if preflight.get("verdict") != "ready-for-local-chatgpt-session-check":
         raise ValueError("subscription structural preflight did not pass")
+    # A structural manifest and request-side len=1 alone are not readiness.
+    # These live model-free gates must pass before authentication/model work.
+    if docker_config is None:
+        raise ValueError("probe requires --docker-config for live runtime and guarded RPC gates")
+    if __package__:
+        from .feynman_rpc_version_gate import verify as verify_versions
+        from .feynman_guarded_rpc_preflight import verify as verify_guard
+    else:
+        from feynman_rpc_version_gate import verify as verify_versions
+        from feynman_guarded_rpc_preflight import verify as verify_guard
+    verify_versions(job_path=runner_job_path, profile_path=boundary_profile_path,
+                    codex_bin=codex_bin, docker_config=docker_config)
+    gate_output = smoke._prepare_output_dir(output_dir, Path(job['paths']['evaluator_dir']))
+    readiness = verify_guard(job_path=runner_job_path, profile_path=boundary_profile_path,
+                             remote_path=remote_environment_path, docker_config=docker_config,
+                             output=gate_output / 'guarded-readiness.json')
+    if readiness.get('model_tool_contract_ready') is not True:
+        raise ValueError("guarded model-facing tool contract is not ready; no model call started")
     control_home, _ = smoke._validate_control_files(job, remote_environment_path)
     auth = smoke.check_auth(control_home, codex_bin=codex_bin,
                             timeout_seconds=min(timeout_seconds, 120))
@@ -98,7 +117,10 @@ def probe(*, plan_path: Path, ordinal: int, evaluator_case_path: Path,
     evaluator_dir = smoke._directory(Path(paths["evaluator_dir"]), "evaluator directory")
     if (candidate_dir / ".codex").exists() or not (candidate_dir / "candidate.py").is_file():
         raise ValueError("tool-use probe fixture is not safe or complete")
-    output = smoke._prepare_output_dir(output_dir, evaluator_dir)
+    sentinel = candidate_dir / ".feynman-diagnostic-absent.toml"
+    if sentinel.exists() or sentinel.is_symlink():
+        raise ValueError("guarded config sentinel must be absent")
+    output = gate_output
     result_path = output / "subscription-tool-use-probe.json"
     control_temp = output / ".control-tmp"
     control_temp.mkdir(mode=0o700)
@@ -174,12 +196,15 @@ def main() -> int:
     parser.add_argument("--evaluator-case", type=Path, required=True); parser.add_argument("--runner-job", type=Path, required=True)
     parser.add_argument("--boundary-profile", type=Path, required=True); parser.add_argument("--remote-environment", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True); parser.add_argument("--codex-bin", default="codex")
+    parser.add_argument("--docker-config", type=Path, required=True,
+                        help="Dedicated Docker config for model-free readiness gates")
     parser.add_argument("--timeout-seconds", type=int, default=180); args = parser.parse_args()
     try:
         result = probe(plan_path=args.plan, ordinal=args.ordinal, evaluator_case_path=args.evaluator_case,
                        runner_job_path=args.runner_job, boundary_profile_path=args.boundary_profile,
                        remote_environment_path=args.remote_environment, output_dir=args.output_dir,
-                       codex_bin=args.codex_bin, timeout_seconds=args.timeout_seconds)
+                       codex_bin=args.codex_bin, timeout_seconds=args.timeout_seconds,
+                       docker_config=args.docker_config)
     except (ValueError, OSError, TimeoutError, subprocess.SubprocessError) as exc:
         parser.exit(2, f"error: {exc}\n")
     print(json.dumps({"verdict": result["verdict"], "probe_verdict": result["probe"]["verdict"]}))

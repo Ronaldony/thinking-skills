@@ -19,9 +19,11 @@ from typing import Any
 try:
     from .feynman_boundary_profile import validate_profile_file
     from .feynman_path_mapping import build_mounts
+    from .feynman_subscription_models import SUBSCRIPTION_WORK_MODELS
 except ImportError:
     from feynman_boundary_profile import validate_profile_file
     from feynman_path_mapping import build_mounts
+    from feynman_subscription_models import SUBSCRIPTION_WORK_MODELS
 
 PRIMARY_CONDITIONS = {"baseline", "generic", "legacy-clean", "feynman-v05"}
 SKILL_CONDITIONS = {"legacy-clean", "feynman-v05"}
@@ -222,7 +224,10 @@ def main() -> int:
     parser.add_argument("--evaluator-case", type=Path, required=True)
     parser.add_argument("--boundary-profile", type=Path, required=True)
     parser.add_argument("--run-id", required=True)
-    parser.add_argument("--model", required=True)
+    parser.add_argument("--model", required=True,
+                        help="Explicit model for a new job. Selected subscription work models: "
+                        + ", ".join(SUBSCRIPTION_WORK_MODELS)
+                        + ". No automatic fallback; existing jobs are immutable.")
     parser.add_argument("--codex-cli", required=True)
     parser.add_argument("--candidate-dir", type=Path, required=True)
     parser.add_argument("--evaluator-dir", type=Path, required=True)

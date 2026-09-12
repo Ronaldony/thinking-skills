@@ -2,7 +2,10 @@
 
 작성일: 2026-09-09 (Asia/Seoul). 이 문서는 개발 담당 Codex의 인계 자료다. 평가 대상 candidate에게 전달하지 않는다.
 
-> 최신 종료 상태(2026-09-12)는 [LOG-045](feynman-work-log/LOG-045-final-metadata-probe-diagnosis-20260912.md)를 우선한다.
+> 최신 상태(2026-09-12)는 [LOG-046](feynman-work-log/LOG-046-three-model-runtime-and-read-boundary-20260912.md)를 우선한다.
+> 세 모델의 별도 작업 자료/동일 버전 환경을 준비했고 byte-response 경계 결함을
+> 발견해 fail-closed로 보강했다. 실제 모델 호출은 추가하지 않았다. 아래는 최초
+> 인계와 LOG-045의 역사 기록이며 현재 재개 조건은 새 compatibility 문서에 있다.
 > 아래 auth gate 미확인 서술은 최초 인계 당시 기록이다. 현재 인증과 Docker/RPC의
 > 일부 경로는 확인됐지만 metadata 보정 후 마지막 승인 probe도 tool-use에 실패했다.
 > 사용자 지시로 진단을 종료했다. 자동 model retry와 baseline 실행은 하지 않는다.

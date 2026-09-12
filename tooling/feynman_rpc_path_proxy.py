@@ -10,6 +10,8 @@ rejected path in output.
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 from collections import Counter
 import json
 import os
@@ -29,6 +31,7 @@ PROXY_ERROR_CODE = -32001
 PROBE_READ_LIMIT_ENV = "FEYNMAN_PROBE_RPC_READ_LIMIT_BYTES"
 PROBE_ALLOWED_METHODS_ENV = "FEYNMAN_PROBE_RPC_ALLOWED_METHODS"
 PROBE_ALLOWED_PATH_ENV = "FEYNMAN_PROBE_RPC_ALLOWED_PATH"
+PROBE_CONFIG_PATH = "file:///run/candidate/.feynman-diagnostic-absent.toml"
 
 
 def _docker_mounts(docker_args: list[str]) -> list[dict[str, str]]:
@@ -119,6 +122,13 @@ class _ProxyTelemetry:
         with self._lock:
             self._values["probe_read_limit_applied"] += 1
 
+    def probe_response_rejected(self, decoded_bytes: int | None = None) -> None:
+        with self._lock:
+            self._values["probe_response_rejections"] += 1
+            if decoded_bytes is not None:
+                self._values["probe_rejected_read_max_bytes"] = max(
+                    self._values["probe_rejected_read_max_bytes"], decoded_bytes)
+
     def child_exit(self, value: int | None) -> None:
         with self._lock:
             self._child_exit_code = value
@@ -140,6 +150,8 @@ class _ProxyTelemetry:
                 "malformed_responses": values.get("malformed_responses", 0),
                 "probe_policy_rejections": values.get("probe_policy_rejections", 0),
                 "probe_read_limit_applied": values.get("probe_read_limit_applied", 0),
+                "probe_response_rejections": values.get("probe_response_rejections", 0),
+                "probe_rejected_read_max_bytes": values.get("probe_rejected_read_max_bytes", 0),
                 "child_exit_code": self._child_exit_code,
             }
 
@@ -195,6 +207,29 @@ def _request_id(line: str) -> Any:
     return value.get("id") if isinstance(value, dict) else None
 
 
+def _read_response_size(message: dict[str, Any]) -> int | None:
+    """Unknown request fields may be ignored by the server. Verify actual bytes.
+
+    Do not truncate silently: that would conceal an unsupported server-side
+    range contract. Reject oversized/malformed results before client exposure.
+    """
+    result = message.get("result")
+    if not isinstance(result, dict) or set(result) != {"dataBase64"}:
+        return None
+    encoded = result["dataBase64"]
+    if not isinstance(encoded, str):
+        return None
+    try:
+        return len(base64.b64decode(encoded, validate=True))
+    except (ValueError, binascii.Error):
+        return None
+
+
+def _read_response_within_limit(message: dict[str, Any], limit: int) -> bool:
+    size = _read_response_size(message)
+    return size is not None and size <= limit
+
+
 def _write_stdout(lock: threading.Lock, payload: bytes) -> None:
     with lock:
         sys.stdout.buffer.write(payload)
@@ -231,6 +266,20 @@ def _map_request_payload(
                 raw = (json.dumps(message, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
         line = raw.decode("utf-8")
         mapped = map_json_line(mapper, line)
+        if allowed_path is not None and message and message.get("method") == "environmentConfig/read":
+            params = json.loads(mapped).get("params", {})
+            # Config RPCs can read whole files, so they are NOT metadata-only.
+            # Only the diagnostic absent-file sentinel is allowed. Its absence
+            # must also be checked before a guarded session is started.
+            if params.get("cwd") not in {"/run/candidate", "file:///run/candidate"}:
+                return None, _fixed_error(message.get("id"))
+            for field in ("configPaths", "requirementsPaths"):
+                groups = params.get(field, [])
+                if not isinstance(groups, list) or any(
+                    not isinstance(group, list) or any(path != PROBE_CONFIG_PATH for path in group)
+                    for group in groups
+                ):
+                    return None, _fixed_error(message.get("id"))
         if allowed_path is not None and message and message.get("method") in {"fs/getMetadata", "fs/readFile"}:
             mapped_message = json.loads(mapped)
             mapped_path = mapped_message.get("params", {}).get("path") if isinstance(mapped_message, dict) else None
@@ -272,6 +321,8 @@ def run_proxy(
     assert child.stdout is not None
     output_lock = threading.Lock()
     stop = threading.Event()
+    pending_lock = threading.Lock()
+    pending_methods: dict[str | int, str] = {}
 
     def forward_requests() -> None:
         try:
@@ -293,6 +344,9 @@ def run_proxy(
                     _write_stdout(output_lock, rejection)
                     continue
                 assert payload is not None
+                if request and type(request.get("id")) in {str, int}:
+                    with pending_lock:
+                        pending_methods[request["id"]] = request.get("method")
                 telemetry.request_forwarded()
                 child.stdin.write(payload)
                 child.stdin.flush()
@@ -312,6 +366,16 @@ def run_proxy(
                 if response and isinstance(response.get("error"), dict):
                     error_code = response["error"].get("code")
                 telemetry.response_seen(error_code, malformed=response is None)
+                request_method = None
+                if response and type(response.get("id")) in {str, int}:
+                    with pending_lock:
+                        request_method = pending_methods.pop(response["id"], None)
+                if (read_limit is not None and request_method == "fs/readFile"
+                        and response is not None and "error" not in response
+                        and not _read_response_within_limit(response, read_limit)):
+                    telemetry.probe_response_rejected(_read_response_size(response))
+                    _write_stdout(output_lock, _fixed_error(response.get("id")))
+                    continue
                 try:
                     line = raw.decode("utf-8")
                     mapped = map_json_line(mapper, line, response=True)

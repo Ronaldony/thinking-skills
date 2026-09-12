@@ -13,6 +13,33 @@ from tooling import feynman_subscription_tool_use_probe as probe
 
 
 class ToolUseProbeTests(unittest.TestCase):
+    def _gate_attempt(self, *, versions_error=None, guard_report=None):
+        job = {'job': {'case_id': 'tools-10', 'condition_id': 'feynman-v05',
+                       'repeat': 1, 'has_followup': False},
+               'paths': {'evaluator_dir': 'evaluator'}}
+        with patch.object(probe.smoke, '_assert_invocation_context'), \
+             patch.object(probe.smoke, '_regular', side_effect=lambda p, label: p), \
+             patch.object(probe.smoke, '_load', return_value=job), \
+             patch.object(probe, 'preflight_files', return_value={'verdict': 'ready-for-local-chatgpt-session-check'}), \
+             patch.object(probe.smoke, '_prepare_output_dir', return_value=Path('output')), \
+             patch('tooling.feynman_rpc_version_gate.verify', side_effect=versions_error), \
+             patch('tooling.feynman_guarded_rpc_preflight.verify', return_value=guard_report), \
+             patch.object(probe.smoke, 'check_auth') as auth, \
+             patch.object(probe.subprocess, 'run') as model:
+            with self.assertRaises(ValueError):
+                probe.probe(plan_path=Path('plan'), ordinal=1, evaluator_case_path=Path('case'),
+                            runner_job_path=Path('job'), boundary_profile_path=Path('profile'),
+                            remote_environment_path=Path('remote'), output_dir=Path('output'),
+                            docker_config=Path('empty'))
+            auth.assert_not_called()
+            model.assert_not_called()
+
+    def test_runtime_gate_failure_prevents_auth_and_model(self):
+        self._gate_attempt(versions_error=ValueError('mismatched versions'))
+
+    def test_incomplete_tool_binding_prevents_auth_and_model(self):
+        self._gate_attempt(guard_report={'model_tool_contract_ready': False})
+
     def test_contract_is_fixed_and_does_not_embed_evaluation_prompt(self):
         self.assertIn("exactly once", probe.PROBE_PROMPT)
         self.assertIn("candidate.py", probe.PROBE_PROMPT)

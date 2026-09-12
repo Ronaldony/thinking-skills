@@ -29,10 +29,15 @@ REQUEST_PATH_FIELDS: dict[str, frozenset[str]] = {
     "command/exec": frozenset({"cwd"}),
     "process/exec": frozenset({"cwd"}),
     "process/start": frozenset({"cwd"}),
+    "environmentConfig/read": frozenset({"cwd"}),
+    "fs/canonicalize": frozenset({"path"}),
     "fs/getMetadata": frozenset({"path"}),
     "fs/readFile": frozenset({"path"}),
     "fs/writeFile": frozenset({"path"}),
     "resources/read": frozenset({"uri"}),
+}
+REQUEST_PATH_ARRAY_FIELDS = {
+    "environmentConfig/read": frozenset({"configPaths", "requirementsPaths"}),
 }
 RESPONSE_PATH_FIELDS = frozenset({"cwd", "path", "uri"})
 
@@ -116,6 +121,8 @@ class RpcPathMapper:
         else:
             value = PurePosixPath(path)
             parts = _posix_key(value)
+        if not value.is_absolute() or ".." in value.parts:
+            raise RpcPathMappingError("host path must be absolute and traversal-free")
         for host, container in self.mounts:
             host_parts = _windows_key(host) if isinstance(host, PureWindowsPath) else _posix_key(host)
             relative = _relative(parts, host_parts)
@@ -175,6 +182,18 @@ class RpcPathMapper:
             value = mapped_params.get(field)
             if isinstance(value, str) and (value.startswith("file:") or value.startswith("/") or _is_windows_path(value)):
                 mapped_params[field] = self.host_to_container(value)
+        for field in REQUEST_PATH_ARRAY_FIELDS.get(method, ()):
+            if field not in mapped_params:
+                continue
+            values = mapped_params[field]
+            if not isinstance(values, list):
+                raise RpcPathMappingError("declared path array must be a list")
+            mapped_values = []
+            for item in values:
+                if not isinstance(item, list) or not all(isinstance(x, str) for x in item):
+                    raise RpcPathMappingError("config path groups must contain only paths")
+                mapped_values.append([self.host_to_container(x) for x in item])
+            mapped_params[field] = mapped_values
         mapped["params"] = mapped_params
         return mapped
 

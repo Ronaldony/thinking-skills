@@ -1,7 +1,12 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 2026-09-12 재개 우선순위: 아래 최초 인계보다
-> `docs/feynman-work-log/LOG-045-final-metadata-probe-diagnosis-20260912.md`를 우선한다.
+> `docs/feynman-work-log/LOG-046-three-model-runtime-and-read-boundary-20260912.md`와
+> `docs/feynman-remote-compatibility.md`를 우선한다. Luna/Terra/Sol 추가 및 새 환경의
+> control/server 0.154.0 정렬은 완료했다. 새로 발견한 blocker는 요청 len=1에도
+> 117-byte 응답이 반환된다는 점과 code-mode 도구 계약 미검증이다. 초과 응답은
+> proxy가 차단하고, probe의 live gate는 모델 호출 전 실패하도록 연결했다.
+> 아래는 LOG-045까지의 역사이며 같은 model command를 반복하지 않는다.
 > 인증·Docker canary·ordinal 1 모델 턴은 통과했으나 task는 실패했다.
 > field-specific proxy가 Windows file URI를 Linux 경로로 변환하고 model-free task/skill
 > read 및 harmless process까지 통과했다. repaired ordinal 1 transport는 완료됐지만

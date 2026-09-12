@@ -37,6 +37,8 @@ def summarize(message: dict) -> dict:
         'missing_field': field.group(1) if field else None,
         'unknown_method_or_variant': any(s in diagnostic for s in ('unknown method', 'method not found', 'unknown variant')),
         'invalid_type': 'invalid type' in diagnostic,
+        'empty_config_paths': 'at least one config or requirements path is required' in diagnostic,
+        'platform_path_rejected': "is invalid on 'linux'" in diagnostic,
     }
 
 
@@ -52,14 +54,18 @@ def run(job_path: Path, profile: Path, remote: Path, docker_config: Path, output
         if telemetry.exists() or telemetry.is_symlink():
             raise ValueError('diagnostic telemetry must be new')
     candidate = _file_uri(job['paths']['candidate_dir'])
+    sentinel = Path(job['paths']['candidate_dir']) / '.feynman-diagnostic-absent.toml'
+    if sentinel.exists() or sentinel.is_symlink():
+        raise ValueError('guarded config sentinel must be absent')
     cases = [
         ('config-empty', 'environmentConfig/read', {}),
         ('config-host-cwd', 'environmentConfig/read', {'cwd': candidate}),
         ('config-container-cwd', 'environmentConfig/read', {'cwd': 'file:///run/candidate'}),
-        ('config-host-config-paths', 'environmentConfig/read', {'cwd': candidate, 'configPaths': []}),
-        ('config-container-config-paths', 'environmentConfig/read', {'cwd': 'file:///run/candidate', 'configPaths': []}),
         ('config-host-empty-path-lists', 'environmentConfig/read', {'cwd': candidate, 'configPaths': [], 'requirementsPaths': []}),
-        ('config-container-empty-path-lists', 'environmentConfig/read', {'cwd': 'file:///run/candidate', 'configPaths': [], 'requirementsPaths': []}),
+        ('config-negative-flat-list', 'environmentConfig/read', {'cwd': candidate, 'configPaths': [candidate + '/.feynman-diagnostic-absent.toml'], 'requirementsPaths': []}),
+        ('config-path-group', 'environmentConfig/read', {'cwd': candidate, 'configPaths': [[candidate + '/.feynman-diagnostic-absent.toml']], 'requirementsPaths': []}),
+        ('config-container-path-group', 'environmentConfig/read', {'cwd': 'file:///run/candidate', 'configPaths': [['file:///run/candidate/.feynman-diagnostic-absent.toml']], 'requirementsPaths': []}),
+        ('requirements-path-group', 'environmentConfig/read', {'cwd': candidate, 'configPaths': [], 'requirementsPaths': [[candidate + '/.feynman-diagnostic-absent.toml']]}),
         ('metadata-existing', 'fs/getMetadata', {'path': candidate + '/candidate.py'}),
         ('metadata-missing', 'fs/getMetadata', {'path': candidate + '/.feynman-diagnostic-absent'}),
         ('canonicalize-candidate', 'fs/canonicalize', {'path': candidate}),
