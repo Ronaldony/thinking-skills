@@ -34,6 +34,19 @@ PROBE_PROMPT = (
 EXPECTED_CASE_ID = "tools-10"
 
 
+def _response_claim_verdict(final_message: str, tool_count: int) -> str:
+    """Compare fixed probe claims with trace activity without retaining text."""
+    claims_used = final_message.strip() == "PROBE_TOOL_USED"
+    claims_no_tool = final_message.strip() == "PROBE_NO_TOOL"
+    if tool_count:
+        return "trace-tool-use-observed"
+    if claims_used:
+        return "text-claim-without-tool-trace"
+    if claims_no_tool:
+        return "explicit-no-tool-claim"
+    return "no-tool-trace-unclassified-response"
+
+
 def _validate_job(job: dict[str, Any]) -> None:
     info = job.get("job")
     if not isinstance(info, dict):
@@ -122,7 +135,8 @@ def probe(*, plan_path: Path, ordinal: int, evaluator_case_path: Path,
             "probe": {"prompt_contract": "fixed-one-byte-filesystem-read", "model_request_is_evaluation": False,
                       "candidate_task_or_rubric_sent": False, "completed_tool_item_count": tool_count,
                       "completed_tool_item_types": trace["completed_tool_item_types"],
-                      "verdict": "tool-use-observed" if tool_count else "tool-use-not-observed"},
+                      "verdict": "tool-use-observed" if tool_count else "tool-use-not-observed",
+                      "response_claim_verdict": _response_claim_verdict(trace["final_message"], tool_count)},
             "conversation": {"event_count": trace["event_count"], "reasoning_events_observed": trace["reasoning_events_observed"]},
             "privacy": {"process_environment_inherited": False, "raw_stderr_preserved": False,
                         "stderr_nonempty": bool(stderr_text), "raw_model_final_preserved": False,

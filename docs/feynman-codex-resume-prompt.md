@@ -1,7 +1,7 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 2026-09-12 재개 우선순위: 아래 최초 인계보다
-> `docs/feynman-work-log/LOG-038-tool-discovery-probe-contract-20260912.md`를 우선한다.
+> `docs/feynman-work-log/LOG-039-tool-probe-no-trace-20260912.md`를 우선한다.
 > 인증·Docker canary·ordinal 1 모델 턴은 통과했으나 task는 실패했다.
 > field-specific proxy가 Windows file URI를 Linux 경로로 변환하고 model-free task/skill
 > read 및 harmless process까지 통과했다. repaired ordinal 1 transport는 완료됐지만
@@ -9,9 +9,10 @@
 > schema v2는 이를 `blocked-no-candidate-tool-call`로 기록한다. 동일 evaluation
 > command를 반복하지 말고, 먼저 implementation+tests가 고정된 비평가적
 > `feynman_subscription_tool_use_probe.py`를 canonical remote environment와
-> ChatGPT auth gate 뒤 한 번만 실행해 model tool discovery를 분리 진단한다. 단,
-> candidate.py 첫 1 byte가 official ChatGPT-subscription Codex tool result로
-> 전달되는 actual probe는 별도 명시 user approval을 기다린다.
+> ChatGPT auth gate 뒤 한 번 실행했다. 현재 Codex 0.154.0에서 auth/process는
+> 성공했지만 tool item은 0개였고 `PROBE_TOOL_USED` 텍스트만 반환됐다. 이는
+> execution evidence가 아니며 response-vs-trace verdict로 차단한다. 다른
+> model/version 선택이나 remote-tool exposure 조사는 별도 결정 없이는 하지 않는다.
 > baseline은 미실행이며,
 > 이 결함이 해결되기 전에는 추가 모델 호출을 하지 않는다.
 

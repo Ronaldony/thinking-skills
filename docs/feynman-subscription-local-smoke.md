@@ -217,7 +217,9 @@ tool to read one byte of `candidate.py`; it does not send `task.txt`, a rubric,
 evaluator evidence, or development context.
 
 The probe distinguishes `tool-use-observed` from `tool-use-not-observed` using
-only completed trace item counts/types. Neither result is Feynman-skill
+only completed trace item counts/types. It also records whether the fixed
+response claimed `PROBE_TOOL_USED` without a matching trace; text claims never
+override missing tool evidence. Neither result is Feynman-skill
 performance evidence, test evidence, or permission to start baseline. Treat
 it only as a control-plane diagnosis, then record the result before deciding
 whether a new frozen evaluation contract is warranted.

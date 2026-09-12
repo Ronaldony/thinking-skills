@@ -2,7 +2,7 @@
 
 최신 실행 checkpoint: 2026-09-12, `feat/feynman-thinking-v0.5-draft` research preview.
 
-현재 재개 지점은 [LOG-038](feynman-work-log/LOG-038-tool-discovery-probe-contract-20260912.md)이다.
+현재 재개 지점은 [LOG-039](feynman-work-log/LOG-039-tool-probe-no-trace-20260912.md)이다.
 전용 홈 인증, native Docker 경계, ordinal 1 구조 검사 및 실제 모델 턴은 통과했다.
 field-specific Windows→Linux RPC proxy, `/tmp` 초기화 수정, 그리고 documented
 `initialize`→`initialized`→`fs/readFile`→`process/start` preflight도 통과했다.
@@ -10,9 +10,11 @@ field-specific Windows→Linux RPC proxy, `/tmp` 초기화 수정, 그리고 doc
 서술한 final answer는 trusted execution evidence가 아니므로 execution-required task
 성공으로 승격할 수 없다. result schema v2가 이 상태를
 `blocked-no-candidate-tool-call`로 명시한다. frozen evaluation과 분리된 fixed
-filesystem tool-discovery probe는 구현·회귀 검증됐지만, candidate.py의 1 byte를
-공식 ChatGPT-subscription Codex tool result로 보내는 실제 호출에는 별도 사용자
-승인이 필요해 미실행이다. baseline은 아직 실행하지 않는다.
+filesystem tool-discovery probe는 현재 Codex 0.154.0에서 실제 실행됐지만,
+`tool-use-not-observed`였다. trace에는 completed candidate tool item이 0개인데
+고정 `PROBE_TOOL_USED` 텍스트만 있어 실행 증거가 아니다. response-vs-trace 불일치
+verdict 보강은 구현·회귀 검증됐지만 아직 commit checkpoint 전이다. baseline은 아직
+실행하지 않는다.
 
 이 문서는 구현 상태와 행동 성능 주장을 분리해 기록한다. 구조 검사나 integration smoke가 성공하더라도 실제 Feynman skill의 인과적 성능 향상으로 해석하지 않는다.
 

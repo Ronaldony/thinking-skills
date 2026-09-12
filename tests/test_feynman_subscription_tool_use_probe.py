@@ -27,6 +27,11 @@ class ToolUseProbeTests(unittest.TestCase):
             with self.subTest(field=field):
                 with self.assertRaises(ValueError): probe._validate_job(invalid)
 
+    def test_text_claim_cannot_override_missing_tool_trace(self):
+        self.assertEqual(probe._response_claim_verdict("PROBE_TOOL_USED", 0), "text-claim-without-tool-trace")
+        self.assertEqual(probe._response_claim_verdict("PROBE_TOOL_USED", 1), "trace-tool-use-observed")
+        self.assertEqual(probe._response_claim_verdict("PROBE_NO_TOOL", 0), "explicit-no-tool-claim")
+
     def test_parse_trace_reports_no_tool_without_retaining_message(self):
         with tempfile.TemporaryDirectory() as raw:
             trace = Path(raw) / "trace.jsonl"
