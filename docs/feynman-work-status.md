@@ -7,8 +7,9 @@
 그러나 candidate는 작업을 완료하지 못했고 Linux exec-server가 Windows file URI를
 20건 거부했다. field-specific Windows→Linux RPC proxy, `/tmp` 초기화 수정,
 그리고 documented `initialize`→`initialized`→`fs/readFile`→`process/start`
-preflight가 모두 통과했다. 다음은 repaired ordinal 1 smoke이며 baseline은 아직
-실행하지 않는다.
+preflight가 모두 통과했다. repaired ordinal 1 transport는 완료됐으나 tool event와
+fixture 변경이 없어 execution-required task 성공이 아니다. baseline은 아직 실행하지
+않는다.
 
 이 문서는 구현 상태와 행동 성능 주장을 분리해 기록한다. 구조 검사나 integration smoke가 성공하더라도 실제 Feynman skill의 인과적 성능 향상으로 해석하지 않는다.
 

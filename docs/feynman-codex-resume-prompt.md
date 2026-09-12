@@ -4,7 +4,9 @@
 > `docs/feynman-work-log/LOG-036-model-free-rpc-preflight-green-20260912.md`를 우선한다.
 > 인증·Docker canary·ordinal 1 모델 턴은 통과했으나 task는 실패했다.
 > field-specific proxy가 Windows file URI를 Linux 경로로 변환하고 model-free task/skill
-> read 및 harmless process까지 통과했다. 다음은 repaired ordinal 1 smoke다.
+> read 및 harmless process까지 통과했다. repaired ordinal 1 transport는 완료됐지만
+> model이 tool을 호출하지 않아 execution-required task 성공이 아니다. 다음은 모델
+> 재실행이 아닌 tool/skill context 및 candidate task contract의 model-free 진단이다.
 > baseline은 미실행이며,
 > 이 결함이 해결되기 전에는 추가 모델 호출을 하지 않는다.
 

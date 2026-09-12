@@ -98,4 +98,51 @@ the existing dedicated login only, preserve the control home, and retain the
 executor's no-API-key/no-raw-auth-output protections. Main merge and force push
 are not performed.
 
-Commit/push status at log creation: pending.
+## Repaired ordinal-1 smoke result
+
+After this model-free preflight passed, the repaired ordinal-1 integration
+smoke was run exactly once with the existing dedicated ChatGPT subscription
+login and the frozen `gpt-5.6-luna` runner job. The canonical environment was
+staged into the otherwise empty `<control-home>\environments.toml` only for the
+run, then moved to a Temp archive. The dedicated control home no longer
+contains `environments.toml` after the run.
+
+The executor returned `subscription-codex-smoke-exec-completed`, requested
+`gpt-5.6-luna`, and emitted six trace events. Its privacy record confirms no
+inherited process environment, no raw stderr preservation, no raw auth-status
+preservation, and no control-home serialization. No re-login or API-key path
+was used.
+
+This transport result is **not** a task success:
+
+- Trace metadata contains no command/MCP/function tool event.
+- The fixture's `candidate.py` and `test_candidate.py` SHA-256 values remain
+  equal to the preregistered fixture hashes.
+- The evaluator contract requires execution.
+- A trace item tagged `error` was classified separately: its redacted content
+  is an informational skills-context-budget notice, not an exec-server,
+  sandbox, URI, or authentication failure. It does not change the no-tool/no-
+  fixture-change result.
+
+Thus the repaired remote path is available, but this single model turn did not
+perform the required candidate work. Do not promote it to green smoke, infer
+Feynman effectiveness, or start ordinal 2 baseline. The next diagnostic unit
+must examine the model-facing tool/skill context and frozen candidate task
+contract without repeating this model command first.
+
+The exited exact smoke container was then removed:
+
+```powershell
+docker --config <empty-docker-config> rm -f feynman-tool-subscription-gpt-5.6-luna-20260910-ordinal-1-feynman-v05
+```
+
+Final `docker ps -a --filter name=feynman` returned no entries. The removed
+container was a completed diagnostic artifact; images, volumes, evaluation
+files, control-home files, and non-Feynman containers were preserved.
+
+## Commit/push
+
+The implementation/preflight checkpoint was committed and pushed before the
+smoke as `7036167e40ff49f559098561d0888744b8bcda40`
+(`test: verify native exec server RPC preflight`). This log update is pending a
+documentation checkpoint. Main merge and force push were not performed.
