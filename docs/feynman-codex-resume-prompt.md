@@ -1,6 +1,14 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 2026-09-13 최신 재개 지점: 먼저
+> `docs/feynman-work-log/LOG-050-luna-transient-mcp-tool-use-observed-20260913.md`를
+> 읽어라. 승인된 Luna 비평가 probe 1회에서 실제 완료 `mcp_tool_call` 1개와
+> `trace-tool-use-observed`를 확인했다. 반복 모델 실행, Terra/Sol fallback,
+> baseline/frozen evaluation은 시작하지 마라. 다음은 고정 read,
+> `candidate.py` 한정 write, network-disabled Docker 고정 test를 제공하는 최소
+> full-runner MCP contract의 model-free 설계·구현이다.
+>
+> 이전 model-free checkpoint:
 > `docs/feynman-work-log/LOG-049-transient-mcp-exec-preflight-20260913.md`를 읽어라.
 > `codex exec --ignore-user-config`와 11개 CLI override로 protected login home의
 > config를 수정하지 않는 bounded MCP diagnostic route를 구현했다. Luna 실제

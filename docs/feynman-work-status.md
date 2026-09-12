@@ -2,7 +2,15 @@
 
 최신 실행 checkpoint: 2026-09-13, `feat/feynman-thinking-v0.5-draft` research preview.
 
-최신 checkpoint는 [LOG-049](feynman-work-log/LOG-049-transient-mcp-exec-preflight-20260913.md)이다.
+최신 checkpoint는 [LOG-050](feynman-work-log/LOG-050-luna-transient-mcp-tool-use-observed-20260913.md)이다.
+승인된 Luna 비평가 bounded-MCP probe를 정확히 1회 실행했고, 실제 trace에서 완료된
+`mcp_tool_call` 1개와 `trace-tool-use-observed`를 확인했다. ChatGPT subscription
+auth gate는 통과했고 API key는 사용하지 않았다. raw trace/final/tool payload는
+보존하지 않았으며 자동 retry나 다른 모델 fallback도 없었다. 이 결과는 one-byte
+diagnostic의 model-facing tool 노출 성공이며 full tools-10 실행 또는 Feynman 성능
+근거가 아니다. 다음은 full-runner 최소 MCP contract의 model-free 구현이다.
+
+이전 checkpoint인 [LOG-049](feynman-work-log/LOG-049-transient-mcp-exec-preflight-20260913.md)에서는
 protected control home은 향후 인증 출처로만 보존하고,
 `codex exec --ignore-user-config`와 고정 CLI override로 bounded MCP를 주입하는 diagnostic
 경로를 구현했다. Luna의 실제 구조/version/Docker security/catalog 전체

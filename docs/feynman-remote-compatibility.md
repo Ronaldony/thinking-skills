@@ -69,6 +69,19 @@ Luna 실제 plan/job에서 `--preflight-only` 전체 체인이 통과했다.
 smoke executor의 canonical config 계약은 변경하지 않았다. 다음은 새 승인을 받은
 비평가 Luna model probe 1회다. 이는 full tools-10 runner 호환성이나 성능 증거가 아니다.
 
+## LOG-050 결과 — Luna model-facing MCP tool-use 성공
+
+새 승인 아래 비평가 probe를 정확히 1회 실행했다. ChatGPT subscription auth gate와
+모든 LOG-049 preflight가 통과했고, Luna trace에 완료된 `mcp_tool_call` item 1개가
+기록됐다. 응답 주장도 `trace-tool-use-observed`와 일치했다. raw trace, tool
+arguments/output, model final은 보존하지 않았고 자동 retry나 모델 fallback은 없었다.
+
+이로써 local transient STDIO MCP의 model-facing 노출 blocker는 해소됐다. 하지만
+현재 도구는 no-argument 고정 1-byte read뿐이다. Docker 내부 remote MCP, candidate
+write, test 실행, frozen job 성공은 아직 검증되지 않았다. 다음은 이 성공을 full
+evaluation 권한으로 과장하지 않고 목적별 최소 도구 contract를 model-free로 만드는
+것이다.
+
 새 Docker image:
 
 - 태그: `feynman-codex-remote:0.154.0-20260912`
