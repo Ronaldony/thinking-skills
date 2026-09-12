@@ -1,5 +1,14 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
+> 2026-09-13 재개 우선순위: 아래 최초 인계보다
+> `docs/feynman-work-log/LOG-047-bounded-read-adapter-and-mcp-catalog-20260913.md`,
+> `docs/feynman-remote-compatibility.md`를 먼저 읽어라. LOG-047의 one-byte
+> diagnostic MCP adapter와 blank-home App Server catalog 노출은 model-free
+> 확인됐지만 canonical remote exec/model tool-use의 성공은 아니다.
+> 다음은 동일 격리 image와 `/run/codex`에서 remote catalog를 model-free로 확인하는
+> 것이다. one-byte adapter를 tools-10 평가나 baseline에 사용하지 마라.
+> 그 뒤에야 제한 model probe를 별도로 검토한다. 자동 retry는 금지한다.
+>
 > 2026-09-12 재개 우선순위: 아래 최초 인계보다
 > `docs/feynman-work-log/LOG-046-three-model-runtime-and-read-boundary-20260912.md`와
 > `docs/feynman-remote-compatibility.md`를 우선한다. Luna/Terra/Sol 추가 및 새 환경의

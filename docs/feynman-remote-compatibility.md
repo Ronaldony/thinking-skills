@@ -27,6 +27,21 @@
 home/codex-home/temp와 runner-job/environments를 새로 만들었다. baseline fixture는
 만들지 않았고 실제 모델 호출은 0회다. 기존 Luna 자료와 보호된 로그인 홈은 보존했다.
 
+## LOG-047 후속 checkpoint — model-free bounded adapter
+
+기존 `fs/readFile`은 요청에 `offset/len`을 넣어도 117-byte `dataBase64` 응답을
+반환했다. 이 사실을 감추기 위해 자르지 않고 기존 proxy의 fail-closed 응답 검사를
+유지한다. 별도로 Docker image에 `feynman_read_probe_byte` MCP STDIO adapter를
+넣었다. adapter는 실행 환경이 고정한 candidate 파일만 열고 실제 1 byte를 최대
+1회 읽으며, 모델이 path/offset/command를 넘길 수 없다. 로컬 protocol과
+network-disabled Docker protocol이 통과했다.
+
+blank `CODEX_HOME`의 Codex 0.154.0 App Server `mcpServerStatus/list`에서도 이
+도구가 catalog에 보이는 것을 model-free로 확인했다. 이는 local App Server
+catalog 계약의 증거이지 기존 exec-server remote 환경이나 실제 모델 tool-use의
+증거가 아니다. 이 diagnostic adapter는 tools-10 전체 평가 실행기에 연결하지
+않는다.
+
 새 Docker image:
 
 - 태그: `feynman-codex-remote:0.154.0-20260912`

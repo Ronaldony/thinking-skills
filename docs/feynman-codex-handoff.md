@@ -2,7 +2,10 @@
 
 작성일: 2026-09-09 (Asia/Seoul). 이 문서는 개발 담당 Codex의 인계 자료다. 평가 대상 candidate에게 전달하지 않는다.
 
-> 최신 상태(2026-09-12)는 [LOG-046](feynman-work-log/LOG-046-three-model-runtime-and-read-boundary-20260912.md)를 우선한다.
+> 최신 상태(2026-09-13)는 [LOG-047](feynman-work-log/LOG-047-bounded-read-adapter-and-mcp-catalog-20260913.md)를 우선한다.
+> LOG-047에서 one-byte diagnostic MCP adapter와 blank-home App Server catalog
+> 노출을 model-free로 확인했지만 canonical remote exec/model tool-use는 아직
+> 검증하지 않았다.
 > 세 모델의 별도 작업 자료/동일 버전 환경을 준비했고 byte-response 경계 결함을
 > 발견해 fail-closed로 보강했다. 실제 모델 호출은 추가하지 않았다. 아래는 최초
 > 인계와 LOG-045의 역사 기록이며 현재 재개 조건은 새 compatibility 문서에 있다.
