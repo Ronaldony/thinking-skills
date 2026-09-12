@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from tooling.feynman_mcp_catalog_preflight import summarize_status
+from pathlib import Path
+import tempfile
+from unittest.mock import patch
+
+from tooling.feynman_mcp_catalog_preflight import run, summarize_status
 
 
 class McpCatalogPreflightTests(unittest.TestCase):
@@ -31,6 +35,18 @@ class McpCatalogPreflightTests(unittest.TestCase):
     def test_invalid_catalog_is_rejected(self):
         with self.assertRaises(ValueError):
             summarize_status({"data": [{"name": "bounded", "tools": []}]})
+
+    def test_transient_mode_rejects_nonempty_codex_home_before_launch(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            home = root / "home"
+            home.mkdir()
+            (home / "config.toml").write_text("model='x'", encoding="utf-8")
+            with patch("tooling.feynman_mcp_catalog_preflight.subprocess.Popen") as launch:
+                with self.assertRaises(ValueError):
+                    run(codex_bin="codex", codex_home=home, output=root / "out.json",
+                        config_overrides=("mcp_servers.x.enabled=true",))
+            launch.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -14,7 +14,12 @@ from pathlib import Path
 import queue
 import subprocess
 import threading
-from typing import Any
+from typing import Any, Sequence
+
+try:
+    from .feynman_transient_bounded_mcp import BoundedMcpOverride, build_bounded_mcp_override
+except ImportError:
+    from feynman_transient_bounded_mcp import BoundedMcpOverride, build_bounded_mcp_override
 
 
 SYSTEM_ENV_KEYS = ("PATH", "SystemRoot", "WINDIR", "ComSpec", "PATHEXT", "TEMP", "TMP")
@@ -66,13 +71,21 @@ def summarize_status(result: Any, *, target_tool: str = TARGET_TOOL) -> dict[str
     return {"server_count": len(servers), "servers": servers}
 
 
-def run(*, codex_bin: str, codex_home: Path, output: Path, timeout_seconds: int = 20) -> dict[str, Any]:
+def run(*, codex_bin: str, codex_home: Path, output: Path, timeout_seconds: int = 20,
+        config_overrides: Sequence[str] = (),
+        override_lineage: dict[str, object] | None = None) -> dict[str, Any]:
     if output.exists() or output.is_symlink():
         raise ValueError("catalog preflight output must be new")
     if not codex_home.is_dir() or codex_home.is_symlink():
         raise ValueError("catalog preflight requires an existing isolated CODEX_HOME directory")
+    if config_overrides and any(codex_home.iterdir()):
+        raise ValueError("transient catalog preflight requires an empty isolated CODEX_HOME")
+    command = [codex_bin, "app-server"]
+    for value in config_overrides:
+        command.extend(("-c", value))
+    command.append("--stdio")
     process = subprocess.Popen(
-        [codex_bin, "app-server", "--stdio"],
+        command,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -128,6 +141,11 @@ def run(*, codex_bin: str, codex_home: Path, output: Path, timeout_seconds: int 
             "target_tool_visible": any(
                 server["target_tool_present"] for server in catalog["servers"]
             ),
+            "configuration": {
+                "transport": "cli-overrides" if config_overrides else "codex-home-config",
+                "user_config_file_required": not bool(config_overrides),
+                "override_lineage": override_lineage,
+            },
         }
     finally:
         try:
@@ -151,10 +169,23 @@ def main() -> None:
     parser.add_argument("--codex-home", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--timeout-seconds", type=int, default=20)
+    parser.add_argument("--node-bin", type=Path)
+    parser.add_argument("--bounded-adapter", type=Path)
+    parser.add_argument("--candidate", type=Path)
     args = parser.parse_args()
     try:
+        transient_values = (args.node_bin, args.bounded_adapter, args.candidate)
+        if any(value is not None for value in transient_values) and not all(
+                value is not None for value in transient_values):
+            raise ValueError("transient MCP mode requires node, adapter, and candidate together")
+        override: BoundedMcpOverride | None = None
+        if all(value is not None for value in transient_values):
+            override = build_bounded_mcp_override(
+                node_bin=args.node_bin, adapter=args.bounded_adapter, candidate=args.candidate)
         report = run(codex_bin=args.codex_bin, codex_home=args.codex_home,
-                     output=args.output, timeout_seconds=args.timeout_seconds)
+                     output=args.output, timeout_seconds=args.timeout_seconds,
+                     config_overrides=override.values if override else (),
+                     override_lineage=override.sanitized_lineage() if override else None)
     except (OSError, ValueError, queue.Empty, subprocess.SubprocessError) as exc:
         parser.exit(2, "error: MCP catalog preflight failed: " + type(exc).__name__ + "\n")
     print(json.dumps(report))

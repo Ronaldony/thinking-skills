@@ -24,27 +24,102 @@ class ToolUseProbeTests(unittest.TestCase):
              patch.object(probe.smoke, '_prepare_output_dir', return_value=Path('output')), \
              patch('tooling.feynman_rpc_version_gate.verify', side_effect=versions_error), \
              patch('tooling.feynman_guarded_rpc_preflight.verify', return_value=guard_report), \
+             patch.object(probe, 'verify_mcp_catalog') as catalog, \
              patch.object(probe.smoke, 'check_auth') as auth, \
              patch.object(probe.subprocess, 'run') as model:
             with self.assertRaises(ValueError):
                 probe.probe(plan_path=Path('plan'), ordinal=1, evaluator_case_path=Path('case'),
                             runner_job_path=Path('job'), boundary_profile_path=Path('profile'),
                             remote_environment_path=Path('remote'), output_dir=Path('output'),
-                            docker_config=Path('empty'))
+                            docker_config=Path('empty'), node_bin=Path('node'),
+                            bounded_adapter=Path('adapter'))
             auth.assert_not_called()
+            catalog.assert_not_called()
             model.assert_not_called()
 
     def test_runtime_gate_failure_prevents_auth_and_model(self):
         self._gate_attempt(versions_error=ValueError('mismatched versions'))
 
-    def test_incomplete_tool_binding_prevents_auth_and_model(self):
+    def test_incomplete_legacy_security_controls_prevent_auth_and_model(self):
         self._gate_attempt(guard_report={'model_tool_contract_ready': False})
+
+    def test_legacy_full_read_blocker_is_not_reused_by_transient_route(self):
+        report = {"checks": {name: True for name in probe.LEGACY_GUARD_SECURITY_CHECKS}}
+        report["checks"]["response_is_one_byte"] = False
+        self.assertTrue(probe._legacy_guard_security_ready(report))
+
+    def test_transient_catalog_requires_exact_lineage_and_empty_schema(self):
+        lineage = {
+            "server_name": "feynman_bounded_read",
+            "tool_name": "feynman_read_probe_byte",
+            "adapter_sha256": "a",
+            "candidate_sha256": "b",
+        }
+        report = {
+            "verdict": "bounded-mcp-catalog-visible",
+            "model_calls": 0,
+            "authentication_used": False,
+            "target_tool_visible": True,
+            "configuration": {
+                "transport": "cli-overrides",
+                "user_config_file_required": False,
+                "override_lineage": lineage,
+            },
+            "catalog": {"server_count": 1, "servers": [{
+                "name": "feynman_bounded_read",
+                "tool_names": ["feynman_read_probe_byte"],
+                "target_tool_present": True,
+                "target_tool_has_empty_input_schema": True,
+            }]},
+        }
+        self.assertTrue(probe._transient_catalog_ready(report, lineage))
+        self.assertFalse(probe._transient_catalog_ready(
+            report, {**lineage, "candidate_sha256": "c"}))
+
+    def test_probe_command_ignores_user_config_but_injects_transient_mcp(self):
+        class Override:
+            @staticmethod
+            def cli_args():
+                return ["-c", "mcp_servers.bounded.required=true"]
+
+        command = probe._probe_command(
+            executable="codex", model="gpt-5.6-luna",
+            candidate_dir=Path("candidate"), transient_mcp=Override())
+        self.assertIn("--ignore-user-config", command)
+        self.assertIn("mcp_servers.bounded.required=true", command)
+        self.assertIn("gpt-5.6-luna", command)
+
+    def test_preflight_only_option_is_exposed(self):
+        source = Path(probe.__file__).read_text(encoding="utf-8")
+        self.assertIn('parser.add_argument("--preflight-only", action="store_true")', source)
+
+    def test_diagnostic_control_home_uses_evaluator_remote_not_control_config(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            control = root / "control"
+            evaluator = root / "evaluator"
+            candidate = root / "candidate"
+            for directory in (control, evaluator, candidate):
+                directory.mkdir()
+            remote = evaluator / "environments.toml"
+            remote.write_text("version = 1", encoding="utf-8")
+            job = {"paths": {
+                "control_codex_home": str(control),
+                "evaluator_dir": str(evaluator),
+                "candidate_dir": str(candidate),
+            }}
+            self.assertEqual(
+                probe._validate_diagnostic_control_home(job, remote), control.absolute())
+            with self.assertRaises(ValueError):
+                probe._validate_diagnostic_control_home(
+                    job, control / "environments.toml")
 
     def test_contract_is_fixed_and_does_not_embed_evaluation_prompt(self):
         self.assertIn("exactly once", probe.PROBE_PROMPT)
-        self.assertIn("candidate.py", probe.PROBE_PROMPT)
+        self.assertIn("feynman_read_probe_byte", probe.PROBE_PROMPT)
         self.assertNotIn("test_candidate.py", probe.PROBE_PROMPT)
-        self.assertNotIn("feynman", probe.PROBE_PROMPT.lower())
+        self.assertNotIn("rubric", probe.PROBE_PROMPT.lower())
+        self.assertNotIn("explain", probe.PROBE_PROMPT.lower())
 
     def test_only_repaired_feynman_fixture_is_accepted(self):
         accepted = {"job": {"case_id": "tools-10", "condition_id": "feynman-v05", "repeat": 1, "has_followup": False}}
