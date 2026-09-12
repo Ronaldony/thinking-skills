@@ -10,8 +10,9 @@ field-specific Windows→Linux RPC proxy, `/tmp` 초기화 수정, 그리고 doc
 서술한 final answer는 trusted execution evidence가 아니므로 execution-required task
 성공으로 승격할 수 없다. result schema v2가 이 상태를
 `blocked-no-candidate-tool-call`로 명시한다. frozen evaluation과 분리된 fixed
-filesystem tool-discovery probe는 구현·회귀 검증됐지만 아직 실제 구독 호출은 하지
-않았다. baseline은 아직 실행하지 않는다.
+filesystem tool-discovery probe는 구현·회귀 검증됐지만, candidate.py의 1 byte를
+공식 ChatGPT-subscription Codex tool result로 보내는 실제 호출에는 별도 사용자
+승인이 필요해 미실행이다. baseline은 아직 실행하지 않는다.
 
 이 문서는 구현 상태와 행동 성능 주장을 분리해 기록한다. 구조 검사나 integration smoke가 성공하더라도 실제 Feynman skill의 인과적 성능 향상으로 해석하지 않는다.
 

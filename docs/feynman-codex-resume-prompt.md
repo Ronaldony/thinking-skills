@@ -9,7 +9,9 @@
 > schema v2는 이를 `blocked-no-candidate-tool-call`로 기록한다. 동일 evaluation
 > command를 반복하지 말고, 먼저 implementation+tests가 고정된 비평가적
 > `feynman_subscription_tool_use_probe.py`를 canonical remote environment와
-> ChatGPT auth gate 뒤 한 번만 실행해 model tool discovery를 분리 진단한다.
+> ChatGPT auth gate 뒤 한 번만 실행해 model tool discovery를 분리 진단한다. 단,
+> candidate.py 첫 1 byte가 official ChatGPT-subscription Codex tool result로
+> 전달되는 actual probe는 별도 명시 user approval을 기다린다.
 > baseline은 미실행이며,
 > 이 결함이 해결되기 전에는 추가 모델 호출을 하지 않는다.
 

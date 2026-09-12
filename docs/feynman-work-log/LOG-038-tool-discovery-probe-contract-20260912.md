@@ -4,7 +4,8 @@
 - 시작 HEAD: `d69aa2e2754d8da2a216a5595f043aadcb04fb7d`
 - branch: `feat/feynman-thinking-v0.5-draft`
 - shell/OS: Windows PowerShell / Windows
-- 상태: **구현·model-free 검증 완료, 실제 ChatGPT-subscription probe 미실행**
+- 상태: **구현·model-free 검증 완료; 실제 ChatGPT-subscription probe는 명시적
+  payload approval 대기**
 
 ## 배경과 판단
 
@@ -65,10 +66,23 @@ git diff --check
 
 ## 미완료와 다음 행동
 
-- 실제 probe는 아직 실행하지 않았다. dedicated eval home의 canonical
-  `environments.toml`이 현재 의도적으로 부재하므로, 실행 전 canonical generator로
-  해당 file만 생성하고 preflight가 bytes를 검증해야 한다. login/session file은
-  열람·복사하지 않는다.
-- core implementation의 commit/push는 이 log 작성 시점에 pending이다. 다음 행동은
-  이 probe contract/test/log를 feature branch에 commit·push한 뒤, canonical remote
-  environment를 복원하여 **한 번만** actual non-evaluative probe를 실행하는 것이다.
+- core implementation/test/log checkpoint: `4f6e90f42af745688d8815dadafa6b6bad112394`
+  (`test: add subscription tool discovery probe`). 일반 commit 및
+  `git push origin feat/feynman-thinking-v0.5-draft`가 성공했고 `git ls-remote --heads`
+  가 같은 SHA를 반환했다. main 병합이나 force push는 하지 않았다.
+- actual run 직전 `feynman_remote_exec_environment.py --job <ordinal-1 job>
+  --boundary-profile <root profile> --output <dedicated control home>/environments.toml`와
+  `--validate`를 실행했다. 두 exit code는 0이었고 canonical file 존재만 확인했다.
+  generator/validator 출력은 보존하지 않았으며 model request와 credential file read는
+  없었다.
+- 이어서 fixed probe를 한 번 실행하려 했으나, 실행 승인 단계에서 모델에게 candidate
+  code의 1 byte가 remote tool result로 전달되는 것에 대한 별도 명시 user approval이
+  필요하다는 정책 거부가 발생했다. process는 시작하지 않았고 model request, auth
+  file read, Docker container 생성은 없었다. 우회하지 않았다.
+- 제가 생성한 exact canonical `environments.toml`은 즉시 삭제했고 file 부재를
+  확인했다. dedicated eval home의 login/session contents는 열람·복사하지 않았다.
+- 다음 행동(사용자 승인 필요): 아래 고정 범위만 명시 승인하면 canonical environment를
+  다시 생성·검증한 뒤 **한 번만** probe를 실행한다. payload는 candidate workspace의
+  `candidate.py` 첫 1 byte뿐이며 목적지는 공식 ChatGPT-subscription Codex model
+  request다. `task.txt`, rubric, handoff/development conversation, credential/session,
+  environment, raw tool output은 전달·보존하지 않는다.
