@@ -237,6 +237,7 @@ jobs:
           CONTROL_TEMP="$ROOT/control-temp"
           CODEX_BIN="$ROOT/control-node/node_modules/.bin/codex"
           MOCK_PID=""
+          INSPECT_PID=""
           CONTAINER_NAME="$(python - "$ROOT/remote-environment-check.json" <<'PY'
           import json, sys
           print(json.load(open(sys.argv[1], encoding='utf-8'))['container_name'])
@@ -246,6 +247,9 @@ jobs:
           cleanup() {
             if [ -n "$MOCK_PID" ]; then
               kill "$MOCK_PID" 2>/dev/null || true
+            fi
+            if [ -n "$INSPECT_PID" ]; then
+              kill "$INSPECT_PID" 2>/dev/null || true
             fi
             docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
           }
@@ -307,6 +311,17 @@ jobs:
 
           CONTROL_PATH="$ROOT/control-node/node_modules/.bin:/usr/local/bin:/usr/bin:/bin"
           PROMPT="$(cat "$CANDIDATE/task.txt")"
+          (
+            for _ in $(seq 1 200); do
+              if docker inspect "$CONTAINER_NAME" > "$ROOT/tool-container-inspect.json.tmp" 2>/dev/null; then
+                mv "$ROOT/tool-container-inspect.json.tmp" "$ROOT/tool-container-inspect.json"
+                exit 0
+              fi
+              sleep 0.05
+            done
+            exit 1
+          ) &
+          INSPECT_PID=$!
           env -i \
             HOME="$CONTROL_HOME" \
             CODEX_HOME="$CONTROL_CODEX_HOME" \
@@ -319,6 +334,9 @@ jobs:
               -C "$CANDIDATE" \
               "$PROMPT" \
             > "$ROOT/codex-trace.jsonl"
+          wait "$INSPECT_PID"
+          INSPECT_PID=""
+          test -s "$ROOT/tool-container-inspect.json"
 
           test -f "$CANDIDATE/remote-patch-proof.txt"
           test "$(cat "$CANDIDATE/remote-patch-proof.txt")" = "REMOTE_PATCH_OK"
@@ -327,8 +345,6 @@ jobs:
           grep -q 'REMOTE_EXEC_REFERENCE_OK' "$ROOT/codex-trace.jsonl"
           grep -q 'command_execution' "$ROOT/codex-trace.jsonl"
 
-          docker inspect "$CONTAINER_NAME" > "$ROOT/tool-container-inspect.json"
-          test "$(docker inspect "$CONTAINER_NAME" --format '{{.State.ExitCode}}')" = "0"
           python tooling/feynman_docker_reference_inspect.py \
             --profile "$ROOT/boundary-profile.json" \
             --inspect "$ROOT/tool-container-inspect.json" \

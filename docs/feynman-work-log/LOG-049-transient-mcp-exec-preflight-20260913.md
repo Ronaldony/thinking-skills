@@ -146,7 +146,47 @@ git diff --check
 - compileall: exit 0
 - diff check: exit 0
 - 구현 commit: `49214500ba959a14b0063d4d72bbb9a0e452fa4b`
-- 이 문서 commit/push는 작성 시점 pending이며 완료 보고에서 원격 SHA를 확인한다.
+- 문서 commit: `d6603c233cc82c6ab1551661a6fc06170233db98`
+- 첫 push 뒤 local/remote feature SHA가 모두 `d6603c233cc82c6ab1551661a6fc06170233db98`로 일치했다.
+
+## push 후 CI reference 결함과 수정
+
+`d6603c2`의 PR workflow를 한 번 조회했을 때 core/docker/subscription/unit은
+success였고 codex/remote-exec은 진행 중, remote-patch는 failure였다. 실패 로그의
+마지막 원문은 다음과 같았다.
+
+```text
+Error: No such object: feynman-tool-mock-remote-patch-34706244436-1
+```
+
+최근 remote-patch 실행 5개가 같은 failure였으므로 이번 MCP 변경의 회귀가 아니라
+기존 reference 수집 순서의 결함으로 판정했다. canonical remote Docker 명령은
+종료 시 정리되는 `--rm`을 사용하지만 workflow가 `codex exec` 종료 뒤 컨테이너를
+inspect하려 했다.
+
+production의 `--rm`을 제거하지 않았다. 대신 다음 두 workflow에서 Codex 실행 전에
+bounded inspect watcher를 시작해 컨테이너가 실행 중일 때 atomic snapshot을 저장하고,
+종료 뒤 컨테이너 존재를 가정한 `docker inspect`를 제거했다.
+
+- `.github/workflows/validate-feynman-remote-patch-reference.yml`
+- `.github/workflows/validate-feynman-remote-exec-reference.yml`
+
+watcher는 최대 200회, 0.05초 간격으로 이름이 고정된 컨테이너를 찾는다. 성공 시
+임시 JSON을 rename하고 종료하며, 시간 내 snapshot을 못 얻으면 workflow가 실패한다.
+cleanup은 watcher PID도 종료한다.
+
+검증:
+
+```powershell
+python -c "import yaml, pathlib; [yaml.safe_load(pathlib.Path(p).read_text(encoding='utf-8')) for p in ['.github/workflows/validate-feynman-remote-patch-reference.yml','.github/workflows/validate-feynman-remote-exec-reference.yml']]; print('yaml-ok')"
+python -m unittest discover -s tests
+git diff --check
+```
+
+- YAML parse: `yaml-ok`
+- full: `340 tests OK, 10 skipped`
+- diff check: exit 0
+- workflow fix commit/push 및 새 CI 결과는 이 기록 이후 완료한다.
 
 ## 미완료와 다음 한 행동
 
