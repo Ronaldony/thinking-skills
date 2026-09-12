@@ -107,6 +107,15 @@ def probe(*, plan_path: Path, ordinal: int, evaluator_case_path: Path,
     # turn it into a result artifact.
     trace_path = control_temp / "codex-trace.jsonl"
     telemetry_path = evaluator_dir / "rpc-proxy-telemetry.json"
+    probe_env = smoke._safe_exec_env(control_home, control_temp)
+    # These fixed, non-secret controls are consumed only by the host-side RPC
+    # proxy.  The canonical Docker command uses env -i, so candidate processes
+    # never receive them.
+    probe_env.update({
+        "FEYNMAN_PROBE_RPC_READ_LIMIT_BYTES": "1",
+        "FEYNMAN_PROBE_RPC_ALLOWED_METHODS": "fs/readFile",
+        "FEYNMAN_PROBE_RPC_ALLOWED_PATH": "/run/candidate/candidate.py",
+    })
     command = [
         smoke._resolve_executable(codex_bin), "exec", "--json", "--ephemeral",
         "--strict-config", "--ignore-rules", "--skip-git-repo-check",
@@ -119,7 +128,7 @@ def probe(*, plan_path: Path, ordinal: int, evaluator_case_path: Path,
     try:
         with trace_path.open("w", encoding="utf-8") as trace_handle:
             completed = subprocess.run(
-                command, input=PROBE_PROMPT, env=smoke._safe_exec_env(control_home, control_temp),
+                command, input=PROBE_PROMPT, env=probe_env,
                 cwd=candidate_dir, text=True, encoding="utf-8", errors="replace",
                 stdout=trace_handle, stderr=subprocess.PIPE, timeout=timeout_seconds, check=False,
             )

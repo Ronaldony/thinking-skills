@@ -67,6 +67,40 @@ class RpcPathProxyTests(unittest.TestCase):
             "id": 9,
         })
 
+    def test_probe_policy_forces_one_byte_candidate_read(self):
+        mapper = RpcPathMapper.from_mounts([
+            {"source": r"C:\DevWorks\candidate", "destination": "/run/candidate", "access": "rw"},
+        ])
+        raw = json.dumps({
+            "jsonrpc": "2.0", "id": 3, "method": "fs/readFile",
+            "params": {"path": r"C:\DevWorks\candidate\candidate.py", "offset": 99, "len": 999},
+        }).encode("utf-8")
+        child_payload, client_error = _map_request_payload(
+            mapper, raw, read_limit=1,
+            allowed_methods=frozenset({"initialize", "initialized", "fs/readFile"}),
+            allowed_path="/run/candidate/candidate.py",
+        )
+        self.assertIsNone(client_error)
+        request = json.loads(child_payload)
+        self.assertEqual(request["params"]["path"], r"/run/candidate/candidate.py")
+        self.assertEqual(request["params"]["offset"], 0)
+        self.assertEqual(request["params"]["len"], 1)
+
+    def test_probe_policy_rejects_non_filesystem_method(self):
+        mapper = RpcPathMapper.from_mounts([
+            {"source": r"C:\DevWorks\candidate", "destination": "/run/candidate", "access": "rw"},
+        ])
+        raw = json.dumps({"jsonrpc": "2.0", "id": 4, "method": "process/start", "params": {}}).encode("utf-8")
+        child_payload, client_error = _map_request_payload(
+            mapper, raw, read_limit=1,
+            allowed_methods=frozenset({"initialize", "initialized", "fs/readFile"}),
+            allowed_path="/run/candidate/candidate.py",
+        )
+        self.assertIsNone(child_payload)
+        self.assertEqual(json.loads(client_error)["error"], {
+            "code": -32001, "message": "RPC path mapping rejected",
+        })
+
 
 if __name__ == "__main__":
     unittest.main()

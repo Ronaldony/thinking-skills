@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -25,6 +26,9 @@ except ImportError:
 
 
 PROXY_ERROR_CODE = -32001
+PROBE_READ_LIMIT_ENV = "FEYNMAN_PROBE_RPC_READ_LIMIT_BYTES"
+PROBE_ALLOWED_METHODS_ENV = "FEYNMAN_PROBE_RPC_ALLOWED_METHODS"
+PROBE_ALLOWED_PATH_ENV = "FEYNMAN_PROBE_RPC_ALLOWED_PATH"
 
 
 def _docker_mounts(docker_args: list[str]) -> list[dict[str, str]]:
@@ -107,6 +111,14 @@ class _ProxyTelemetry:
         with self._lock:
             self._values["response_mapping_rejections"] += 1
 
+    def probe_policy_rejected(self) -> None:
+        with self._lock:
+            self._values["probe_policy_rejections"] += 1
+
+    def probe_read_limit_applied(self) -> None:
+        with self._lock:
+            self._values["probe_read_limit_applied"] += 1
+
     def child_exit(self, value: int | None) -> None:
         with self._lock:
             self._child_exit_code = value
@@ -126,6 +138,8 @@ class _ProxyTelemetry:
                 "responses_forwarded": values.get("responses_forwarded", 0),
                 "response_mapping_rejections": values.get("response_mapping_rejections", 0),
                 "malformed_responses": values.get("malformed_responses", 0),
+                "probe_policy_rejections": values.get("probe_policy_rejections", 0),
+                "probe_read_limit_applied": values.get("probe_read_limit_applied", 0),
                 "child_exit_code": self._child_exit_code,
             }
 
@@ -145,6 +159,18 @@ def _write_telemetry(path: Path | None, telemetry: _ProxyTelemetry) -> None:
         raise OSError("refusing to write telemetry through symlink")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(telemetry.snapshot(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _probe_policy_from_env() -> tuple[int | None, frozenset[str] | None, str | None]:
+    """Read only fixed probe controls; never serialize the process environment."""
+    raw_limit = os.environ.get(PROBE_READ_LIMIT_ENV)
+    raw_methods = os.environ.get(PROBE_ALLOWED_METHODS_ENV)
+    allowed_path = os.environ.get(PROBE_ALLOWED_PATH_ENV)
+    if raw_limit is None and raw_methods is None and allowed_path is None:
+        return None, None, None
+    if raw_limit != "1" or raw_methods != "fs/readFile" or allowed_path != "/run/candidate/candidate.py":
+        raise ValueError("invalid fixed probe RPC policy")
+    return 1, frozenset({"initialize", "initialized", "fs/readFile"}), allowed_path
 
 
 def _fixed_error(request_id: Any = None) -> bytes:
@@ -171,17 +197,55 @@ def _write_stdout(lock: threading.Lock, payload: bytes) -> None:
         sys.stdout.buffer.flush()
 
 
-def _map_request_payload(mapper: RpcPathMapper, raw: bytes) -> tuple[bytes | None, bytes | None]:
+def _map_request_payload(
+    mapper: RpcPathMapper,
+    raw: bytes,
+    *,
+    read_limit: int | None = None,
+    allowed_methods: frozenset[str] | None = None,
+    allowed_path: str | None = None,
+) -> tuple[bytes | None, bytes | None]:
     """Return either a child request or a fixed error for the control client."""
     try:
+        message = _json_object(raw)
+        if allowed_methods is not None:
+            if message is None or message.get("method") not in allowed_methods:
+                return None, _fixed_error(message.get("id") if message else None)
+        if message and message.get("method") == "fs/readFile":
+            params = dict(message.get("params")) if isinstance(message.get("params"), dict) else {}
+            if allowed_path is not None:
+                path = params.get("path")
+                # This check occurs after path mapping below as well; the
+                # host-side value is never echoed in an error response.
+                if path is not None and not isinstance(path, str):
+                    return None, _fixed_error(message.get("id"))
+            if read_limit is not None:
+                params["offset"] = 0
+                params["len"] = read_limit
+                message = dict(message)
+                message["params"] = params
+                raw = (json.dumps(message, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
         line = raw.decode("utf-8")
         mapped = map_json_line(mapper, line)
+        if allowed_path is not None and message and message.get("method") == "fs/readFile":
+            mapped_message = json.loads(mapped)
+            mapped_path = mapped_message.get("params", {}).get("path") if isinstance(mapped_message, dict) else None
+            if mapped_path not in {allowed_path, "file://" + allowed_path}:
+                return None, _fixed_error(message.get("id"))
         return (mapped + "\n").encode("utf-8"), None
     except (UnicodeDecodeError, RpcPathMappingError, ValueError):
         return None, _fixed_error(_request_id(raw.decode("utf-8", errors="replace")))
 
 
-def run_proxy(docker: str, docker_args: list[str], telemetry_path: Path | None = None) -> int:
+def run_proxy(
+    docker: str,
+    docker_args: list[str],
+    telemetry_path: Path | None = None,
+    *,
+    read_limit: int | None = None,
+    allowed_methods: frozenset[str] | None = None,
+    allowed_path: str | None = None,
+) -> int:
     mapper = RpcPathMapper.from_mounts(_docker_mounts(docker_args))
     telemetry = _ProxyTelemetry()
     child = subprocess.Popen(
@@ -203,7 +267,14 @@ def run_proxy(docker: str, docker_args: list[str], telemetry_path: Path | None =
                     break
                 request = _json_object(raw)
                 telemetry.request_seen(request.get("method") if request else None)
-                payload, rejection = _map_request_payload(mapper, raw)
+                if request and request.get("method") == "fs/readFile" and read_limit is not None:
+                    telemetry.probe_read_limit_applied()
+                if allowed_methods is not None and (request is None or request.get("method") not in allowed_methods):
+                    telemetry.probe_policy_rejected()
+                payload, rejection = _map_request_payload(
+                    mapper, raw, read_limit=read_limit,
+                    allowed_methods=allowed_methods, allowed_path=allowed_path,
+                )
                 if rejection is not None:
                     telemetry.request_rejected(malformed=request is None)
                     _write_stdout(output_lock, rejection)
@@ -260,7 +331,11 @@ def run_proxy(docker: str, docker_args: list[str], telemetry_path: Path | None =
 def main() -> int:
     try:
         docker, telemetry_path, docker_args = _split_cli(sys.argv[1:])
-        return run_proxy(docker, docker_args, telemetry_path)
+        read_limit, allowed_methods, allowed_path = _probe_policy_from_env()
+        return run_proxy(
+            docker, docker_args, telemetry_path,
+            read_limit=read_limit, allowed_methods=allowed_methods, allowed_path=allowed_path,
+        )
     except (ValueError, OSError, subprocess.SubprocessError) as exc:
         # Keep failures fixed-label and avoid echoing command/path payloads.
         print(f"feynman RPC proxy failed: {type(exc).__name__}", file=sys.stderr)
