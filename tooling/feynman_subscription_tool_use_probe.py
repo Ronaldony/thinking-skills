@@ -113,7 +113,7 @@ def probe(*, plan_path: Path, ordinal: int, evaluator_case_path: Path,
     # never receive them.
     probe_env.update({
         "FEYNMAN_PROBE_RPC_READ_LIMIT_BYTES": "1",
-        "FEYNMAN_PROBE_RPC_ALLOWED_METHODS": "fs/readFile",
+        "FEYNMAN_PROBE_RPC_ALLOWED_METHODS": "environmentConfig/read,fs/getMetadata,fs/readFile",
         "FEYNMAN_PROBE_RPC_ALLOWED_PATH": "/run/candidate/candidate.py",
     })
     command = [

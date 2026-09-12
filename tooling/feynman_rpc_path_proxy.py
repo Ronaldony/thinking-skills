@@ -168,9 +168,13 @@ def _probe_policy_from_env() -> tuple[int | None, frozenset[str] | None, str | N
     allowed_path = os.environ.get(PROBE_ALLOWED_PATH_ENV)
     if raw_limit is None and raw_methods is None and allowed_path is None:
         return None, None, None
-    if raw_limit != "1" or raw_methods != "fs/readFile" or allowed_path != "/run/candidate/candidate.py":
+    if (raw_limit != "1"
+            or raw_methods != "environmentConfig/read,fs/getMetadata,fs/readFile"
+            or allowed_path != "/run/candidate/candidate.py"):
         raise ValueError("invalid fixed probe RPC policy")
-    return 1, frozenset({"initialize", "initialized", "fs/readFile"}), allowed_path
+    return 1, frozenset({
+        "initialize", "initialized", "environmentConfig/read", "fs/getMetadata", "fs/readFile",
+    }), allowed_path
 
 
 def _fixed_error(request_id: Any = None) -> bytes:
@@ -227,10 +231,19 @@ def _map_request_payload(
                 raw = (json.dumps(message, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
         line = raw.decode("utf-8")
         mapped = map_json_line(mapper, line)
-        if allowed_path is not None and message and message.get("method") == "fs/readFile":
+        if allowed_path is not None and message and message.get("method") in {"fs/getMetadata", "fs/readFile"}:
             mapped_message = json.loads(mapped)
             mapped_path = mapped_message.get("params", {}).get("path") if isinstance(mapped_message, dict) else None
-            if mapped_path not in {allowed_path, "file://" + allowed_path}:
+            metadata_root = allowed_path.rsplit("/", 1)[0]
+            allowed_metadata_paths = {metadata_root, "file://" + metadata_root}
+            is_metadata_path = isinstance(mapped_path, str) and (
+                mapped_path in allowed_metadata_paths
+                or mapped_path.startswith(metadata_root + "/")
+                or mapped_path.startswith("file://" + metadata_root + "/")
+            )
+            is_read_path = mapped_path in {allowed_path, "file://" + allowed_path}
+            if (message.get("method") == "fs/readFile" and not is_read_path) or (
+                    message.get("method") == "fs/getMetadata" and not is_metadata_path):
                 return None, _fixed_error(message.get("id"))
         return (mapped + "\n").encode("utf-8"), None
     except (UnicodeDecodeError, RpcPathMappingError, ValueError):

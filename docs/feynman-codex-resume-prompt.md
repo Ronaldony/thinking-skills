@@ -1,7 +1,7 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 2026-09-12 재개 우선순위: 아래 최초 인계보다
-> `docs/feynman-work-log/LOG-042-probe-read-scope-guard-20260912.md`를 우선한다.
+> `docs/feynman-work-log/LOG-044-guarded-probe-metadata-discovery-20260912.md`를 우선한다.
 > 인증·Docker canary·ordinal 1 모델 턴은 통과했으나 task는 실패했다.
 > field-specific proxy가 Windows file URI를 Linux 경로로 변환하고 model-free task/skill
 > read 및 harmless process까지 통과했다. repaired ordinal 1 transport는 완료됐지만
@@ -16,11 +16,11 @@
 > 이후 raw trace 비보존과 payload-free RPC telemetry를 구현했고, 새 telemetry를
 > 사용한 model-free native preflight도 통과했다. probe는 proxy에서
 > `candidate.py`, `offset=0`, `len=1`, `fs/readFile`만 허용하도록 강제된다.
-> 사용자가 추가 one-byte model probe 1회를 승인했다. plan 파일명 오류 두 건은
-> model 전 validation에서 끝났고, exact frozen plan 시도는 `.ps1` launcher의
-> Windows `WinError 193`으로 model turn 전에 끝났다. resolver는 safe `.cmd`
-> companion을 선택하도록 수정·검증됐다. 새 output directory에서 고정 probe를
-> 1회 실행한다. baseline은 미실행이다.
+> Windows `.ps1` launcher와 auth gate의 `.cmd` companion 처리를 수정한 뒤
+> actual probe 1회는 성공했다. 그러나 original guard가 `environmentConfig/read`와
+> `fs/getMetadata`를 차단해 candidate 본문 read 전에 종료됐다. metadata-only
+> discovery를 candidate mount로 제한해 허용하고 model-free preflight를 통과했다.
+> 추가 probe는 새 사용자 지시가 있을 때만 1회 실행한다. baseline은 미실행이다.
 
 아래 구분선 뒤의 내용을 새 **개발 담당** Codex 세션에 붙여넣는다. 평가 candidate나 baseline 프롬프트로 사용하지 않는다.
 

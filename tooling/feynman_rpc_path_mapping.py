@@ -29,6 +29,7 @@ REQUEST_PATH_FIELDS: dict[str, frozenset[str]] = {
     "command/exec": frozenset({"cwd"}),
     "process/exec": frozenset({"cwd"}),
     "process/start": frozenset({"cwd"}),
+    "fs/getMetadata": frozenset({"path"}),
     "fs/readFile": frozenset({"path"}),
     "fs/writeFile": frozenset({"path"}),
     "resources/read": frozenset({"uri"}),

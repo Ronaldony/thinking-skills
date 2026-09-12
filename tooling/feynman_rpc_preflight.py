@@ -176,19 +176,25 @@ def run_preflight(
         if initialized["error_code"] is not None or set(initialized["result_keys"]) != {"environmentInfo", "sessionId"}:
             raise ValueError("exec-server initialize did not return the expected metadata")
         process.stdin.write(_notification("initialized", {}))
-        process.stdin.write(_request(2, "fs/readFile", {"path": candidate_uri + "/task.txt", "offset": 0, "len": 1}))
+        process.stdin.write(_request(2, "fs/getMetadata", {"path": candidate_uri + "/candidate.py"}))
         process.stdin.flush()
-        task_read, _, echoed = _wait_for(received, request_id=2, timeout=timeout_seconds)
+        metadata, _, echoed = _wait_for(received, request_id=2, timeout=timeout_seconds)
+        host_echo = host_echo or echoed
+        if metadata["error_code"] is not None or {"dataBase64", "content", "text"} & set(metadata["result_keys"]):
+            raise ValueError("candidate metadata did not return metadata-only data")
+        process.stdin.write(_request(3, "fs/readFile", {"path": candidate_uri + "/task.txt", "offset": 0, "len": 1}))
+        process.stdin.flush()
+        task_read, _, echoed = _wait_for(received, request_id=3, timeout=timeout_seconds)
         host_echo = host_echo or echoed
         if task_read["error_code"] is not None or task_read["result_keys"] != ["dataBase64"]:
             raise ValueError("candidate task read did not return dataBase64")
-        process.stdin.write(_request(3, "fs/readFile", {"path": candidate_uri + "/" + SKILL_RELATIVE_PATH, "offset": 0, "len": 1}))
+        process.stdin.write(_request(4, "fs/readFile", {"path": candidate_uri + "/" + SKILL_RELATIVE_PATH, "offset": 0, "len": 1}))
         process.stdin.flush()
-        skill_read, _, echoed = _wait_for(received, request_id=3, timeout=timeout_seconds)
+        skill_read, _, echoed = _wait_for(received, request_id=4, timeout=timeout_seconds)
         host_echo = host_echo or echoed
         if skill_read["error_code"] is not None or skill_read["result_keys"] != ["dataBase64"]:
             raise ValueError("candidate skill read did not return dataBase64")
-        process.stdin.write(_request(4, "process/start", {
+        process.stdin.write(_request(5, "process/start", {
             "processId": "feynman-preflight-skill-readable",
             "argv": ["sh", "-c", "test -r .agents/skills/feynman-thinking/SKILL.md"],
             "cwd": candidate_uri,
@@ -198,7 +204,7 @@ def run_preflight(
             "arg0": None,
         }))
         process.stdin.flush()
-        started, _, echoed = _wait_for(received, request_id=4, timeout=timeout_seconds)
+        started, _, echoed = _wait_for(received, request_id=5, timeout=timeout_seconds)
         host_echo = host_echo or echoed
         if started["error_code"] is not None or "processId" not in started["result_keys"]:
             raise ValueError("preflight process did not start")
@@ -215,6 +221,7 @@ def run_preflight(
             "checks": {
                 "remote_environment_valid": True,
                 "initialize_metadata": True,
+                "candidate_metadata_read": True,
                 "candidate_task_read": True,
                 "feynman_skill_read": True,
                 "skill_readability_process": True,

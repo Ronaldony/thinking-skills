@@ -101,6 +101,22 @@ class RpcPathProxyTests(unittest.TestCase):
             "code": -32001, "message": "RPC path mapping rejected",
         })
 
+    def test_probe_policy_allows_candidate_mount_metadata_only(self):
+        mapper = RpcPathMapper.from_mounts([
+            {"source": r"C:\DevWorks\candidate", "destination": "/run/candidate", "access": "rw"},
+        ])
+        policy = frozenset({"initialize", "initialized", "environmentConfig/read", "fs/getMetadata", "fs/readFile"})
+        raw = json.dumps({
+            "jsonrpc": "2.0", "id": 5, "method": "fs/getMetadata",
+            "params": {"path": r"C:\DevWorks\candidate\test_candidate.py"},
+        }).encode("utf-8")
+        child_payload, client_error = _map_request_payload(
+            mapper, raw, read_limit=1, allowed_methods=policy,
+            allowed_path="/run/candidate/candidate.py",
+        )
+        self.assertIsNone(client_error)
+        self.assertEqual(json.loads(child_payload)["params"]["path"], "/run/candidate/test_candidate.py")
+
 
 if __name__ == "__main__":
     unittest.main()

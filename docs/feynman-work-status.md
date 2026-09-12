@@ -2,7 +2,7 @@
 
 최신 실행 checkpoint: 2026-09-12, `feat/feynman-thinking-v0.5-draft` research preview.
 
-현재 재개 지점은 [LOG-043](feynman-work-log/LOG-043-windows-codex-launcher-recovery-20260912.md)이다.
+현재 재개 지점은 [LOG-044](feynman-work-log/LOG-044-guarded-probe-metadata-discovery-20260912.md)이다.
 전용 홈 인증, native Docker 경계, ordinal 1 구조 검사 및 실제 모델 턴은 통과했다.
 field-specific Windows→Linux RPC proxy, `/tmp` 초기화 수정, 그리고 documented
 `initialize`→`initialized`→`fs/readFile`→`process/start` preflight도 통과했다.
@@ -15,12 +15,11 @@ filesystem tool-discovery probe는 현재 Codex 0.154.0에서 실제 실행됐�
 고정 `PROBE_TOOL_USED` 텍스트만 있어 실행 증거가 아니다. response-vs-trace 불일치
 verdict 보강은 구현·회귀 검증됐다. raw probe trace는 이제 임시 control 영역에서만
 집계되고, host RPC proxy는 payload-free method/count/error telemetry를 기록한다.
-새 telemetry를 사용한 실제 model probe는 read-scope guard 보강과 사용자 승인 후
-실행을 시도했다. plan 파일명 오류 두 건은 model 전 validation에서 끝났고,
-이후 실제 plan 시도는 `codex.ps1`의 Windows `WinError 193` launcher 오류로
-model turn 전에 끝났다. resolver가 safe `.cmd` companion을 선택하도록 수정·회귀
-검증됐으며, 다음은 새 output directory에서의 승인된 1회 probe다. baseline은
-아직 실행하지 않는다.
+새 telemetry를 사용한 actual model probe는 auth/process까지 성공했지만 read-scope
+guard가 Codex metadata discovery를 막아 `fs/readFile` 전 종료됐다. candidate
+본문은 읽히지 않았고 completed tool item도 0개였다. metadata-only discovery를
+허용하도록 guard를 보정하고 model-free preflight를 통과했다. 추가 model probe는
+새 사용자 지시 전까지 시작하지 않는다. baseline은 아직 실행하지 않는다.
 
 이 문서는 구현 상태와 행동 성능 주장을 분리해 기록한다. 구조 검사나 integration smoke가 성공하더라도 실제 Feynman skill의 인과적 성능 향상으로 해석하지 않는다.
 
