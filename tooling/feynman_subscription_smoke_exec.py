@@ -85,14 +85,20 @@ def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _resolve_executable(value: str) -> str:
+def _resolve_executable(value: str, *, platform_name: str | None = None) -> str:
+    platform_name = os.name if platform_name is None else platform_name
     if not value.strip():
         raise ValueError("codex executable must be nonempty")
     if any(sep in value for sep in ("/", "\\")):
         path = Path(value).expanduser().absolute()
         if path.is_symlink() or not path.is_file():
             raise ValueError(f"codex executable is missing or unsafe: {path}")
-        if os.name != "nt" and not os.access(path, os.X_OK):
+        if platform_name == "nt" and path.suffix.casefold() == ".ps1":
+            companion = path.with_suffix(".cmd")
+            if companion.is_symlink() or not companion.is_file():
+                raise ValueError("Windows PowerShell Codex launcher has no safe cmd companion")
+            return str(companion.resolve())
+        if platform_name != "nt" and not os.access(path, os.X_OK):
             raise ValueError(f"codex executable is not executable: {path}")
         return str(path.resolve())
     resolved = shutil.which(value)

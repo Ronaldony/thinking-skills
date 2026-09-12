@@ -2,7 +2,7 @@
 
 최신 실행 checkpoint: 2026-09-12, `feat/feynman-thinking-v0.5-draft` research preview.
 
-현재 재개 지점은 [LOG-042](feynman-work-log/LOG-042-probe-read-scope-guard-20260912.md)이다.
+현재 재개 지점은 [LOG-043](feynman-work-log/LOG-043-windows-codex-launcher-recovery-20260912.md)이다.
 전용 홈 인증, native Docker 경계, ordinal 1 구조 검사 및 실제 모델 턴은 통과했다.
 field-specific Windows→Linux RPC proxy, `/tmp` 초기화 수정, 그리고 documented
 `initialize`→`initialized`→`fs/readFile`→`process/start` preflight도 통과했다.
@@ -16,9 +16,11 @@ filesystem tool-discovery probe는 현재 Codex 0.154.0에서 실제 실행됐�
 verdict 보강은 구현·회귀 검증됐다. raw probe trace는 이제 임시 control 영역에서만
 집계되고, host RPC proxy는 payload-free method/count/error telemetry를 기록한다.
 새 telemetry를 사용한 실제 model probe는 read-scope guard 보강과 사용자 승인 후
-실행을 시도했으나 eval-plan 경로 오타로 구조 검증 단계에서 exit 2로 중단됐다.
-auth/model/Docker 실행은 시작되지 않았다. 사용자의 자동 반복 금지 지시에 따라
-수정 경로 재실행은 대기 중이다. baseline은 아직 실행하지 않는다.
+실행을 시도했다. plan 파일명 오류 두 건은 model 전 validation에서 끝났고,
+이후 실제 plan 시도는 `codex.ps1`의 Windows `WinError 193` launcher 오류로
+model turn 전에 끝났다. resolver가 safe `.cmd` companion을 선택하도록 수정·회귀
+검증됐으며, 다음은 새 output directory에서의 승인된 1회 probe다. baseline은
+아직 실행하지 않는다.
 
 이 문서는 구현 상태와 행동 성능 주장을 분리해 기록한다. 구조 검사나 integration smoke가 성공하더라도 실제 Feynman skill의 인과적 성능 향상으로 해석하지 않는다.
 

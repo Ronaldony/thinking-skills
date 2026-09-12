@@ -201,6 +201,17 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
         self.assertTrue(env["PATH"].startswith(str(docker_dir)))
         self.assertIn(r"C:\Windows\System32", env["PATH"])
 
+    def test_windows_powershell_launcher_resolves_to_cmd_companion(self):
+        powershell_launcher = self.base / "codex.ps1"
+        cmd_launcher = self.base / "codex.cmd"
+        powershell_launcher.write_text("# launcher", encoding="utf-8")
+        cmd_launcher.write_text("@echo off", encoding="utf-8")
+        resolved = executor._resolve_executable(str(powershell_launcher), platform_name="nt")
+        self.assertEqual(resolved, str(cmd_launcher.resolve()))
+        cmd_launcher.unlink()
+        with self.assertRaises(ValueError):
+            executor._resolve_executable(str(powershell_launcher), platform_name="nt")
+
     def test_retired_auth_envs_are_rejected(self):
         for key in ("OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN"):
             with self.subTest(key=key), patch.dict(os.environ, {key: "forbidden"}, clear=False):

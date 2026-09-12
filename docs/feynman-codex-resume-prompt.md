@@ -16,10 +16,11 @@
 > 이후 raw trace 비보존과 payload-free RPC telemetry를 구현했고, 새 telemetry를
 > 사용한 model-free native preflight도 통과했다. probe는 proxy에서
 > `candidate.py`, `offset=0`, `len=1`, `fs/readFile`만 허용하도록 강제된다.
-> 사용자가 추가 one-byte model probe 1회를 승인했으나 첫 시도는 eval-plan 경로
-> 오타로 구조 검증 전 exit 2가 났다. auth/model/Docker는 시작되지 않았고 자동
-> 반복하지 않았다. 수정된 경로로 재실행할지는 별도 지시를 따른다. baseline은
-> 미실행이다.
+> 사용자가 추가 one-byte model probe 1회를 승인했다. plan 파일명 오류 두 건은
+> model 전 validation에서 끝났고, exact frozen plan 시도는 `.ps1` launcher의
+> Windows `WinError 193`으로 model turn 전에 끝났다. resolver는 safe `.cmd`
+> companion을 선택하도록 수정·검증됐다. 새 output directory에서 고정 probe를
+> 1회 실행한다. baseline은 미실행이다.
 
 아래 구분선 뒤의 내용을 새 **개발 담당** Codex 세션에 붙여넣는다. 평가 candidate나 baseline 프롬프트로 사용하지 않는다.
 
