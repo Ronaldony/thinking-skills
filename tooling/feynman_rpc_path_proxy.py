@@ -87,6 +87,16 @@ def _write_stdout(lock: threading.Lock, payload: bytes) -> None:
         sys.stdout.buffer.flush()
 
 
+def _map_request_payload(mapper: RpcPathMapper, raw: bytes) -> tuple[bytes | None, bytes | None]:
+    """Return either a child request or a fixed error for the control client."""
+    try:
+        line = raw.decode("utf-8")
+        mapped = map_json_line(mapper, line)
+        return (mapped + "\n").encode("utf-8"), None
+    except (UnicodeDecodeError, RpcPathMappingError, ValueError):
+        return None, _fixed_error(_request_id(raw.decode("utf-8", errors="replace")))
+
+
 def run_proxy(docker: str, docker_args: list[str]) -> int:
     mapper = RpcPathMapper.from_mounts(_docker_mounts(docker_args))
     child = subprocess.Popen(
@@ -106,12 +116,11 @@ def run_proxy(docker: str, docker_args: list[str]) -> int:
             for raw in sys.stdin.buffer:
                 if stop.is_set():
                     break
-                try:
-                    line = raw.decode("utf-8")
-                    mapped = map_json_line(mapper, line)
-                    payload = (mapped + "\n").encode("utf-8")
-                except (UnicodeDecodeError, RpcPathMappingError, ValueError):
-                    payload = _fixed_error(_request_id(raw.decode("utf-8", errors="replace")))
+                payload, rejection = _map_request_payload(mapper, raw)
+                if rejection is not None:
+                    _write_stdout(output_lock, rejection)
+                    continue
+                assert payload is not None
                 child.stdin.write(payload)
                 child.stdin.flush()
         finally:

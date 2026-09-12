@@ -2,12 +2,13 @@
 
 최신 실행 checkpoint: 2026-09-12, `feat/feynman-thinking-v0.5-draft` research preview.
 
-현재 재개 지점은 [LOG-035](feynman-work-log/LOG-035-native-rpc-proxy-preflight-20260912.md)이다.
+현재 재개 지점은 [LOG-036](feynman-work-log/LOG-036-model-free-rpc-preflight-green-20260912.md)이다.
 전용 홈 인증, native Docker 경계, ordinal 1 구조 검사 및 실제 모델 턴은 통과했다.
 그러나 candidate는 작업을 완료하지 못했고 Linux exec-server가 Windows file URI를
-20건 거부했다. field-specific Windows→Linux RPC proxy와 `/tmp` 초기화 수정은
-model-free initialize까지 통과했지만, 현재 이미지의 `fs/readFile` shape와
-`process/exec` stub은 아직 해결되지 않았다. baseline은 아직 실행하지 않는다.
+20건 거부했다. field-specific Windows→Linux RPC proxy, `/tmp` 초기화 수정,
+그리고 documented `initialize`→`initialized`→`fs/readFile`→`process/start`
+preflight가 모두 통과했다. 다음은 repaired ordinal 1 smoke이며 baseline은 아직
+실행하지 않는다.
 
 이 문서는 구현 상태와 행동 성능 주장을 분리해 기록한다. 구조 검사나 integration smoke가 성공하더라도 실제 Feynman skill의 인과적 성능 향상으로 해석하지 않는다.
 
@@ -18,7 +19,7 @@ model-free initialize까지 통과했지만, 현재 이미지의 `fs/readFile` s
 | FYN-01 기존 감사 재검증 | **완료** | pinned v0.4.0 구조 결함 재현 코드/문서 | 실제 과거 모델 결과 재채점은 별개 |
 | FYN-02 역할·설계 확정 | **완료** | v0.5.0-draft runtime + references | 행동 평가 후 규칙 축소 가능 |
 | FYN-03 `thinking-skills` 통합 | **완료(draft)** | feature branch + draft PR + runtime allowlist | 병합은 행동 검증 뒤 |
-| FYN-04 평가 격리 | **부분 완료 — RPC proxy initialize까지 model-free 검증** | Docker/Codex remote boundary + protected `control_codex_home` + auth gate + preflight + field-specific RPC proxy | candidate read/spawn preflight과 two-job smoke 필요 |
+| FYN-04 평가 격리 | **부분 완료 — candidate read/spawn model-free 검증** | Docker/Codex remote boundary + protected `control_codex_home` + auth gate + RPC preflight | repaired ordinal-1 smoke와 two-job smoke 필요 |
 | FYN-05 실행 증거/합격 판정 연결 | **완료(구조 v4)** | runner-job v3 → attestation v3 → link v3 + trace/evidence/review/gate → result v4 | 실제 model run lineage 필요 |
 | FYN-06 자동 검사/회귀 | **완료(구조)** | 261-unit diagnostic + 7 active workflows green | 실제 subscription-backed smoke artifact는 FYN-08에서 추가 |
 | FYN-07 평가 데이터 보강 | **개발 세트 완료** | 18 public-development cases, 20 hard failures | independent held-out final set 필요 |

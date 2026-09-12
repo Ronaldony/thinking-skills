@@ -8,7 +8,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from tooling.feynman_rpc_path_proxy import _docker_mounts, _fixed_error, _split_cli
+from tooling.feynman_rpc_path_mapping import RpcPathMapper
+from tooling.feynman_rpc_path_proxy import _docker_mounts, _fixed_error, _map_request_payload, _split_cli
 
 
 class RpcPathProxyTests(unittest.TestCase):
@@ -38,6 +39,19 @@ class RpcPathProxyTests(unittest.TestCase):
             "id": 7,
         })
         self.assertNotIn("C:\\", payload.decode("utf-8"))
+
+    def test_mapping_rejection_returns_to_client_not_child(self):
+        mapper = RpcPathMapper.from_mounts([
+            {"source": r"C:\DevWorks\candidate", "destination": "/run/candidate", "access": "rw"},
+        ])
+        raw = json.dumps({"jsonrpc": "2.0", "id": 9, "method": "fs/readFile", "params": {"path": "file:///C:/Users/wotmd/private.txt"}}).encode("utf-8")
+        child_payload, client_error = _map_request_payload(mapper, raw)
+        self.assertIsNone(child_payload)
+        self.assertEqual(json.loads(client_error), {
+            "jsonrpc": "2.0",
+            "error": {"code": -32001, "message": "RPC path mapping rejected"},
+            "id": 9,
+        })
 
 
 if __name__ == "__main__":

@@ -37,6 +37,17 @@ class RpcPathMappingTests(unittest.TestCase):
         message = {"method": "process/exec", "params": {"cwd": "file:///C:/DevWorks/smoke/candidate"}}
         self.assertEqual(self.mapper.map_request(message)["params"]["cwd"], "file:///run/candidate")
 
+    def test_process_start_maps_windows_cwd_and_preserves_container_uri(self):
+        host = {"method": "process/start", "params": {"cwd": "file:///C:/DevWorks/smoke/candidate"}}
+        container = {"method": "process/start", "params": {"cwd": "file:///run/candidate"}}
+        self.assertEqual(self.mapper.map_request(host)["params"]["cwd"], "file:///run/candidate")
+        self.assertEqual(self.mapper.map_request(container), container)
+
+    def test_container_raw_path_is_preserved_only_under_a_declared_mount(self):
+        self.assertEqual(self.mapper.host_to_container("/run/candidate/x.txt"), "/run/candidate/x.txt")
+        with self.assertRaises(RpcPathMappingError):
+            self.mapper.host_to_container("file:///etc/passwd")
+
     def test_file_read_and_resource_requests_map_their_declared_field(self):
         for method, field in (("fs/readFile", "path"), ("fs/writeFile", "path"), ("resources/read", "uri")):
             with self.subTest(method=method):

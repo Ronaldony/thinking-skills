@@ -28,6 +28,7 @@ class RpcPathMappingError(ValueError):
 REQUEST_PATH_FIELDS: dict[str, frozenset[str]] = {
     "command/exec": frozenset({"cwd"}),
     "process/exec": frozenset({"cwd"}),
+    "process/start": frozenset({"cwd"}),
     "fs/readFile": frozenset({"path"}),
     "fs/writeFile": frozenset({"path"}),
     "resources/read": frozenset({"uri"}),
@@ -133,12 +134,22 @@ class RpcPathMapper:
                 return host.joinpath(*relative)
         raise RpcPathMappingError("container path is outside declared mounts")
 
+    def _declared_container_path(self, path: str) -> PurePosixPath:
+        """Validate and retain a path already in the container namespace."""
+        self._container_to_host_path(path)
+        return PurePosixPath(path)
+
     def host_to_container(self, value: str) -> str:
         if value.startswith("file:"):
             kind, path = _file_uri_path(value)
             if kind == "windows":
                 return _file_uri(self._host_to_container_path(path.as_posix()))
-            return _file_uri(self._host_to_container_path(path.as_posix()))
+            return _file_uri(self._declared_container_path(path.as_posix()))
+        if value.startswith("/"):
+            try:
+                return self._declared_container_path(value).as_posix()
+            except RpcPathMappingError:
+                pass
         return self._host_to_container_path(value).as_posix()
 
     def container_to_host(self, value: str) -> str:
