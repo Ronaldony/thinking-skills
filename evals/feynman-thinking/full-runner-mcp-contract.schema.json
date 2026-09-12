@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Feynman fixed full-runner MCP contract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "verdict": {"const": "full-runner-mcp-contract-ready"},
+    "server_name": {"const": "feynman_full_runner"},
+    "transport": {"const": "stdio"},
+    "tools": {
+      "const": [
+        {"name":"feynman_read_candidate","model_selectable_arguments":false,"fixed_file":"candidate.py","max_calls":8,"max_bytes":131072},
+        {"name":"feynman_write_candidate","model_selectable_arguments":true,"model_selectable_path":false,"fixed_file":"candidate.py","max_calls":8,"max_bytes":131072},
+        {"name":"feynman_run_tests","model_selectable_arguments":false,"model_selectable_command":false,"fixed_file":"test_candidate.py","fixed_command":["python3","-B","-I","/run/candidate/test_candidate.py"],"max_calls":8,"max_output_bytes":32768,"network_mode":"none"}
+      ]
+    },
+    "candidate_auth_exposed": {"const": false},
+    "candidate_readable_auth_paths": {"const": []},
+    "candidate_tool_auth_env_keys": {"const": []},
+    "docker_root_read_only": {"const": true},
+    "docker_no_new_privileges": {"const": true},
+    "docker_capabilities": {"const": []},
+    "scope": {"type": "string", "minLength": 1},
+    "model_calls": {"const": 0},
+    "authentication_used": {"const": false},
+    "catalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "verdict": {"const": "bounded-mcp-catalog-visible"},
+        "server_count": {"const": 1},
+        "server_name": {"const": "feynman_full_runner"},
+        "tool_names": {"const": ["feynman_read_candidate","feynman_run_tests","feynman_write_candidate"]},
+        "target_tool_schemas": {"type": "object"}
+      },
+      "required": ["verdict","server_count","server_name","tool_names","target_tool_schemas"]
+    },
+    "lineage": {"type": "object", "required": ["schema_version","server_name","tool_names","adapter_sha256","docker_image_id"]},
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model_request_started": {"const": false},
+        "credential_files_read": {"const": false},
+        "tool_payloads_preserved": {"const": false}
+      },
+      "required": ["model_request_started","credential_files_read","tool_payloads_preserved"]
+    }
+  },
+  "required": ["schema_version","verdict","server_name","transport","tools","candidate_auth_exposed","candidate_readable_auth_paths","candidate_tool_auth_env_keys","docker_root_read_only","docker_no_new_privileges","docker_capabilities","scope","model_calls","authentication_used","catalog","lineage","privacy"]
+}

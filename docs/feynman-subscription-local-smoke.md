@@ -227,6 +227,22 @@ performance evidence, test evidence, or permission to start baseline. Treat
 it only as a control-plane diagnosis, then record the result before deciding
 whether a new frozen evaluation contract is warranted.
 
+## 8.5 Full-runner MCP contract — model-free gate
+
+The full-runner route is separate from the one-time diagnostic probe. Its
+model-facing catalog contains only `feynman_read_candidate`,
+`feynman_write_candidate`, and `feynman_run_tests`. The first and third tools
+take no arguments; the write tool accepts only UTF-8 `content` and always writes
+the fixed `candidate.py` path. The test tool always runs the fixed
+`python3 -B -I /run/candidate/test_candidate.py` command.
+
+The adapter fixes Docker to `--network none`, a read-only root, dropped
+capabilities, `no-new-privileges`, `env -i`, and a read-only candidate mount.
+Its catalog and disposable Docker protocol must pass without a model or auth
+call before any real tools-10 job is considered. The preflight artifacts are
+structural diagnostics only; they do not authorize a baseline or Feynman
+evaluation run.
+
 ## 8. Claims prohibited after the smoke
 
 Even if both jobs succeed:

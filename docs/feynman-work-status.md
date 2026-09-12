@@ -2,21 +2,24 @@
 
 최신 실행 checkpoint: 2026-09-13, `feat/feynman-thinking-v0.5-draft` research preview.
 
-최신 checkpoint는 [LOG-050](feynman-work-log/LOG-050-luna-transient-mcp-tool-use-observed-20260913.md)이다.
+최신 checkpoint는 [LOG-051](feynman-work-log/LOG-051-full-runner-mcp-contract-model-free-20260913.md)이다.
 승인된 Luna 비평가 bounded-MCP probe를 정확히 1회 실행했고, 실제 trace에서 완료된
 `mcp_tool_call` 1개와 `trace-tool-use-observed`를 확인했다. ChatGPT subscription
 auth gate는 통과했고 API key는 사용하지 않았다. raw trace/final/tool payload는
 보존하지 않았으며 자동 retry나 다른 모델 fallback도 없었다. 이 결과는 one-byte
 diagnostic의 model-facing tool 노출 성공이며 full tools-10 실행 또는 Feynman 성능
-근거가 아니다. 다음은 full-runner 최소 MCP contract의 model-free 구현이다.
+근거가 아니다. 이후 full-runner 최소 MCP contract를 구현했고 disposable synthetic
+candidate의 실제 network-disabled Docker test와 Codex App Server 3-tool catalog를
+모델 없이 통과시켰다. 다음은 이 contract를 기존 tools-10 runner-job/profile
+artifact chain에 model-free로 결속하는 작업이다.
 
 이전 checkpoint인 [LOG-049](feynman-work-log/LOG-049-transient-mcp-exec-preflight-20260913.md)에서는
 protected control home은 향후 인증 출처로만 보존하고,
 `codex exec --ignore-user-config`와 고정 CLI override로 bounded MCP를 주입하는 diagnostic
 경로를 구현했다. Luna의 실제 구조/version/Docker security/catalog 전체
 `--preflight-only`가 `ready-for-subscription-tool-use-probe`로 통과했다. 모델과
-auth 호출은 0회였다. 다음 사람 개입은 비평가적 Luna model probe 1회의 새 명시적
-승인이다. 자동 재시도와 baseline/frozen evaluation은 계속 보류한다.
+auth 호출은 0회였다. 당시 다음 사람 개입이던 Luna probe는 LOG-050에서 승인된
+1회로 이미 완료했다. 자동 재시도와 baseline/frozen evaluation은 계속 보류한다.
 
 이전 checkpoint인 [LOG-048](feynman-work-log/LOG-048-remote-container-mcp-catalog-20260913.md)에서는
 Luna/Terra/Sol의 별도 작업 자료를 준비했고 새 검사 환경의 control/server/job을
@@ -331,8 +334,9 @@ feature branch에 반쪽 migration을 노출하지 않기 위해 `tmp/feynman-su
 → [부분 완료] ordinal 1 모델 턴 완료, 실제 task는 실패
 → [완료] Windows file URI → Linux exec-server RPC 호환성 수정
 → [완료] bounded adapter + local/remote/transient catalog model-free 검증
-→ [사람 승인 필요] Luna 비평가 bounded-MCP model probe 1회  ← 현재 경계
-→ full evaluation runner tool contract 설계
+→ [완료] Luna 비평가 bounded-MCP model probe 1회
+→ [완료] full evaluation runner 최소 MCP tool contract model-free 검증
+→ tools-10 runner-job/profile에 full-runner contract model-free 결속
 → 스킬 탐색/명령 실행을 모델 없이 검증한 뒤 two-job smoke 진행
 → post-run canary + attestation/link + review/result-v4
 → [필수 선행] explicit reasoning-effort execution contract migration

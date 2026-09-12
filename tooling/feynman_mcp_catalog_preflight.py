@@ -42,7 +42,8 @@ def _notification(method: str, params: dict[str, Any]) -> bytes:
     return (json.dumps({"jsonrpc": "2.0", "method": method, "params": params}) + "\n").encode()
 
 
-def summarize_status(result: Any, *, target_tool: str = TARGET_TOOL) -> dict[str, Any]:
+def summarize_status(result: Any, *, target_tool: str = TARGET_TOOL,
+                     target_tools: Sequence[str] | None = None) -> dict[str, Any]:
     """Keep only the tool-catalog facts needed by the readiness gate."""
     if not isinstance(result, dict) or not isinstance(result.get("data"), list):
         raise ValueError("MCP status result has no data list")
@@ -55,7 +56,7 @@ def summarize_status(result: Any, *, target_tool: str = TARGET_TOOL) -> dict[str
             raise ValueError("MCP status tool catalog is invalid")
         target = tools.get(target_tool)
         input_schema = target.get("inputSchema") if isinstance(target, dict) else None
-        servers.append({
+        server_summary = {
             "name": entry["name"],
             "runtime_status": entry.get("runtimeStatus"),
             "tool_names": sorted(name for name in tools if isinstance(name, str)),
@@ -67,13 +68,44 @@ def summarize_status(result: Any, *, target_tool: str = TARGET_TOOL) -> dict[str
                 and input_schema.get("additionalProperties") is False
                 and input_schema.get("properties") == {}
             ),
-        })
+        }
+        if target_tools is not None:
+            schemas: dict[str, dict[str, Any]] = {}
+            for name in target_tools:
+                tool = tools.get(name)
+                schema = tool.get("inputSchema") if isinstance(tool, dict) else None
+                if not isinstance(schema, dict):
+                    schemas[name] = {"present": False}
+                    continue
+                properties = schema.get("properties")
+                required = schema.get("required")
+                schemas[name] = {
+                    "present": True,
+                    "type": schema.get("type"),
+                    "additional_properties": schema.get("additionalProperties"),
+                    "property_names": sorted(properties) if isinstance(properties, dict) else None,
+                    "required_names": sorted(required) if isinstance(required, list) else None,
+                    "content_type": (
+                        properties.get("content", {}).get("type")
+                        if isinstance(properties, dict) and isinstance(properties.get("content"), dict)
+                        else None
+                    ),
+                    "content_max_length": (
+                        properties.get("content", {}).get("maxLength")
+                        if isinstance(properties, dict) and isinstance(properties.get("content"), dict)
+                        else None
+                    ),
+                }
+            server_summary["target_tool_schemas"] = schemas
+        servers.append(server_summary)
     return {"server_count": len(servers), "servers": servers}
 
 
 def run(*, codex_bin: str, codex_home: Path, output: Path, timeout_seconds: int = 20,
         config_overrides: Sequence[str] = (),
-        override_lineage: dict[str, object] | None = None) -> dict[str, Any]:
+        override_lineage: dict[str, object] | None = None,
+        target_tool: str = TARGET_TOOL,
+        target_tools: Sequence[str] | None = None) -> dict[str, Any]:
     if output.exists() or output.is_symlink():
         raise ValueError("catalog preflight output must be new")
     if not codex_home.is_dir() or codex_home.is_symlink():
@@ -129,7 +161,8 @@ def run(*, codex_bin: str, codex_home: Path, output: Path, timeout_seconds: int 
         })
         if "error" in status:
             raise ValueError("MCP server status request failed")
-        catalog = summarize_status(status.get("result"))
+        catalog = summarize_status(
+            status.get("result"), target_tool=target_tool, target_tools=target_tools)
         report = {
             "schema_version": 1,
             "verdict": "bounded-mcp-catalog-visible",

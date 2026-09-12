@@ -2,11 +2,15 @@
 
 작성일: 2026-09-09 (Asia/Seoul). 이 문서는 개발 담당 Codex의 인계 자료다. 평가 대상 candidate에게 전달하지 않는다.
 
-> 최신 상태(2026-09-13)는 [LOG-050](feynman-work-log/LOG-050-luna-transient-mcp-tool-use-observed-20260913.md)을 우선한다.
+> 최신 상태(2026-09-13)는 [LOG-051](feynman-work-log/LOG-051-full-runner-mcp-contract-model-free-20260913.md)을 우선한다.
 > 새 승인 아래 Luna 비평가 probe를 정확히 1회 실행했고 실제 trace에서 완료된
 > `mcp_tool_call` 1개를 관찰했다. 자동 재시도는 없었다. 이는 bounded 1-byte
 > diagnostic tool의 model-facing 노출 성공이며 full evaluation runner나 성능
-> 검증 성공은 아니다. 다음은 model-free full-runner MCP contract 설계다.
+> 검증 성공은 아니다. 이후 full-runner 3-tool MCP contract의 model-free Docker 및
+> Codex catalog preflight도 통과했다. 다음은 existing tools-10 artifact chain과의
+> model-free 결속이다.
+> [LOG-051](feynman-work-log/LOG-051-full-runner-mcp-contract-model-free-20260913.md)은
+> Python runtime 누락을 확인하고 새 local image를 검증한 상세 기록이다.
 > 이전 [LOG-049](feynman-work-log/LOG-049-transient-mcp-exec-preflight-20260913.md)에서
 > protected control home의 파일을 수정하지 않는 `codex exec --ignore-user-config`
 > transient MCP 경로를 구현했고, 실제 실행 전 Luna의 전체 model-free gate를
@@ -28,10 +32,9 @@
 
 목표는 역사적 인물의 사고 방법을 문제 해결 스킬로 만드는 `Ronaldony/thinking-skills`에 리처드 파인만 스킬을 설계·구현·검증하는 것이다. 원본은 `Ronaldony/feynman-thinking` v0.4.0이다. 현재 v0.5.0-draft는 설치·평가 구조를 구현한 research preview이지, 행동 성능이 입증된 릴리스가 아니다.
 
-**다음 첫 목표는 full evaluation runner용 최소 MCP tool contract를 모델 없이
-설계·구현·검증하는 것**이다. 고정 read, `candidate.py` 한정 write, network-disabled
-Docker의 고정 test command를 분리하고 임의 path/argv/shell은 허용하지 않는다.
-baseline 또는 모델 평가는 아직 시작하지 않는다.
+**다음 첫 목표는 검증된 full-runner MCP contract를 existing tools-10
+runner-job/profile의 model-free artifact chain에 결속하는 것**이다. 실제 모델
+평가와 baseline은 아직 시작하지 않는다.
 
 ## 2. 확인한 저장소 기준점
 

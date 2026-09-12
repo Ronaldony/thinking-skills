@@ -82,6 +82,29 @@ write, test 실행, frozen job 성공은 아직 검증되지 않았다. 다음�
 evaluation 권한으로 과장하지 않고 목적별 최소 도구 contract를 model-free로 만드는
 것이다.
 
+## LOG-051 결과 — full-runner MCP contract model-free 검증
+
+full-runner에는 다음 세 도구만 고정했다.
+
+- `feynman_read_candidate`: 인자 없이 `candidate.py`만 읽음
+- `feynman_write_candidate`: `content`만 받아 `candidate.py`만 씀
+- `feynman_run_tests`: 인자 없이 `test_candidate.py`를 `python3 -B -I`로 실행
+
+모델은 path, shell, argv, Docker image, network mode를 선택하지 않는다. test
+adapter의 Docker argv는 `--network none`, `--read-only`, `--cap-drop ALL`,
+`no-new-privileges`, `env -i`, candidate read-only mount로 고정된다. pinned Codex
+image에 Python runtime이 없었던 첫 disposable 실행을 확인한 뒤 Debian 12 image에
+`python3`를 설치했고, 새 image ID
+`sha256:2b5c626cca0edbf1338b1adb31bcb941f20ac32e354d1973f1756d6b66933b3a`로 실제
+Docker protocol preflight가 `full-runner-mcp-docker-preflight-passed`가 됐다.
+
+Codex App Server catalog도 모델 호출·인증 없이 정확한 3개 도구와 schema를
+`full-runner-mcp-contract-ready`로 확인했다. 이 결과는 full-runner 구조와 Docker
+호환성만 입증하며 실제 model trace, tools-10 실행, baseline/Feynman 비교는 아직
+입증하지 않는다. 상세 명령·관찰·제한은
+[LOG-051](feynman-work-log/LOG-051-full-runner-mcp-contract-model-free-20260913.md)에
+기록했다.
+
 새 Docker image:
 
 - 태그: `feynman-codex-remote:0.154.0-20260912`
