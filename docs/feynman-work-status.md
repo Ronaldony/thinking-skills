@@ -2,14 +2,16 @@
 
 최신 실행 checkpoint: 2026-09-12, `feat/feynman-thinking-v0.5-draft` research preview.
 
-현재 재개 지점은 [LOG-037](feynman-work-log/LOG-037-no-tool-trace-nonpromotion-20260912.md)이다.
+현재 재개 지점은 [LOG-038](feynman-work-log/LOG-038-tool-discovery-probe-contract-20260912.md)이다.
 전용 홈 인증, native Docker 경계, ordinal 1 구조 검사 및 실제 모델 턴은 통과했다.
 field-specific Windows→Linux RPC proxy, `/tmp` 초기화 수정, 그리고 documented
 `initialize`→`initialized`→`fs/readFile`→`process/start` preflight도 통과했다.
-그러나 repaired ordinal 1 trace에는 candidate tool event가 0개였다. fixture/test를
+그러나 repaired ordinal 1 `feynman-v05` trace에는 candidate tool event가 0개였다. fixture/test를
 서술한 final answer는 trusted execution evidence가 아니므로 execution-required task
 성공으로 승격할 수 없다. result schema v2가 이 상태를
-`blocked-no-candidate-tool-call`로 명시한다. baseline은 아직 실행하지 않는다.
+`blocked-no-candidate-tool-call`로 명시한다. frozen evaluation과 분리된 fixed
+filesystem tool-discovery probe는 구현·회귀 검증됐지만 아직 실제 구독 호출은 하지
+않았다. baseline은 아직 실행하지 않는다.
 
 이 문서는 구현 상태와 행동 성능 주장을 분리해 기록한다. 구조 검사나 integration smoke가 성공하더라도 실제 Feynman skill의 인과적 성능 향상으로 해석하지 않는다.
 

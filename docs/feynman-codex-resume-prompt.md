@@ -1,14 +1,15 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 2026-09-12 재개 우선순위: 아래 최초 인계보다
-> `docs/feynman-work-log/LOG-037-no-tool-trace-nonpromotion-20260912.md`를 우선한다.
+> `docs/feynman-work-log/LOG-038-tool-discovery-probe-contract-20260912.md`를 우선한다.
 > 인증·Docker canary·ordinal 1 모델 턴은 통과했으나 task는 실패했다.
 > field-specific proxy가 Windows file URI를 Linux 경로로 변환하고 model-free task/skill
 > read 및 harmless process까지 통과했다. repaired ordinal 1 transport는 완료됐지만
 > model이 tool을 호출하지 않아 execution-required task 성공이 아니다. executor
-> schema v2는 이를 `blocked-no-candidate-tool-call`로 기록한다. 동일 모델 command를
-> 반복하지 말고, 다음은 tool/skill context 및 candidate task contract의 model-free
-> 진단과 post-run evidence 승격 조건 점검이다.
+> schema v2는 이를 `blocked-no-candidate-tool-call`로 기록한다. 동일 evaluation
+> command를 반복하지 말고, 먼저 implementation+tests가 고정된 비평가적
+> `feynman_subscription_tool_use_probe.py`를 canonical remote environment와
+> ChatGPT auth gate 뒤 한 번만 실행해 model tool discovery를 분리 진단한다.
 > baseline은 미실행이며,
 > 이 결함이 해결되기 전에는 추가 모델 호출을 하지 않는다.
 

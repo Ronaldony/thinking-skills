@@ -206,6 +206,22 @@ An executor success is **not yet a green integration smoke**. For each job, cont
 
 Only when both `baseline` and `feynman-v05` smoke jobs have complete lineage is the integration smoke complete.
 
+## 8. One-time tool-discovery diagnostic
+
+If a structurally healthy execution-required smoke has zero completed candidate
+tool items, do not repeat its frozen evaluation command. The separate
+`tooling/feynman_subscription_tool_use_probe.py` may run once against the
+already-mounted repaired `tools-10 / feynman-v05` fixture after the same
+structural/auth gates. Its fixed prompt only asks the model to use a filesystem
+tool to read one byte of `candidate.py`; it does not send `task.txt`, a rubric,
+evaluator evidence, or development context.
+
+The probe distinguishes `tool-use-observed` from `tool-use-not-observed` using
+only completed trace item counts/types. Neither result is Feynman-skill
+performance evidence, test evidence, or permission to start baseline. Treat
+it only as a control-plane diagnosis, then record the result before deciding
+whether a new frozen evaluation contract is warranted.
+
 ## 8. Claims prohibited after the smoke
 
 Even if both jobs succeed:
