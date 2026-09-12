@@ -2,7 +2,11 @@
 
 작성일: 2026-09-09 (Asia/Seoul). 이 문서는 개발 담당 Codex의 인계 자료다. 평가 대상 candidate에게 전달하지 않는다.
 
-> 최신 상태(2026-09-13)는 [LOG-047](feynman-work-log/LOG-047-bounded-read-adapter-and-mcp-catalog-20260913.md)를 우선한다.
+> 최신 상태(2026-09-13)는 [LOG-049](feynman-work-log/LOG-049-transient-mcp-exec-preflight-20260913.md)를 우선한다.
+> protected control home의 파일을 수정하지 않는 `codex exec --ignore-user-config`
+> transient MCP 경로를 구현했고 Luna의 전체 model-free preflight가
+> `ready-for-subscription-tool-use-probe`로 통과했다. 실제 구독 모델 probe는 아직
+> 실행하지 않았으며 새 명시적 1회 승인이 다음 사람 개입 지점이다.
 > 이후 [LOG-048](feynman-work-log/LOG-048-remote-container-mcp-catalog-20260913.md)에서
 > 동일 Docker runtime의 격리 `/run/codex` MCP catalog도 model-free로 확인했다.
 > LOG-047에서 one-byte diagnostic MCP adapter와 blank-home App Server catalog
@@ -19,7 +23,10 @@
 
 목표는 역사적 인물의 사고 방법을 문제 해결 스킬로 만드는 `Ronaldony/thinking-skills`에 리처드 파인만 스킬을 설계·구현·검증하는 것이다. 원본은 `Ronaldony/feynman-thinking` v0.4.0이다. 현재 v0.5.0-draft는 설치·평가 구조를 구현한 research preview이지, 행동 성능이 입증된 릴리스가 아니다.
 
-**다음 첫 목표는 Windows 사용자 PC에서 최신 수정의 auth gate를 재검증하는 것**이다. 바로 모델 평가를 실행하거나 처음부터 프로젝트를 재설계하지 않는다. 사용자 로그인 보고와 실제 gate 성공을 구분한다.
+**다음 첫 목표는 새 명시적 승인 아래 Luna 비평가 bounded-MCP model probe를 딱
+1회 실행하는 것**이다. LOG-049의 model-free preflight는 이미 통과했다. 실패 시
+자동 재시도·모델 fallback을 하지 않고, 성공해도 baseline 또는 모델 평가를 바로
+시작하지 않는다.
 
 ## 2. 확인한 저장소 기준점
 

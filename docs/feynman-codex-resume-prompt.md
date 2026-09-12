@@ -1,5 +1,14 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
+> 2026-09-13 최신 재개 지점: 먼저
+> `docs/feynman-work-log/LOG-049-transient-mcp-exec-preflight-20260913.md`를 읽어라.
+> `codex exec --ignore-user-config`와 11개 CLI override로 protected login home의
+> config를 수정하지 않는 bounded MCP diagnostic route를 구현했다. Luna 실제
+> plan/job/version/Docker/security/catalog를 포함한 `--preflight-only` 결과는
+> `ready-for-subscription-tool-use-probe`; model/auth 호출은 0회다. 다음은 새 명시적
+> 승인 아래 Luna 비평가 model probe 딱 1회이며 실패 시 자동 재시도하지 않는다.
+> 이 성공도 frozen evaluation/baseline 시작 허가는 아니다.
+>
 > 2026-09-13 재개 우선순위: 아래 최초 인계보다
 > `docs/feynman-work-log/LOG-048-remote-container-mcp-catalog-20260913.md`도 함께
 > 읽어라. 동일 Docker runtime의 격리 `/run/codex`에서 MCP catalog visibility가

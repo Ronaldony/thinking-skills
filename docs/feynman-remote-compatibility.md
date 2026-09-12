@@ -48,6 +48,27 @@ LOG-048에서 같은 adapter를 새 `arm64/linux` Docker image의 격리 `/run/c
 auth 0회다. 다만 이 검사는 canonical protected control home의 설정이나
 `codex exec` 구독 세션의 실제 model tool-call을 변경·증명하지 않는다.
 
+## LOG-049 후속 checkpoint — transient `codex exec` 결속
+
+Codex 0.154.0의 `--ignore-user-config`는 user `config.toml`을 읽지 않으면서 auth는
+기존 `CODEX_HOME`을 사용한다. 이 계약과 최상위 CLI `-c` precedence를 이용해
+protected login home과 canonical `environments.toml`을 수정하지 않는 diagnostic
+route를 구현했다. evaluator가 Node/adapter/candidate를 절대 경로와 digest로
+고정하고, 모델에는 no-argument `feynman_read_probe_byte` 하나만 노출한다.
+
+Luna 실제 plan/job에서 `--preflight-only` 전체 체인이 통과했다.
+
+- structural/version/Docker security controls: pass
+- transient App Server catalog와 empty input schema: pass
+- exact adapter/candidate lineage: pass
+- protected auth home과 evaluator runtime document 분리: pass
+- model/auth 호출: 0회
+
+기존 117-byte `fs/readFile` positive check는 새 adapter가 사용하지 않지만, 다른
+파일/config/traversal/process/walk/canonicalize 거부 검사는 계속 필수다. frozen
+smoke executor의 canonical config 계약은 변경하지 않았다. 다음은 새 승인을 받은
+비평가 Luna model probe 1회다. 이는 full tools-10 runner 호환성이나 성능 증거가 아니다.
+
 새 Docker image:
 
 - 태그: `feynman-codex-remote:0.154.0-20260912`
@@ -96,18 +117,18 @@ guard는 존재하지 않음을 확인한 고정 sentinel만 config 경로로 �
 현재 결과는 `blocked-byte-read-contract`; 전체 discovery 및 model tool readiness는
 false다. 정상 검사 결과와 실패 조건을 함께 남기고 모델 요청을 하지 않는다.
 
-`feynman_subscription_tool_use_probe.py`에는 실행 전 version gate와 guarded gate를
-연결했다. 새 CLI는 `--docker-config`가 필수다. 선행 조건 실패 시 auth check와
-`codex exec` model 호출 **이전**에 종료한다. 기존 일반 smoke executor까지 전체
-readiness gate가 통합됐다는 뜻은 아니며, baseline/smoke 직접 실행도 보류한다.
+`feynman_subscription_tool_use_probe.py`에는 실행 전 version gate, legacy security
+control gate, exact-lineage transient catalog gate를 연결했다. CLI는
+`--docker-config`, `--node-bin`, `--bounded-adapter`가 필수이며 `--preflight-only`는
+auth/model 이전에 종료한다. 실제 exec에는 `--ignore-user-config`가 강제된다. 기존
+일반 smoke executor까지 이 새 readiness gate가 통합됐다는 뜻은 아니며,
+baseline/smoke 직접 실행도 보류한다.
 
-## 다음 구현 단위
+## 다음 실행 단위
 
-실제 서버-side 단일 바이트 읽기를 제공하고 code-mode와 연결되는 제한된 read
-adapter가 필요하다. 성공 조건은 고정 fixture 경로·symlink/traversal 검증,
-실제 읽기 범위 및 응답 크기 제한, 임의 argv/process 차단, 허용된 discovery의
-완결성, 모델에게 제공되는 도구 계약 검증이다. 일반 shell 권한을 여는 방식이나
-단순 prompt 수정·모델 변경만으로 통과시키지 않는다.
-
-이 adapter/도구 계약을 모델 없이 검증한 다음에야 별도 제한 model probe를
-검토한다. 현재 checkpoint로 Feynman 효과 또는 baseline 비교 결과를 주장하지 않는다.
+제한 adapter와 실제 exec override의 model-free 검증은 완료됐다. 새 명시적 승인
+아래 Luna 비평가 model probe를 1회 실행해 trace의 MCP tool item을 확인한다.
+실패 시 자동 반복하거나 Terra/Sol로 자동 fallback하지 않는다. 성공해도 일반
+shell 권한이나 full evaluation 권한은 아직 없으므로, 다음에는 별도 full-runner
+tool contract를 설계한다. 현재 checkpoint로 Feynman 효과 또는 baseline 비교
+결과를 주장하지 않는다.

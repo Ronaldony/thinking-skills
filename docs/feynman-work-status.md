@@ -2,7 +2,15 @@
 
 최신 실행 checkpoint: 2026-09-13, `feat/feynman-thinking-v0.5-draft` research preview.
 
-최신 checkpoint는 [LOG-048](feynman-work-log/LOG-048-remote-container-mcp-catalog-20260913.md)이다.
+최신 checkpoint는 [LOG-049](feynman-work-log/LOG-049-transient-mcp-exec-preflight-20260913.md)이다.
+protected control home은 향후 인증 출처로만 보존하고,
+`codex exec --ignore-user-config`와 고정 CLI override로 bounded MCP를 주입하는 diagnostic
+경로를 구현했다. Luna의 실제 구조/version/Docker security/catalog 전체
+`--preflight-only`가 `ready-for-subscription-tool-use-probe`로 통과했다. 모델과
+auth 호출은 0회였다. 다음 사람 개입은 비평가적 Luna model probe 1회의 새 명시적
+승인이다. 자동 재시도와 baseline/frozen evaluation은 계속 보류한다.
+
+이전 checkpoint인 [LOG-048](feynman-work-log/LOG-048-remote-container-mcp-catalog-20260913.md)에서는
 Luna/Terra/Sol의 별도 작업 자료를 준비했고 새 검사 환경의 control/server/job을
 0.154.0으로 정렬했다. config 경로 그룹 및 canonicalize 경로 매핑도 보정했다.
 하지만 1바이트 요청에 117-byte 응답이 돌아오는 것을 발견했다. proxy는 이제
@@ -313,7 +321,10 @@ feature branch에 반쪽 migration을 노출하지 않기 위해 `tmp/feynman-su
 → [완료] smoke spec v2 + one-job subscription smoke executor
 → [완료] dedicated ChatGPT subscription auth gate 실검증
 → [부분 완료] ordinal 1 모델 턴 완료, 실제 task는 실패
-→ Windows file URI → Linux exec-server RPC 호환성 수정  ← 현재 개발 조건
+→ [완료] Windows file URI → Linux exec-server RPC 호환성 수정
+→ [완료] bounded adapter + local/remote/transient catalog model-free 검증
+→ [사람 승인 필요] Luna 비평가 bounded-MCP model probe 1회  ← 현재 경계
+→ full evaluation runner tool contract 설계
 → 스킬 탐색/명령 실행을 모델 없이 검증한 뒤 two-job smoke 진행
 → post-run canary + attestation/link + review/result-v4
 → [필수 선행] explicit reasoning-effort execution contract migration

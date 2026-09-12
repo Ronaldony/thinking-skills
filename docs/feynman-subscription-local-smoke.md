@@ -211,10 +211,13 @@ Only when both `baseline` and `feynman-v05` smoke jobs have complete lineage is 
 If a structurally healthy execution-required smoke has zero completed candidate
 tool items, do not repeat its frozen evaluation command. The separate
 `tooling/feynman_subscription_tool_use_probe.py` may run once against the
-already-mounted repaired `tools-10 / feynman-v05` fixture after the same
-structural/auth gates. Its fixed prompt only asks the model to use a filesystem
-tool to read one byte of `candidate.py`; it does not send `task.txt`, a rubric,
-evaluator evidence, or development context.
+already-mounted repaired `tools-10 / feynman-v05` fixture after the structural,
+version, Docker security, and transient MCP catalog gates. Run
+`--preflight-only` first; it stops before auth/model use. The live probe uses
+`--ignore-user-config` so the protected control home remains the auth source but
+its `config.toml` is not loaded. Its fixed no-argument bounded MCP tool reads at
+most one byte of evaluator-selected `candidate.py`; it does not send `task.txt`,
+a rubric, evaluator evidence, or development context.
 
 The probe distinguishes `tool-use-observed` from `tool-use-not-observed` using
 only completed trace item counts/types. It also records whether the fixed
