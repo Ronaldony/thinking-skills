@@ -65,3 +65,15 @@ candidate.py 외 path와 `fs/readFile` 외 method를 차단하고 read length를
 - 인증 파일·token·전체 환경변수·raw model trace는 읽거나 기록하지 않음
 - 다음 한 행동: 승인된 probe 1회 실행 후 safe result/telemetry만 집계하고,
   실행 종료 즉시 container/임시 control artifact 상태를 확인한다.
+
+## 실행 시도 결과
+
+승인된 명령을 실행했으나 `eval-plan.json` 경로를 잘못 입력해
+`eval plan does not exist`로 exit 2가 발생했다. 이 오류는 probe의 구조 검증
+단계에서 발생했으며 auth gate, model request, Docker start에는 도달하지 않았다.
+실행 시도 후 probe output/result/.control-tmp가 모두 없고, Docker
+`ps -a --filter name=feynman` 결과도 0행이었다.
+
+사용자의 "실패 시 자동 반복하지 마" 지시에 따라 corrected path command는
+자동 재실행하지 않았다. 다음 행동은 사용자가 corrected one-time command의
+재실행을 별도로 지시할 때까지 대기하는 것이다.
