@@ -99,6 +99,10 @@ git diff --check
 - Docker container를 새로 만들지 않았고, actual model command도 재실행하지 않았다.
 - baseline ordinal 2는 여전히 미실행이다. 실제 ordinal 1은 candidate tool 부재로
   post-run evidence/semantic review/skill-performance 주장으로 승격할 수 없다.
-- commit/push 상태: 이 log 작성 시점에는 작업 트리에만 있다. 다음 행동은 이
-  contract/test/documentation 변경을 review 후 feature branch에 commit·push하고
-  remote SHA를 확인하는 것이다.
+- core contract/test/documentation checkpoint: `c08d8c0982bfc0c8506e7378b15e11cd5644640e`
+  (`fix: block promotion when smoke trace has no tools`). 일반 commit으로 저장했고
+  `git push origin feat/feynman-thinking-v0.5-draft`가 성공했다. `git ls-remote --heads`
+  는 같은 SHA를 반환했다. main 병합이나 force push는 하지 않았다.
+- 다음 행동: 이 push 기록을 포함한 LOG-037 finalization을 별도 documentation
+  checkpoint로 commit/push한 뒤, model call 없이 skills-context warning과 remote
+  tool discovery의 관찰 가능한 구조 조건을 계속 좁힌다.
