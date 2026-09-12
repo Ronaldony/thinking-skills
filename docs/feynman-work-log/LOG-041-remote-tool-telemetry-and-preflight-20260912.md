@@ -112,7 +112,14 @@ Feynman evaluation을 시작하지 않는다.
   `tooling/feynman_rpc_path_proxy.py`, `tooling/feynman_remote_exec_environment.py`,
   관련 두 테스트 파일, 이 log 및 상태 포인터
 - implementation commit: `800493e` (`feat: instrument remote tool probe boundary`);
-  this documentation checkpoint is finalized before push
+  documentation checkpoint `0c1488a` (`docs: finalize remote tool checkpoint`)를
+  추가했다.
+- `git push origin feat/feynman-thinking-v0.5-draft`: exit 0,
+  `f71ee51..0c1488a` 업데이트 보고
+- push 후 `git status --short --branch`: clean, tracking branch와 local HEAD 일치
+- 독립 `git ls-remote --heads` 재확인은 Windows Schannel
+  `SEC_E_NO_CREDENTIALS`로 실패했다. 이를 원격 불일치로 해석하지 않으며,
+  push command 결과와 clean tracking 상태만 원격 저장 근거로 사용한다.
 - 미완료: 계측이 붙은 fixed one-byte model probe 1회. 목적은 RPC telemetry와
   CLI trace를 대조해 tool catalog/selection/trace 문제를 분리하는 것.
 - 다음 한 행동: 사용자가 추가 candidate-byte model probe를 명시 승인하면
