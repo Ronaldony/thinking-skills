@@ -2,7 +2,7 @@
 
 최신 실행 checkpoint: 2026-09-12, `feat/feynman-thinking-v0.5-draft` research preview.
 
-현재 재개 지점은 [LOG-044](feynman-work-log/LOG-044-guarded-probe-metadata-discovery-20260912.md)이다.
+현재 종료 checkpoint는 [LOG-045](feynman-work-log/LOG-045-final-metadata-probe-diagnosis-20260912.md)이다.
 전용 홈 인증, native Docker 경계, ordinal 1 구조 검사 및 실제 모델 턴은 통과했다.
 field-specific Windows→Linux RPC proxy, `/tmp` 초기화 수정, 그리고 documented
 `initialize`→`initialized`→`fs/readFile`→`process/start` preflight도 통과했다.
@@ -15,11 +15,15 @@ filesystem tool-discovery probe는 현재 Codex 0.154.0에서 실제 실행됐�
 고정 `PROBE_TOOL_USED` 텍스트만 있어 실행 증거가 아니다. response-vs-trace 불일치
 verdict 보강은 구현·회귀 검증됐다. raw probe trace는 이제 임시 control 영역에서만
 집계되고, host RPC proxy는 payload-free method/count/error telemetry를 기록한다.
-새 telemetry를 사용한 actual model probe는 auth/process까지 성공했지만 read-scope
-guard가 Codex metadata discovery를 막아 `fs/readFile` 전 종료됐다. candidate
-본문은 읽히지 않았고 completed tool item도 0개였다. metadata-only discovery를
-허용하도록 guard를 보정하고 model-free preflight를 통과했다. 추가 model probe는
-새 사용자 지시 전까지 시작하지 않는다. baseline은 아직 실행하지 않는다.
+보정된 metadata allowlist로 사용자 승인 probe를 추가 1회 실행했으나
+`tool-use-not-observed`였다. auth/process는 성공했고 completed tool item 및
+`fs/readFile` 요청은 0개였다. metadata 요청 일부는 전달됐지만 discovery method
+2개와 경로 제한에 걸린 요청들이 차단됐다. 모델 없는 비교에서도 config RPC가
+거부됐으며, Windows CLI 0.154.0과 고정 Docker 서버 0.153.4의 버전 불일치를
+확인했다. 이것들이 no-tool의 유일한 원인이라는 인과관계는 아직 입증되지 않았다.
+기존 일반 RPC preflight는 제한 모드 discovery나 model-facing tool 노출 검사가
+아니었다. LOG-044의 단일 원인 단정은 정정한다. 사용자 지시에 따라 이번 진단을
+종료하며 자동 재시도·baseline·새 평가 실행은 하지 않는다.
 
 이 문서는 구현 상태와 행동 성능 주장을 분리해 기록한다. 구조 검사나 integration smoke가 성공하더라도 실제 Feynman skill의 인과적 성능 향상으로 해석하지 않는다.
 

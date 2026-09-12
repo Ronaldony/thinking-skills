@@ -2,6 +2,11 @@
 
 작성일: 2026-09-09 (Asia/Seoul). 이 문서는 개발 담당 Codex의 인계 자료다. 평가 대상 candidate에게 전달하지 않는다.
 
+> 최신 종료 상태(2026-09-12)는 [LOG-045](feynman-work-log/LOG-045-final-metadata-probe-diagnosis-20260912.md)를 우선한다.
+> 아래 auth gate 미확인 서술은 최초 인계 당시 기록이다. 현재 인증과 Docker/RPC의
+> 일부 경로는 확인됐지만 metadata 보정 후 마지막 승인 probe도 tool-use에 실패했다.
+> 사용자 지시로 진단을 종료했다. 자동 model retry와 baseline 실행은 하지 않는다.
+
 ## 1. 목표와 이번 재개 범위
 
 목표는 역사적 인물의 사고 방법을 문제 해결 스킬로 만드는 `Ronaldony/thinking-skills`에 리처드 파인만 스킬을 설계·구현·검증하는 것이다. 원본은 `Ronaldony/feynman-thinking` v0.4.0이다. 현재 v0.5.0-draft는 설치·평가 구조를 구현한 research preview이지, 행동 성능이 입증된 릴리스가 아니다.

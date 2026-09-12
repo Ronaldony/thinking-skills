@@ -1,5 +1,10 @@
 # LOG-044 — guarded probe 결과와 metadata discovery 보정
 
+> 후속 정정: [LOG-045](LOG-045-final-metadata-probe-diagnosis-20260912.md).
+> 아래 “guard가 진행을 막은 결과”는 당시 가설을 과도하게 단정한 표현이다.
+> metadata 허용 후에도 tool-use는 실패했다. discovery 차단은 관찰 사실이지만,
+> 그것이 no-tool의 유일한 원인임은 증명되지 않았다.
+
 - 시각(KST): 2026-09-12
 - 시작 HEAD: `4358372`
 - branch: `feat/feynman-thinking-v0.5-draft`
