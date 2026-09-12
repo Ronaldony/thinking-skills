@@ -2,7 +2,19 @@
 
 최신 실행 checkpoint: 2026-09-13, `feat/feynman-thinking-v0.5-draft` research preview.
 
-최신 checkpoint는 [LOG-051](feynman-work-log/LOG-051-full-runner-mcp-contract-model-free-20260913.md)이다.
+최신 checkpoint는 [LOG-053](feynman-work-log/LOG-053-skill-tool-wiring-model-free-20260913.md)이다.
+LOG-052 binding에 연결된 Luna/Terra/Sol candidate를 Codex App Server
+`skills/list(forceReload=true)`와 fixed full-runner adapter로 모델 없이 검증했다.
+빈 disposable `CODEX_HOME`만으로는 주변 skill 7개가 계속 노출되는 것을 발견했고,
+경로를 결과에 보존하지 않는 two-pass transient disable로 두 번째 프로세스의
+활성 skill을 `feynman-thinking` 하나로 제한했다. 세 모델 모두 고정 MCP 3개와
+network-disabled `feynman_run_tests` 시작·종료, `candidate.py` 불변성을 통과했다.
+fixture test 실패는 의도된 buggy candidate 결과이며 wiring 실패가 아니다.
+모델·인증 호출은 0회였다. 다음은 같은 일시적 skill 격리와 full-runner override를
+실제 subscription smoke executor의 명령 생성 경로에 model-free로 결속하는 것이다.
+그 전에는 실제 model smoke나 baseline을 시작하지 않는다.
+
+이전 [LOG-051](feynman-work-log/LOG-051-full-runner-mcp-contract-model-free-20260913.md)에서는
 승인된 Luna 비평가 bounded-MCP probe를 정확히 1회 실행했고, 실제 trace에서 완료된
 `mcp_tool_call` 1개와 `trace-tool-use-observed`를 확인했다. ChatGPT subscription
 auth gate는 통과했고 API key는 사용하지 않았다. raw trace/final/tool payload는
@@ -75,9 +87,9 @@ verdict 보강은 구현·회귀 검증됐다. raw probe trace는 이제 임시 
 | FYN-01 기존 감사 재검증 | **완료** | pinned v0.4.0 구조 결함 재현 코드/문서 | 실제 과거 모델 결과 재채점은 별개 |
 | FYN-02 역할·설계 확정 | **완료** | v0.5.0-draft runtime + references | 행동 평가 후 규칙 축소 가능 |
 | FYN-03 `thinking-skills` 통합 | **완료(draft)** | feature branch + draft PR + runtime allowlist | 병합은 행동 검증 뒤 |
-| FYN-04 평가 격리 | **부분 완료 — full-runner artifact binding까지 model-free 검증** | Docker/Codex remote boundary + protected `control_codex_home` + full-runner catalog/Docker preflight + native mapping binding | repaired ordinal-1 smoke와 two-job smoke 필요 |
+| FYN-04 평가 격리 | **부분 완료 — skill/tool wiring까지 model-free 검증** | Docker/Codex remote boundary + protected `control_codex_home` + full-runner binding + two-pass exact skill exposure + fixed test wiring | actual executor command binding, repaired ordinal-1 smoke와 two-job smoke 필요 |
 | FYN-05 실행 증거/합격 판정 연결 | **완료(구조 v4)** | runner-job v3 → attestation v3 → link v3 + trace/evidence/review/gate → result v4 | 실제 model run lineage 필요 |
-| FYN-06 자동 검사/회귀 | **완료(구조)** | 349-unit diagnostic + 7 active workflows green | 실제 subscription-backed smoke artifact는 FYN-08에서 추가 |
+| FYN-06 자동 검사/회귀 | **완료(구조)** | 353-unit diagnostic + 7 active workflows green at prior head | LOG-053 head CI와 실제 subscription-backed smoke artifact는 별도 확인 |
 | FYN-07 평가 데이터 보강 | **개발 세트 완료** | 18 public-development cases, 20 hard failures | independent held-out final set 필요 |
 | FYN-08 통제된 신·구 비교 | **미실행** | frozen 4 conditions + two-job smoke launcher 준비 | 실제 smoke 후, explicit reasoning-effort contract migration 후 pilot |
 | FYN-09 실패 분석/규칙 축소 | **대기** | ablation 원칙 사전등록 | FYN-08 결과 필요 |

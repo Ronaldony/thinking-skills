@@ -2,14 +2,24 @@
 
 작성일: 2026-09-09 (Asia/Seoul). 이 문서는 개발 담당 Codex의 인계 자료다. 평가 대상 candidate에게 전달하지 않는다.
 
-> 최신 상태(2026-09-13)는 [LOG-051](feynman-work-log/LOG-051-full-runner-mcp-contract-model-free-20260913.md)을 우선한다.
+> 최신 상태(2026-09-13)는 [LOG-053](feynman-work-log/LOG-053-skill-tool-wiring-model-free-20260913.md)을 우선한다.
+> LOG-052 full-runner binding에 연결된 Luna/Terra/Sol candidate에서 exact
+> `feynman-thinking` skill exposure, fixed MCP 3-tool catalog, network-disabled
+> test 시작과 source 불변성을 model-free로 검증했다. 빈 disposable Codex home에도
+> 주변 skill 7개가 노출되어, 첫 discovery 결과를 두 번째 App Server 프로세스의
+> transient disable override로 바꾸는 fail-closed 방식을 적용했다. 모델·인증
+> 호출은 0회였다. 다음은 이 격리와 full-runner override를 실제 smoke executor의
+> 명령 생성 경로에 model-free로 결속하는 단계다. 실제 model smoke와 baseline은
+> 아직 시작하지 않는다.
+>
+> 이전 [LOG-051](feynman-work-log/LOG-051-full-runner-mcp-contract-model-free-20260913.md):
 > 새 승인 아래 Luna 비평가 probe를 정확히 1회 실행했고 실제 trace에서 완료된
 > `mcp_tool_call` 1개를 관찰했다. 자동 재시도는 없었다. 이는 bounded 1-byte
 > diagnostic tool의 model-facing 노출 성공이며 full evaluation runner나 성능
 > 검증 성공은 아니다. 이후 full-runner 3-tool MCP contract의 model-free Docker 및
 > Codex catalog preflight와 existing tools-10 artifact chain 결속까지 통과했다.
-> 상세 결속 결과는 LOG-052이며, 다음은 모델 없이 skill/command wiring을 검증하는
-> 단계다.
+> 상세 결속 결과는 LOG-052이며, 당시 다음 단계였던 model-free skill/command
+> wiring은 LOG-053에서 완료됐다.
 > [LOG-051](feynman-work-log/LOG-051-full-runner-mcp-contract-model-free-20260913.md)은
 > Python runtime 누락을 확인하고 새 local image를 검증한 상세 기록이다.
 > 이전 [LOG-049](feynman-work-log/LOG-049-transient-mcp-exec-preflight-20260913.md)에서
@@ -33,9 +43,11 @@
 
 목표는 역사적 인물의 사고 방법을 문제 해결 스킬로 만드는 `Ronaldony/thinking-skills`에 리처드 파인만 스킬을 설계·구현·검증하는 것이다. 원본은 `Ronaldony/feynman-thinking` v0.4.0이다. 현재 v0.5.0-draft는 설치·평가 구조를 구현한 research preview이지, 행동 성능이 입증된 릴리스가 아니다.
 
-**full-runner MCP contract를 existing tools-10 runner-job/profile에 결속하는
-model-free 목표는 LOG-052에서 완료됐다.** 실제 모델 평가와 baseline은 아직
-시작하지 않는다. 다음 목표는 스킬 노출·명령 wiring을 모델 없이 검증하는 것이다.
+**full-runner MCP contract를 existing tools-10 runner-job/profile에 결속하고,
+candidate skill 노출과 fixed test wiring을 검증하는 model-free 목표는 LOG-053에서
+완료됐다.** 실제 모델 평가와 baseline은 아직 시작하지 않는다. 다음 목표는 같은
+transient skill 격리와 full-runner override를 실제 executor 명령 생성에 모델 없이
+결속하는 것이다.
 
 ## 2. 확인한 저장소 기준점
 
@@ -239,7 +251,7 @@ reasoning policy = model-default (integration smoke에만 허용)
 | validate-feynman-unit-diagnostic | 34327616793 |
 
 이 조회는 새 테스트 실행도, Windows 실기기 성공도, 모델 성능 측정도 아니다. 최신
-로컬 회귀는 349 tests이며, 과거 CI 수치는 해당 실행의 역사적 기록으로만 본다.
+로컬 회귀는 LOG-053의 353 tests이며, 과거 CI 수치는 해당 실행의 역사적 기록으로만 본다.
 
 근거 위치:
 

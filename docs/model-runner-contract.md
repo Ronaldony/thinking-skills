@@ -422,3 +422,20 @@ model-runner를 실제 평가용으로 완료했다고 부르려면 최소 다�
 - multi-turn이면 same-thread continuity
 
 현재 상태는 **mock/synthetic control-plane → stdio remote tool boundary reference와 analysis-result v3 구조 완료, 실제 external model authentication + behavioral pilot 미완료**다.
+
+## 16. candidate skill/tool wiring preflight
+
+실제 model turn 전에는 `feynman_skill_tool_wiring_preflight.py`로 LOG-052
+full-runner binding의 실행 배선을 검증한다. 이 검사는 runner-job/profile/binding
+lineage, candidate filesystem skill set, task의 명시적 skill marker, App Server의
+최종 활성 skill set, exact fixed MCP catalog와 network-disabled fixed test를 묶는다.
+
+빈 `CODEX_HOME`은 host의 built-in/user skill을 반드시 제거하지 않는다. 따라서 첫
+`skills/list(forceReload=true)`에서 non-candidate skill을 식별하고, 그 정확한
+경로만 transient `skills.config` override로 비활성화한 새 App Server 프로세스에서
+두 번째 검증을 수행한다. 전역 config와 protected auth home은 수정하지 않는다.
+
+성공 verdict `full-runner-skill-tool-wiring-ready`는 모델 호출 0회인 구조 증거다.
+고정 test가 시작·종료되고 candidate source가 불변이면 buggy fixture의 test failure와
+wiring failure를 구분한다. 실제 executor 명령에 같은 override를 결속하고 별도
+preflight하기 전에는 model smoke를 시작하지 않는다.

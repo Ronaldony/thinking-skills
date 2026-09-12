@@ -1,13 +1,22 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 2026-09-13 최신 재개 지점: 먼저
-> `docs/feynman-work-log/LOG-051-full-runner-mcp-contract-model-free-20260913.md`를
-> 읽어라. 승인된 Luna 비평가 probe 1회에서 실제 완료 `mcp_tool_call` 1개와
-> `trace-tool-use-observed`를 확인했다. 이후 3-tool full-runner contract와 실제
-> network-disabled Docker fixed-test, Codex catalog, existing tools-10 runner-job/
-> profile binding을 model-free로 검증했다. 반복
-> 모델 실행, Terra/Sol fallback, baseline/frozen evaluation은 시작하지 마라. 다음은
-> skill/command wiring을 모델 없이 검증하는 것이다.
+> `docs/feynman-work-log/LOG-053-skill-tool-wiring-model-free-20260913.md`를 읽어라.
+> LOG-052 binding에 연결된 Luna/Terra/Sol candidate에서 exact skill exposure,
+> full-runner 3-tool catalog, network-disabled fixed test 시작과 source 불변성을
+> model-free로 확인했다. 빈 disposable Codex home에도 주변 skill 7개가 발견돼,
+> 첫 discovery 결과를 두 번째 App Server의 transient disable override에만 쓰는
+> two-pass 격리를 구현했다. 세 결과 모두
+> `full-runner-skill-tool-wiring-ready`, model/auth 호출 0회다. 다음은 같은 격리와
+> full-runner override를 실제 subscription smoke executor의 명령 생성 경로에
+> model-free로 결속하는 것이다. 실제 model smoke, 자동 retry, baseline/frozen
+> evaluation은 시작하지 마라.
+>
+> 이전 full-runner checkpoint는
+> `docs/feynman-work-log/LOG-051-full-runner-mcp-contract-model-free-20260913.md`와
+> LOG-052를 따른다. 승인된 Luna 비평가 probe 1회에서 실제 완료
+> `mcp_tool_call` 1개를 확인한 뒤, 3-tool contract와 artifact binding을 모델 없이
+> 검증했다.
 >
 > 이전 model-free checkpoint:
 > `docs/feynman-work-log/LOG-049-transient-mcp-exec-preflight-20260913.md`를 읽어라.

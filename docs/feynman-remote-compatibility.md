@@ -195,3 +195,31 @@ turn, subscription auth gate 성공, baseline/Feynman 비교가 아니다. 산�
 자동 검증은 새 binding unit 2개와 전체 `349 tests OK, 11 skipped`로 통과했다.
 다음 단계는 binding에 연결된 candidate skill 노출·고정 command wiring을 모델 없이
 검증하는 것이며, 그 전에는 실제 smoke나 baseline을 시작하지 않는다.
+
+## LOG-053 결과 — exact skill exposure와 fixed test wiring
+
+`tooling/feynman_skill_tool_wiring_preflight.py`가 LOG-052 binding을 실제
+Luna/Terra/Sol candidate에 연결했다. Codex App Server의
+`skills/list(cwds=[candidate], forceReload=true)`를 사용했으며 thread/turn/auth/model
+요청은 시작하지 않았다.
+
+첫 Luna 실행에서 빈 disposable `CODEX_HOME`에도 candidate 외 활성 skill 7개가
+발견됐다. 이는 filesystem preflight와 host App Server의 실제 discovery가 다를 수
+있다는 격리 결함이다. preflight는 이를 허용하지 않고 다음 two-pass로 보정한다.
+
+1. 첫 App Server에서 활성 non-candidate skill path를 메모리에서만 수집한다.
+2. 해당 path만 `skills.config` CLI override로 일시 비활성화한다.
+3. 새 App Server에서 candidate skill set과 MCP catalog를 다시 검증한다.
+4. 결과 artifact에는 disable path나 skill description을 보존하지 않는다.
+
+세 모델 모두 최종 활성 candidate skill은 `feynman-thinking` 하나, 주변 skill은 0,
+MCP tool은 fixed read/write/test 3개였다. adapter에는 write가 아니라 인자 없는
+`feynman_run_tests`만 직접 호출했다. test는 의도된 buggy candidate 때문에
+실패했지만, 명령은 network none에서 시작·종료됐고 `candidate.py` digest는
+전후 동일했다. 따라서 verdict는 wiring 준비 완료인
+`full-runner-skill-tool-wiring-ready`이며 candidate correctness를 뜻하지 않는다.
+
+실제 executor는 아직 이 two-pass disable override와 full-runner override를 자신의
+최종 `codex exec` 명령에 결속하지 않았다. 다음 model-free 작업은 executor command
+builder에 동일 계약을 fail-closed로 연결하는 것이다. 그 전에는 실제 subscription
+smoke나 baseline을 시작하지 않는다.
