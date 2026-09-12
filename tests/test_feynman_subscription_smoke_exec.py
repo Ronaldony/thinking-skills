@@ -119,7 +119,10 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
         self.assertIn("smoke_spec_sha256", result["digests"]); self.assertNotIn("stderr_sha256", result["digests"])
         self.assertEqual((self.evaluator / "exec-1" / "candidate-final.txt").read_text(encoding="utf-8"), "FAKE_SMOKE_OK")
         argv = state["argv"]
-        for flag in ("--json", "--ephemeral", "--strict-config", "--ignore-rules", "--skip-git-repo-check", "--approve-for-me"): self.assertIn(flag, argv)
+        for flag in ("--json", "--ephemeral", "--strict-config", "--ignore-rules", "--skip-git-repo-check"): self.assertIn(flag, argv)
+        self.assertNotIn("--approve-for-me", argv)
+        self.assertIn('approval_policy="never"', argv)
+        self.assertEqual(result["execution_controls"]["approval_policy"], "never")
         self.assertNotIn("--ask-for-approval", argv)
         self.assertEqual(argv[argv.index("--sandbox") + 1], "workspace-write"); self.assertEqual(argv[argv.index("--model") + 1], "gpt-test")
         self.assertIn('web_search="disabled"', argv); self.assertEqual(state["prompt"], "RUN THIS EXACT TASK\n")
@@ -231,6 +234,17 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
 
 
 class SubscriptionSmokeExecSchemaTests(unittest.TestCase):
+    def test_failure_categories_never_echo_raw_text(self):
+        for diagnostic, expected in (
+            ("unexpected argument", "cli-argument-error"),
+            ("You've hit your usage limit", "usage-limit"),
+            ("unknown field", "configuration-error"),
+            ("exec-server failed", "remote-environment-error"),
+            ("opaque failure", "unclassified"),
+        ):
+            with self.subTest(expected=expected):
+                self.assertEqual(executor._failure_category(diagnostic + " synthetic-secret-account"), expected)
+
     def test_schema_tracks_privacy_and_reasoning_policy(self):
         schema = json.loads((ROOT / "evals" / "feynman-thinking" / "subscription-smoke-exec-result.schema.json").read_text(encoding="utf-8"))
         self.assertEqual(schema["properties"]["schema_version"]["const"], 1)

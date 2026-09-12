@@ -1,5 +1,12 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
+> 2026-09-12 재개 우선순위: 아래 최초 인계보다
+> `docs/feynman-work-log/LOG-033-smoke-cli-argument-conflict-20260912.md`를 우선한다.
+> 인증·Docker canary·ordinal 1 모델 턴은 통과했으나 task는 실패했다.
+> 현재 blocker는 Windows file URI를 Linux exec-server가 거부하는 RPC 경로 호환성이다.
+> 모델 없는 path/read/spawn 및 스킬 탐색 검증부터 진행한다. baseline은 미실행이며,
+> 이 결함이 해결되기 전에는 추가 모델 호출을 하지 않는다.
+
 아래 구분선 뒤의 내용을 새 **개발 담당** Codex 세션에 붙여넣는다. 평가 candidate나 baseline 프롬프트로 사용하지 않는다.
 
 ---

@@ -253,6 +253,20 @@ def _safe_exec_env(
     }
 
 
+def _failure_category(stderr: str) -> str:
+    """Return only fixed diagnostic labels; never expose subprocess text."""
+    text = stderr.lower()
+    if "cannot be used with" in text or "unexpected argument" in text:
+        return "cli-argument-error"
+    if "usage limit" in text or "usage_limit" in text:
+        return "usage-limit"
+    if "unknown field" in text or "error loading config" in text:
+        return "configuration-error"
+    if "environments.toml" in text or "exec-server" in text:
+        return "remote-environment-error"
+    return "unclassified"
+
+
 def _parse_trace(path: Path) -> dict[str, Any]:
     thread_ids: set[str] = set()
     final_messages: list[str] = []
@@ -382,9 +396,9 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
         "--strict-config",
         "--ignore-rules",
         "--skip-git-repo-check",
-        # Codex CLI 0.153.4 replaced the removed --ask-for-approval option
-        # with --approve-for-me for non-interactive automatic approval.
-        "--approve-for-me",
+        # Set the frozen non-interactive policy explicitly. --approve-for-me
+        # selects automatic review and conflicts with --sandbox on 0.153.4.
+        "-c", 'approval_policy="never"',
         "--sandbox", "workspace-write",
         "--model", model,
         "--cd", str(candidate_dir),
@@ -413,7 +427,8 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
             )
         stderr_text = proc.stderr or ""
         if proc.returncode != 0:
-            raise ValueError(f"Codex exec failed with exit code {proc.returncode}; raw stderr was not preserved")
+            category = _failure_category(stderr_text)
+            raise ValueError(f"Codex exec failed with exit code {proc.returncode}; category={category}; raw stderr was not preserved")
         trace = _parse_trace(trace_path)
         final_path.write_text(trace["final_message"], encoding="utf-8")
         result = {

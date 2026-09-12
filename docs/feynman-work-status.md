@@ -1,6 +1,12 @@
 # feynman-thinking 작업 상태
 
-기준: 2026-09-09, `feat/feynman-thinking-v0.5-draft` research preview.
+최신 실행 checkpoint: 2026-09-12, `feat/feynman-thinking-v0.5-draft` research preview.
+
+현재 재개 지점은 [LOG-033](feynman-work-log/LOG-033-smoke-cli-argument-conflict-20260912.md)이다.
+전용 홈 인증, native Docker 경계, ordinal 1 구조 검사 및 실제 모델 턴은 통과했다.
+그러나 candidate는 작업을 완료하지 못했고 Linux exec-server가 Windows file URI를
+20건 거부했다. 다음 작업은 모델 호출 없이 RPC 경로·스킬 탐색·명령 실행을 검증하고
+수정하는 것이다. baseline은 아직 실행하지 않는다. 아래 상세 구현 이력은 9월 9일 기준이다.
 
 이 문서는 구현 상태와 행동 성능 주장을 분리해 기록한다. 구조 검사나 integration smoke가 성공하더라도 실제 Feynman skill의 인과적 성능 향상으로 해석하지 않는다.
 
@@ -269,8 +275,10 @@ feature branch에 반쪽 migration을 노출하지 않기 위해 `tmp/feynman-su
 → [완료] subscription auth gate + structural preflight
 → [완료] mock token 분리 + API-name CI guard
 → [완료] smoke spec v2 + one-job subscription smoke executor
-→ trusted local control plane에서 ChatGPT subscription login  ← 현재 외부 조건
-→ baseline/feynman-v05 actual smoke executor 실행
+→ [완료] dedicated ChatGPT subscription auth gate 실검증
+→ [부분 완료] ordinal 1 모델 턴 완료, 실제 task는 실패
+→ Windows file URI → Linux exec-server RPC 호환성 수정  ← 현재 개발 조건
+→ 스킬 탐색/명령 실행을 모델 없이 검증한 뒤 two-job smoke 진행
 → post-run canary + attestation/link + review/result-v4
 → [필수 선행] explicit reasoning-effort execution contract migration
 → four-condition public-development pilot
