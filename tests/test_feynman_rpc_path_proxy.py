@@ -90,6 +90,19 @@ class RpcPathProxyTests(unittest.TestCase):
         self.assertEqual(reason, "host-path-outside-declared-mount")
         self.assertNotIn("Users", reason)
 
+    def test_declared_path_field_type_has_fixed_rejection_reason(self):
+        mapper = RpcPathMapper.from_mounts([
+            {"source": r"C:\DevWorks\candidate", "destination": "/run/candidate", "access": "rw"},
+        ])
+        raw = json.dumps({
+            "jsonrpc": "2.0", "id": 14, "method": "fs/getMetadata",
+            "params": {"path": None},
+        }).encode("utf-8")
+        child, error, reason = _map_request_payload_with_reason(mapper, raw)
+        self.assertIsNone(child)
+        self.assertIsNotNone(error)
+        self.assertEqual(reason, "invalid-path-field-type")
+
     def test_container_namespace_rejection_reason_is_distinct(self):
         mapper = RpcPathMapper.from_mounts([
             {"source": r"C:\DevWorks\candidate", "destination": "/run/candidate", "access": "rw"},

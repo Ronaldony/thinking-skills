@@ -44,6 +44,7 @@ _MAPPING_REJECTION_REASONS = {
     "container path must be absolute and traversal-free": "invalid-container-path",
     "container path is outside declared mounts": "container-path-outside-declared-mount",
     "container file URI must use POSIX paths": "invalid-container-file-uri",
+    "declared path field must be a string": "invalid-path-field-type",
     "declared path array must be a list": "invalid-path-array-shape",
     "config path groups must contain only paths": "invalid-path-array-shape",
     "RPC line is not valid JSON": "malformed-request",

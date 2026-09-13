@@ -181,9 +181,15 @@ class RpcPathMapper:
         mapped = dict(message)
         mapped_params = dict(params)
         for field in fields:
-            value = mapped_params.get(field)
-            if isinstance(value, str) and (value.startswith("file:") or value.startswith("/") or _is_windows_path(value)):
-                mapped_params[field] = self.host_to_container(value)
+            if field not in mapped_params:
+                continue
+            value = mapped_params[field]
+            if not isinstance(value, str):
+                raise RpcPathMappingError("declared path field must be a string")
+            # Every declared path is mapped or rejected.  Silently passing a
+            # relative/ambiguous value through would defer a boundary error to
+            # the remote server and could make a host path look remote.
+            mapped_params[field] = self.host_to_container(value)
         for field in REQUEST_PATH_ARRAY_FIELDS.get(method, ()):
             if field not in mapped_params:
                 continue

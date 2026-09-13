@@ -63,6 +63,16 @@ class RpcPathMappingTests(unittest.TestCase):
         message = {"method": "unknown/path", "params": {"path": "file:///C:/DevWorks/smoke/candidate/x.txt"}}
         self.assertEqual(self.mapper.map_request(message), message)
 
+    def test_declared_path_field_rejects_relative_values(self):
+        for method, field in (("command/exec", "cwd"), ("fs/readFile", "path"), ("resources/read", "uri")):
+            with self.subTest(method=method), self.assertRaisesRegex(
+                RpcPathMappingError, "host path must be absolute"):
+                self.mapper.map_request({"method": method, "params": {field: "relative.txt"}})
+
+    def test_declared_path_field_rejects_non_strings(self):
+        with self.assertRaisesRegex(RpcPathMappingError, "declared path field must be a string"):
+            self.mapper.map_request({"method": "fs/getMetadata", "params": {"path": None}})
+
     def test_outside_mount_and_traversal_are_rejected(self):
         with self.assertRaises(RpcPathMappingError):
             self.mapper.host_to_container("file:///C:/Users/wotmd/secret.txt")

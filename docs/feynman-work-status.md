@@ -1,13 +1,14 @@
 # feynman-thinking 작업 상태
 
-최우선 재개 지점: [LOG-067](feynman-work-log/LOG-067-raw-posix-namespace-mapping-fix-20260913.md).
+최우선 재개 지점: [LOG-068](feynman-work-log/LOG-068-declared-path-field-fail-closed-20260913.md).
 승인된 namespace 진단 1회는 `-32603`, turn/model 생성 0회로 종료됐다.
 거부 사유는 container 2 / host 4 / invalid-host 1이다. 로컬 재현에서 raw POSIX
 경로도 host로 분류됨을 확인했으므로 이 수치를 실제 경로 namespace로 단정하지
 않는다. method/reason 집계도 서로 대응하지 않는다. 새 산출물은 JSON Schema
 검증을 통과했다. raw POSIX fallback 재해석 결함을 수정해 전체 373 tests/11
-skipped가 통과했다. 다음은 수정 후 startup 재검증이며 별도 실행 승인이 필요하다.
-아래의 이전 재개 지점 및 해석은 역사 기록이며 LOG-067을 우선한다.
+skipped가 통과했다. 선언된 scalar path field의 상대경로/비문자열 fail-closed 검증도
+추가해 전체 376 tests/11 skipped가 통과했다. 다음은 수정 후 startup 재검증이며
+별도 실행 승인이 필요하다. 아래의 이전 재개 지점 및 해석은 역사 기록이며 LOG-068을 우선한다.
 
 현재 재개 지점: [LOG-065](feynman-work-log/LOG-065-namespace-rejection-reason-split-20260913.md).
 payload-free rejection reason telemetry와 ephemeral App Server `thread/start`
