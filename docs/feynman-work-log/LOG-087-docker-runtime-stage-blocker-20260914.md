@@ -78,4 +78,8 @@ git diff --check
 
 - 이번 변경은 runtime probe, 회귀 테스트, LOG-087, 최신 인계 문서만 stage한다.
 - `.tmp/`와 사용자 PNG 2개는 stage하지 않는다.
-- commit 후 기존 feature branch에 일반 push하고 local/remote SHA를 확인한다.
+- 명시된 6개 tracked 파일만 stage했고 `.tmp/`와 사용자 PNG 2개는 보존했다.
+- 커밋: `f08f6b5c3af27df4c32a940605799081bcbb16d7` (`feat: add Docker runtime stage probe`)
+- `git push origin feat/feynman-thinking-v0.5-draft` 성공.
+- push 후 local HEAD와 `refs/remotes/origin/feat/feynman-thinking-v0.5-draft`가 모두 `f08f6b5c3af27df4c32a940605799081bcbb16d7`로 일치했다.
+- main merge와 force push는 하지 않았다.
