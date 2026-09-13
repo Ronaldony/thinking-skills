@@ -145,5 +145,17 @@ Engine의 정상 응답을 증명하지 못한다.
 - 실제 model turn, Luna/Terra/Sol fallback, baseline, frozen evaluation은 계속 보류한다.
 - main merge와 force push는 하지 않는다.
 
+## 저장 상태
+
+- 구현·테스트·인계 문서·이 로그는 commit `3824581 fix: align startup thread request with codex schema`로 저장했다.
+- `origin/feat/feynman-thinking-v0.5-draft`에 일반 push했고 원격 SHA는
+  `3824581ce98c0160f64b0c8c51e2eaf80cff70ee`다.
+- 해당 SHA의 마지막 CI 조회에서는 `validate-feynman-codex-reference`,
+  `validate-feynman-docker-reference`, `validate-feynman-remote-exec-reference`,
+  `validate-feynman-remote-patch-reference`가 `completed / success`였고,
+  `validate-feynman`, `validate-feynman-subscription-readiness`,
+  `validate-feynman-unit-diagnostic`는 `queued`였다.
+- 사용자 PNG 2개는 untracked로 보존했고 stage하지 않았다.
+
 이 문서는 개발 담당 Codex용 작업 로그이며 baseline candidate나 평가 prompt로 전달하지
 않는다.
