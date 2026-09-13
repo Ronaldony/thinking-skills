@@ -2,7 +2,12 @@
 
 최신 실행 checkpoint: 2026-09-13, `feat/feynman-thinking-v0.5-draft` research preview.
 
-최신 checkpoint는 [LOG-056](feynman-work-log/LOG-056-subscription-executor-wiring-preflight-20260913.md)이다.
+최신 checkpoint는 [LOG-057](feynman-work-log/LOG-057-luna-model-turn-preflight-blocked-20260913.md)이다.
+승인된 Luna model-turn은 실행 전 control `environments.toml` lineage 불일치로
+fail-closed 중단됐고 model/auth 호출은 0회다. 기존 protected home 설정은
+자동으로 덮어쓰지 않았다.
+
+이전 checkpoint인 [LOG-056](feynman-work-log/LOG-056-subscription-executor-wiring-preflight-20260913.md)에서는
 canonical executor가 required full-runner 입력을 검증한 뒤, 같은 two-pass App
 Server skill discovery와 transient skill-disable override를 실제 command builder에
 자동 연결하도록 했다. Luna/Terra/Sol 모두 `subscription-executor-wiring-ready`
