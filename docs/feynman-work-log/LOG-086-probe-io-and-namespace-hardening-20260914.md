@@ -79,9 +79,12 @@ git diff --check
 
 ## 커밋·push
 
-- probe 코드, fixture, 회귀 테스트, 최신 인계 문서와 이 로그만 선택한다.
-- `.tmp/`와 사용자 PNG 2개는 stage하지 않는다.
-- 이번 변경을 기존 `feat/feynman-thinking-v0.5-draft`에 commit하고 일반 push한 뒤 local/remote SHA를 확인한다.
+- probe 코드, fixture, 회귀 테스트, 최신 인계 문서와 이 로그만 선택했다.
+- `.tmp/`와 사용자 PNG 2개는 stage하지 않고 보존했다.
+- 커밋: `bd64187ceb2d860dae08cc37194189e1aa81be1d` (`fix: harden RPC probe evidence collection`)
+- `git push origin feat/feynman-thinking-v0.5-draft` 성공.
+- push 후 local HEAD와 `refs/remotes/origin/feat/feynman-thinking-v0.5-draft`가 모두 `bd64187ceb2d860dae08cc37194189e1aa81be1d`로 일치했다.
+- main merge와 force push는 하지 않았다.
 
 ## 미완료 사항과 다음 행동
 
