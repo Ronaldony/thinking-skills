@@ -169,7 +169,11 @@ server가 `configPaths`를 어떤 기준으로 생성해야 하는지를 증명�
 
 ## 커밋·push 및 미완료
 
-- 이 checkpoint 작성 시점에는 아직 commit/push하지 않았다.
+- 이 문서는 후속 docs-only 저장 커밋 `89e8e3d docs: record paired startup blocker`에
+  포함됐다.
+- `origin/feat/feynman-thinking-v0.5-draft`는
+  `89e8e3d04cd9fd28086d68ab35ea9567223160ff`를 가리키며 push가 확인됐다.
+- 이 후속 상태 보정 자체는 아직 별도 commit/push 전이다.
 - user PNG 2개는 계속 untracked로 보존한다.
 - main merge와 force push는 하지 않는다.
 - 현재 branch의 외부 runner 성공 조건은 아직 달성되지 않았다.
