@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -7,7 +8,8 @@ import unittest
 from unittest.mock import patch
 
 from tooling.feynman_docker_runtime_probe import (
-    _initialize_response_observed, _inspect_container, _new_capture,
+    MAX_CAPTURE_BYTES, _drain, _initialize_response_observed,
+    _inspect_container, _new_capture,
     _stage_passed, run,
 )
 
@@ -43,6 +45,31 @@ class DockerRuntimeProbeTests(unittest.TestCase):
         self.assertTrue(_initialize_response_observed(valid, truncated=False))
         self.assertFalse(_initialize_response_observed(error, truncated=False))
         self.assertFalse(_initialize_response_observed(valid, truncated=True))
+
+    def test_drain_preserves_digest_but_bounds_sensitive_sample(self):
+        payload = b"x" * (MAX_CAPTURE_BYTES + 17)
+        capture = _new_capture()
+        _drain(io.BytesIO(payload), capture)
+        self.assertEqual(capture["bytes"], len(payload))
+        self.assertEqual(len(capture["sample"]), MAX_CAPTURE_BYTES)
+        self.assertTrue(capture["truncated"])
+        self.assertTrue(capture["drained"])
+        self.assertFalse(capture["read_error"])
+
+    def test_stage_rejects_nonzero_inner_container_exit(self):
+        capture = _new_capture()
+        capture["bytes"] = 1
+        capture["drained"] = True
+        value = {
+            "cli_exit_code": 0, "timed_out": False, "stdin_write_error": False,
+            "cli_stop_verified": True,
+            "stdout": capture, "stderr": capture,
+            "marker_observed": True, "node_version_observed": False,
+            "initialize_response_observed": False,
+            "container": {"available": True, "owned": True, "status": "exited", "exit_code": 7, "oom_killed": False},
+            "cleanup": {"status": "removed", "verified": True},
+        }
+        self.assertFalse(_stage_passed("entrypoint-echo", value))
 
     def test_stage_rejects_cleanup_uncertainty(self):
         capture = _new_capture()

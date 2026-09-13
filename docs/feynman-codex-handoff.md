@@ -1,11 +1,11 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-088](feynman-work-log/LOG-088-docker-create-engine-request-blocker-20260914.md).
-> runtime probe v2가 Docker create/start, CLI/inner exit, container ownership·cleanup,
-> bounded stream drain, initialize response 구조를 분리했다. 실제 `docker create`는
-> 30초 timeout, stdout/stderr 0/0, name inspect 불가로 `container-create`에서
-> blocked됐다. image entrypoint/node/Codex 전의 Docker client→engine create 단계
-> blocker이므로 환경 정상화 전에는 path contract·구독 startup·모델 실행을 하지 않는다.
+> 최신: [LOG-089](feynman-work-log/LOG-089-docker-runtime-external-state-recheck-20260914.md).
+> Docker client/server와 backend는 응답하지만, pinned image의 실제 `docker create`는
+> 직전 1회 30초 timeout·stdout/stderr 0/0·name inspect 불가로 `container-create`에서
+> blocked됐다. drain·비정상 내부 종료 회귀까지 보강했으며 전체 `434 tests OK,
+> 11 skipped`, schema 17개 errors=0이다. 새 Docker 정상화 증거 전에는 start/node/
+> exec-server, path contract, 구독 startup, 모델 실행을 하지 않는다.
 
 > 직전: [LOG-087](feynman-work-log/LOG-087-docker-runtime-stage-blocker-20260914.md).
 > 단계별 Docker runtime probe를 추가했으며 고정 image의 첫 `entrypoint-echo`부터
