@@ -43,6 +43,11 @@ class RpcPathMappingTests(unittest.TestCase):
         self.assertEqual(self.mapper.map_request(host)["params"]["cwd"], "file:///run/candidate")
         self.assertEqual(self.mapper.map_request(container), container)
 
+    def test_fs_walk_maps_path(self):
+        message = {"method": "fs/walk", "params": {
+            "path": r"C:\DevWorks\smoke\candidate"}}
+        self.assertEqual(self.mapper.map_request(message)["params"]["path"], "/run/candidate")
+
     def test_container_raw_path_is_preserved_only_under_a_declared_mount(self):
         self.assertEqual(self.mapper.host_to_container("/run/candidate/x.txt"), "/run/candidate/x.txt")
         with self.assertRaises(RpcPathMappingError):

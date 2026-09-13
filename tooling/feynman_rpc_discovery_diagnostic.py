@@ -69,6 +69,10 @@ def run(job_path: Path, profile: Path, remote: Path, docker_config: Path, output
         ('metadata-existing', 'fs/getMetadata', {'path': candidate + '/candidate.py'}),
         ('metadata-missing', 'fs/getMetadata', {'path': candidate + '/.feynman-diagnostic-absent'}),
         ('canonicalize-candidate', 'fs/canonicalize', {'path': candidate}),
+        # Keep this fixed and inside the declared candidate mount.  Ordinary
+        # mode verifies native Windows->Linux mapping; guarded mode verifies
+        # that an undeclared method remains fail-closed.
+        ('walk-candidate', 'fs/walk', {'path': candidate}),
     ]
     report = {'schema_version': 1, 'model_requests': 0, 'payloads_preserved': False, 'modes': {}}
     for guarded in (False, True):

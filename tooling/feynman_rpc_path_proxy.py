@@ -80,6 +80,7 @@ class _ProxyTelemetry:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._request_methods: Counter[str] = Counter()
+        self._request_mapping_rejection_methods: Counter[str] = Counter()
         self._response_error_codes: Counter[str] = Counter()
         self._values: Counter[str] = Counter()
         self._child_exit_code: int | None = None
@@ -93,9 +94,10 @@ class _ProxyTelemetry:
         with self._lock:
             self._values["requests_forwarded"] += 1
 
-    def request_rejected(self, *, malformed: bool) -> None:
+    def request_rejected(self, *, malformed: bool, method: str | None = None) -> None:
         with self._lock:
             self._values["request_mapping_rejections"] += 1
+            self._request_mapping_rejection_methods[method if isinstance(method, str) else "unknown"] += 1
             if malformed:
                 self._values["malformed_requests"] += 1
 
@@ -144,6 +146,7 @@ class _ProxyTelemetry:
                 "requests_seen": values.get("requests_seen", 0),
                 "requests_forwarded": values.get("requests_forwarded", 0),
                 "request_mapping_rejections": values.get("request_mapping_rejections", 0),
+                "request_mapping_rejection_methods": dict(sorted(self._request_mapping_rejection_methods.items())),
                 "malformed_requests": values.get("malformed_requests", 0),
                 "responses_seen": values.get("responses_seen", 0),
                 "responses_forwarded": values.get("responses_forwarded", 0),
@@ -360,7 +363,10 @@ def run_proxy(
                     allowed_methods=allowed_methods, allowed_path=allowed_path,
                 )
                 if rejection is not None:
-                    telemetry.request_rejected(malformed=request is None)
+                    telemetry.request_rejected(
+                        malformed=request is None,
+                        method=request.get("method") if request else None,
+                    )
                     _write_stdout(output_lock, rejection)
                     continue
                 assert payload is not None

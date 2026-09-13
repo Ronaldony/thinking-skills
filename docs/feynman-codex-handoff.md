@@ -2,7 +2,14 @@
 
 작성일: 2026-09-09 (Asia/Seoul). 이 문서는 개발 담당 Codex의 인계 자료다. 평가 대상 candidate에게 전달하지 않는다.
 
-> 최신 상태(2026-09-13)는 [LOG-060](feynman-work-log/LOG-060-luna-model-turn-request-mapping-blocker-20260913.md)을 우선한다.
+> 최신 상태(2026-09-13)는 [LOG-061](feynman-work-log/LOG-061-request-mapping-method-diagnostics-20260913.md)을 우선한다.
+> model-free discovery diagnostic에서 ordinary `fs/walk` candidate path는
+> Windows→Linux mapping 후 child까지 전달됐고 server의 synthetic `options`
+> 누락 오류를 반환했다. guarded mode는 bounded allowlist에 따라 `fs/walk`를
+> 거부했다. method별 payload-free rejection counter를 추가했고 전체
+> `364 tests OK, 11 skipped`다. 새 model-turn/retry/fallback은 실행하지 않는다.
+>
+> 직전 상태는 [LOG-060](feynman-work-log/LOG-060-luna-model-turn-request-mapping-blocker-20260913.md)다.
 > LOG-059 control-plane gate는 통과했지만 승인된 새 Luna model-turn 1회는 모델 요청
 > 전에 startup filesystem/config request mapping 9건이 거부되어 exit 1/0-byte trace로
 > 끝났다. Docker child exit 0, response mapping rejection 0이므로 남은 문제는

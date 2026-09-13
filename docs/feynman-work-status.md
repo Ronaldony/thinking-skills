@@ -2,7 +2,16 @@
 
 최신 실행 checkpoint: 2026-09-13, `feat/feynman-thinking-v0.5-draft` research preview.
 
-최신 checkpoint는 [LOG-060](feynman-work-log/LOG-060-luna-model-turn-request-mapping-blocker-20260913.md)다.
+최신 checkpoint는 [LOG-061](feynman-work-log/LOG-061-request-mapping-method-diagnostics-20260913.md)다.
+model-free discovery diagnostic에서 ordinary `fs/walk` candidate 요청은
+Windows→Linux 매핑 후 remote child까지 전달됐고, server의 synthetic `options`
+누락 오류를 반환했다. guarded mode의 `fs/walk`는 bounded method allowlist에 의해
+의도적으로 거부됐다. method별 payload-free rejection counter와 `fs/walk.path`
+allowlist를 구현했고 전체 `364 tests / 11 skipped`가 통과했다. LOG-060의 실제
+Luna 9건은 payload를 보존하지 않았으므로 개별 path 원인을 소급 확정하지 않는다.
+새 model-turn/retry/fallback/Terra/Sol/baseline은 실행하지 않는다.
+
+직전 checkpoint는 [LOG-060](feynman-work-log/LOG-060-luna-model-turn-request-mapping-blocker-20260913.md)다.
 새로 승인된 Luna model-turn 1회는 LOG-059 control-plane gate 통과 후 실행됐지만,
 모델 요청 전에 remote startup request mapping 9건이 거부되어 exit 1, 0-byte trace로
 종료됐다. Docker child exit 0 및 response mapping rejection 0으로 LOG-059 보정은

@@ -1,7 +1,16 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 2026-09-13 최신 재개 지점: 먼저
-> `docs/feynman-work-log/LOG-060-luna-model-turn-request-mapping-blocker-20260913.md`를 읽어라.
+> `docs/feynman-work-log/LOG-061-request-mapping-method-diagnostics-20260913.md`를 읽어라.
+> model-free discovery diagnostic에서 ordinary `fs/walk` candidate path는
+> Windows→Linux mapping 후 child까지 전달됐고 server의 synthetic `options`
+> 누락 오류를 반환했다. guarded mode는 bounded allowlist로 거부됐다. method별
+> payload-free rejection counter와 `fs/walk.path` mapping은 구현·회귀 검증됐다.
+> 전체는 `364 tests OK, 11 skipped`다. 새 model-turn/retry/fallback/Terra/Sol/
+> baseline은 실행하지 않는다.
+>
+> 직전 지점:
+> `docs/feynman-work-log/LOG-060-luna-model-turn-request-mapping-blocker-20260913.md`.
 > LOG-059 control-plane은 통과했지만 새로 승인된 Luna model-turn 1회는 모델 요청
 > 전에 startup request mapping 9건 거부로 exit 1/0-byte trace가 됐다. Docker child
 > exit 0, response mapping rejection 0이다. 같은 model command를 반복하지 말고,

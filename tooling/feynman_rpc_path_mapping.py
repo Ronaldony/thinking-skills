@@ -32,6 +32,7 @@ REQUEST_PATH_FIELDS: dict[str, frozenset[str]] = {
     "environmentConfig/read": frozenset({"cwd"}),
     "fs/canonicalize": frozenset({"path"}),
     "fs/getMetadata": frozenset({"path"}),
+    "fs/walk": frozenset({"path"}),
     "fs/readFile": frozenset({"path"}),
     "fs/writeFile": frozenset({"path"}),
     "resources/read": frozenset({"uri"}),

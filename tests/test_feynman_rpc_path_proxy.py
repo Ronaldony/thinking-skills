@@ -34,11 +34,13 @@ class RpcPathProxyTests(unittest.TestCase):
     def test_telemetry_contains_only_fixed_safe_counters(self):
         telemetry = _ProxyTelemetry()
         telemetry.request_seen("fs/readFile")
+        telemetry.request_rejected(malformed=False, method="fs/walk")
         telemetry.request_forwarded()
         telemetry.response_seen(-32001)
         telemetry.response_forwarded()
         snapshot = telemetry.snapshot()
         self.assertEqual(snapshot["request_methods"], {"fs/readFile": 1})
+        self.assertEqual(snapshot["request_mapping_rejection_methods"], {"fs/walk": 1})
         self.assertEqual(snapshot["response_error_codes"], {"-32001": 1})
         self.assertEqual(snapshot["requests_forwarded"], 1)
         self.assertNotIn("path", json.dumps(snapshot))
