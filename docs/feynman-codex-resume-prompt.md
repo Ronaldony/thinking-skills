@@ -1,5 +1,13 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
+> 먼저 `docs/feynman-work-log/LOG-066-approved-namespace-startup-result-20260913.md`를
+> 읽어라. 승인된 추가 startup 진단 1회는 완료됐고 `-32603`, 모델 생성 0회다.
+> container 2 / host 4 / invalid-host 1은 실제 namespace를 확정하지 않는다.
+> raw POSIX 경로의 host fallback과 별개 method/reason 집계의 한계를 로컬에서
+> 확인했다. 다음은 config 경로 생성 계약과 mapper를 오프라인에서 확인하는
+> 일이다. 단순 추가 probe를 먼저 요구하지 말고, 이전 로그의 단정적 해석은
+> LOG-066의 정정을 따른다. 아래 안내는 역사 기록이다.
+
 > 현재는 `docs/feynman-work-log/LOG-065-namespace-rejection-reason-split-20260913.md`를
 > 먼저 읽어라. 사용자가 승인한 `/run/candidate` model-free startup 1회는
 > `-32603`으로 끝났고 request rejection은 `environmentConfig/read:1`
