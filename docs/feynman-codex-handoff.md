@@ -2,10 +2,10 @@
 
 작성일: 2026-09-09 (Asia/Seoul). 이 문서는 개발 담당 Codex의 인계 자료다. 평가 대상 candidate에게 전달하지 않는다.
 
-> 최신 상태(2026-09-13)는 [LOG-057](feynman-work-log/LOG-057-luna-model-turn-preflight-blocked-20260913.md)을 우선한다.
-> 승인된 Luna model-turn은 model/auth 호출 전에 control `environments.toml`
-> lineage 불일치로 중단됐다. 기존 protected home 설정은 덮어쓰지 않았다.
-> 정확한 원인과 다음 사람 승인 지점은 LOG-057이다.
+> 최신 상태(2026-09-13)는 [LOG-058](feynman-work-log/LOG-058-luna-model-turn-failed-20260913.md)을 우선한다.
+> 승인된 Luna model-turn은 preflight/auth 후 `codex exec` exit 1로 종료됐고
+> trace는 0바이트였다. 자동 retry는 하지 않았으며 model/tool-use 증거는 없다.
+> 정확한 상태와 다음 결정 지점은 LOG-058이다.
 >
 > 이전 checkpoint는 [LOG-056](feynman-work-log/LOG-056-subscription-executor-wiring-preflight-20260913.md)이다.
 > canonical executor가 required full-runner 입력을 검증한 뒤 two-pass App Server

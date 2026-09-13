@@ -2,10 +2,11 @@
 
 최신 실행 checkpoint: 2026-09-13, `feat/feynman-thinking-v0.5-draft` research preview.
 
-최신 checkpoint는 [LOG-057](feynman-work-log/LOG-057-luna-model-turn-preflight-blocked-20260913.md)이다.
-승인된 Luna model-turn은 실행 전 control `environments.toml` lineage 불일치로
-fail-closed 중단됐고 model/auth 호출은 0회다. 기존 protected home 설정은
-자동으로 덮어쓰지 않았다.
+최신 checkpoint는 [LOG-058](feynman-work-log/LOG-058-luna-model-turn-failed-20260913.md)이다.
+승인된 Luna model-turn은 auth 및 preflight 후 `codex exec` exit 1로 종료됐고
+trace는 0바이트였다. 자동 retry는 하지 않았으며, 모델 응답·tool-use 증거는
+없다. control manifest는 승인에 따라 Luna용으로 교체됐고 기존 파일은 TEMP에
+백업했다.
 
 이전 checkpoint인 [LOG-056](feynman-work-log/LOG-056-subscription-executor-wiring-preflight-20260913.md)에서는
 canonical executor가 required full-runner 입력을 검증한 뒤, 같은 two-pass App

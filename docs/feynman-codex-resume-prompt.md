@@ -1,11 +1,11 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 2026-09-13 최신 재개 지점: 먼저
-> `docs/feynman-work-log/LOG-057-luna-model-turn-preflight-blocked-20260913.md`를 읽어라.
-> 승인된 Luna model-turn은 auth/model 전에 control `environments.toml`과
-> 현재 runner-job/profile lineage 불일치로 중단됐다. 기존 protected home을
-> 자동 덮어쓰지 않았다. 사용자가 현재 Luna용 canonical manifest를 control
-> home에 배치하는 것을 승인하기 전에는 model-turn을 재개하지 마라.
+> `docs/feynman-work-log/LOG-058-luna-model-turn-failed-20260913.md`를 읽어라.
+> 승인된 Luna model-turn은 preflight/auth 후 `codex exec` exit 1로 종료됐고
+> trace는 0바이트였다. 자동 retry/fallback하지 마라. model/tool-use 증거는
+> 없다. 다음은 별도 non-model 진단/구현 보정 또는 추가 model 실행 여부를
+> 사용자가 결정해야 하는 지점이다.
 >
 > 이전 checkpoint:
 > `docs/feynman-work-log/LOG-056-subscription-executor-wiring-preflight-20260913.md`.
