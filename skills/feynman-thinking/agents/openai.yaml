@@ -1,0 +1,6 @@
+interface:
+  display_name: "Feynman Thinking"
+  short_description: "작동 모델을 재구성하고 작은 검사로 이해의 빈틈을 찾습니다."
+  default_prompt: "$feynman-thinking을 사용해 이 문제의 작동 모델과 가장 작은 결정적 검사를 만들고, 실제 검사 결과에 따라 결론을 수정하거나 유지해줘."
+policy:
+  allow_implicit_invocation: false

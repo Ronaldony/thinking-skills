@@ -1,0 +1,4 @@
+**
+!Dockerfile
+!.dockerignore
+!feynman_bounded_read_adapter.mjs

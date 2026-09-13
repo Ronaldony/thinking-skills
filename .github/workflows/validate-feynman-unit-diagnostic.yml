@@ -1,0 +1,47 @@
+name: validate-feynman-unit-diagnostic
+
+on:
+  push:
+    paths:
+      - '.github/workflows/validate-feynman-unit-diagnostic.yml'
+      - 'tooling/**'
+      - 'tests/**'
+      - 'evals/feynman-thinking/**'
+  pull_request:
+    paths:
+      - '.github/workflows/validate-feynman-unit-diagnostic.yml'
+      - 'tooling/**'
+      - 'tests/**'
+      - 'evals/feynman-thinking/**'
+
+permissions:
+  contents: read
+
+jobs:
+  unit-diagnostic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run full unittest suite and preserve output
+        id: unittest
+        shell: bash
+        run: |
+          set +e
+          python -m unittest discover -s tests -v > /tmp/feynman-unittest.log 2>&1
+          status=$?
+          printf '%s\n' "$status" > /tmp/feynman-unittest-exit-code.txt
+          cat /tmp/feynman-unittest.log
+          exit "$status"
+      - name: Upload unittest diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: feynman-unit-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /tmp/feynman-unittest.log
+            /tmp/feynman-unittest-exit-code.txt
+          if-no-files-found: error
+          retention-days: 14

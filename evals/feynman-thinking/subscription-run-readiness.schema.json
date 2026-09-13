@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Feynman ChatGPT-subscription run readiness v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "verdict": {"const": "ready-for-local-chatgpt-session-check"},
+    "run_id": {"type": "string", "minLength": 1},
+    "job": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "ordinal": {"type": "integer", "minimum": 1},
+        "case_id": {"type": "string", "minLength": 1},
+        "condition_id": {"enum": ["baseline", "generic", "legacy-clean", "feynman-v05"]},
+        "repeat": {"type": "integer", "minimum": 1},
+        "has_followup": {"type": "boolean"}
+      },
+      "required": ["ordinal", "case_id", "condition_id", "repeat", "has_followup"]
+    },
+    "versions": {
+      "type": "object",
+      "properties": {"model": {"type": "string", "minLength": 1}, "codex_cli": {"type": "string", "minLength": 1}},
+      "required": ["model", "codex_cli"]
+    },
+    "authentication": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "mode": {"const": "chatgpt-subscription"},
+        "auth_source": {"const": "codex-session"},
+        "api_key_auth_allowed": {"const": false},
+        "candidate_auth_exposed": {"const": false},
+        "control_session_contents_read_by_preflight": {"const": false}
+      },
+      "required": ["mode", "auth_source", "api_key_auth_allowed", "candidate_auth_exposed", "control_session_contents_read_by_preflight"]
+    },
+    "digests": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "eval_plan_sha256": {"$ref": "#/$defs/sha256"},
+        "evaluator_case_sha256": {"$ref": "#/$defs/sha256"},
+        "runner_job_sha256": {"$ref": "#/$defs/sha256"},
+        "boundary_profile_sha256": {"$ref": "#/$defs/sha256"},
+        "remote_environment_sha256": {"$ref": "#/$defs/sha256"},
+        "candidate_task_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "required": ["eval_plan_sha256", "evaluator_case_sha256", "runner_job_sha256", "boundary_profile_sha256", "remote_environment_sha256", "candidate_task_sha256"]
+    },
+    "preflight": {"type": "object", "additionalProperties": true, "required": ["runner_job_valid", "frozen_plan_job_match", "candidate_task_bytes_match", "boundary_profile_valid", "remote_environment_valid", "candidate_skill_preflight_valid", "control_codex_home_protected"]},
+    "required_local_action": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "kind": {"const": "interactive-or-existing-chatgpt-codex-session"},
+        "instruction": {"type": "string", "minLength": 1},
+        "api_key_not_permitted": {"const": true}
+      },
+      "required": ["kind", "instruction", "api_key_not_permitted"]
+    },
+    "next_required_evidence": {"type": "array", "minItems": 5, "items": {"type": "string", "minLength": 1}},
+    "scope": {"type": "string", "minLength": 1}
+  },
+  "required": ["schema_version", "verdict", "run_id", "job", "versions", "authentication", "digests", "preflight", "required_local_action", "next_required_evidence", "scope"],
+  "$defs": {"sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+}

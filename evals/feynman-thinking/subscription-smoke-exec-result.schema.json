@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Feynman ChatGPT-subscription integration smoke execution result v2",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 2},
+    "verdict": {"const": "subscription-codex-smoke-exec-completed"},
+    "run_id": {"type": "string", "minLength": 1},
+    "job": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ordinal": {"type": "integer", "minimum": 1},
+        "case_id": {"const": "tools-10"},
+        "condition_id": {"enum": ["baseline", "feynman-v05"]},
+        "repeat": {"const": 1},
+        "has_followup": {"const": false}
+      },
+      "required": ["ordinal", "case_id", "condition_id", "repeat", "has_followup"]
+    },
+    "versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model_requested": {"type": "string", "minLength": 1},
+        "codex_cli": {"type": "string", "minLength": 1},
+        "model_reasoning_effort": {"const": "model-default"}
+      },
+      "required": ["model_requested", "codex_cli", "model_reasoning_effort"]
+    },
+    "authentication": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {"const": "chatgpt-subscription"},
+        "source": {"const": "codex-session"},
+        "api_key_auth_allowed": {"const": false},
+        "auth_gate_verdict": {"const": "chatgpt-subscription-authenticated"},
+        "raw_status_output_preserved": {"const": false},
+        "credential_files_read_by_executor": {"const": false}
+      },
+      "required": ["mode", "source", "api_key_auth_allowed", "auth_gate_verdict", "raw_status_output_preserved", "credential_files_read_by_executor"]
+    },
+    "execution_controls": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "non_interactive": {"const": true},
+        "jsonl_trace": {"const": true},
+        "ephemeral_session": {"const": true},
+        "approval_policy": {"const": "never"},
+        "sandbox": {"const": "workspace-write"},
+        "web_search": {"const": "disabled"},
+        "ignore_execpolicy_rules": {"const": true},
+        "strict_config": {"const": true},
+        "local_execution_disabled": {"const": true}
+      },
+      "required": ["non_interactive", "jsonl_trace", "ephemeral_session", "approval_policy", "sandbox", "web_search", "ignore_execpolicy_rules", "strict_config", "local_execution_disabled"]
+    },
+    "conversation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "thread_id": {"type": "string", "minLength": 1},
+        "event_count": {"type": "integer", "minimum": 3},
+        "reasoning_events_observed": {"type": "integer", "minimum": 0}
+      },
+      "required": ["thread_id", "event_count", "reasoning_events_observed"]
+    },
+    "candidate_tool_activity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "completed_tool_item_count": {"type": "integer", "minimum": 0},
+        "completed_tool_item_types": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "tool_use_verdict": {"enum": ["candidate-tool-use-observed", "candidate-tool-use-not-observed"]},
+        "postrun_evidence_eligibility": {"enum": ["eligible-for-trace-evidence-extraction", "blocked-no-candidate-tool-call"]}
+      },
+      "required": ["completed_tool_item_count", "completed_tool_item_types", "tool_use_verdict", "postrun_evidence_eligibility"]
+    },
+    "usage": {"type": "object"},
+    "digests": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "eval_plan_sha256": {"$ref": "#/$defs/sha256"},
+        "smoke_spec_sha256": {"$ref": "#/$defs/sha256"},
+        "evaluator_case_sha256": {"$ref": "#/$defs/sha256"},
+        "runner_job_sha256": {"$ref": "#/$defs/sha256"},
+        "boundary_profile_sha256": {"$ref": "#/$defs/sha256"},
+        "remote_environment_sha256": {"$ref": "#/$defs/sha256"},
+        "candidate_task_sha256": {"$ref": "#/$defs/sha256"},
+        "codex_trace_sha256": {"$ref": "#/$defs/sha256"},
+        "candidate_final_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "required": ["eval_plan_sha256", "smoke_spec_sha256", "evaluator_case_sha256", "runner_job_sha256", "boundary_profile_sha256", "remote_environment_sha256", "candidate_task_sha256", "codex_trace_sha256", "candidate_final_sha256"]
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "process_environment_inherited": {"const": false},
+        "raw_stderr_preserved": {"const": false},
+        "stderr_nonempty": {"type": "boolean"},
+        "raw_auth_status_preserved": {"const": false},
+        "control_codex_home_contents_serialized": {"const": false}
+      },
+      "required": ["process_environment_inherited", "raw_stderr_preserved", "stderr_nonempty", "raw_auth_status_preserved", "control_codex_home_contents_serialized"]
+    },
+    "limitations": {"type": "array", "minItems": 4, "items": {"type": "string", "minLength": 1}},
+    "scope": {"type": "string", "minLength": 1}
+  },
+  "required": ["schema_version", "verdict", "run_id", "job", "versions", "authentication", "execution_controls", "conversation", "candidate_tool_activity", "usage", "digests", "privacy", "limitations", "scope"],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}
