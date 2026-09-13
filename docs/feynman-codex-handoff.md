@@ -1,14 +1,16 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-064](feynman-work-log/LOG-064-corrected-startup-request-mapping-20260913.md).
+> 최신: [LOG-065](feynman-work-log/LOG-065-namespace-rejection-reason-split-20260913.md).
 > rejection reason telemetry와 ephemeral `thread/start` 진단기를 구현했다. 첫
 > model-free run은 `-32603`, thread/turn/model 0, mapping rejection 0이었다.
 > environment-native cwd `/run/candidate` 보정 후 승인된 model-free startup 1회를
 > 실행했지만 `-32603`으로 막혔다. request rejection은
 > `environmentConfig/read:1` (`invalid-host-path`), `fs/getMetadata:6`
 > (`outside-declared-mount`)이다. thread/turn/model generation은 0회, child exit
-> 0, response mapping rejection 0이다. 다음은 추가 외부 실행 없이 local
-> request-side mapper/config fixture를 보정하는 일이다.
+> 0, response mapping rejection 0이다. generic metadata reason을
+> `host-path-outside-declared-mount`와 `container-path-outside-declared-mount`로
+> 세분화했고 전체 372 tests/11 skipped가 통과했다. 추가 외부 실행은 새 승인 없이는
+> 하지 말고, 다음에는 이 namespace별 분포만 확인하라.
 > 아래 과거 표기는 역사 기록이며 이 안내가 우선한다.
 
 > 최신: [LOG-062](feynman-work-log/LOG-062-luna-config-metadata-rejections-20260913.md).

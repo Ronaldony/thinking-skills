@@ -38,7 +38,7 @@ class RpcPathProxyTests(unittest.TestCase):
         telemetry = _ProxyTelemetry()
         telemetry.request_seen("fs/readFile")
         telemetry.request_rejected(
-            malformed=False, method="fs/walk", reason="outside-declared-mount")
+            malformed=False, method="fs/walk", reason="host-path-outside-declared-mount")
         telemetry.request_forwarded()
         telemetry.response_seen(-32001)
         telemetry.response_forwarded()
@@ -46,7 +46,7 @@ class RpcPathProxyTests(unittest.TestCase):
         self.assertEqual(snapshot["request_methods"], {"fs/readFile": 1})
         self.assertEqual(snapshot["request_mapping_rejection_methods"], {"fs/walk": 1})
         self.assertEqual(snapshot["request_mapping_rejection_reasons"],
-                         {"outside-declared-mount": 1})
+                         {"host-path-outside-declared-mount": 1})
         self.assertEqual(snapshot["response_error_codes"], {"-32001": 1})
         self.assertEqual(snapshot["requests_forwarded"], 1)
         serialized = json.dumps(snapshot)
@@ -87,8 +87,21 @@ class RpcPathProxyTests(unittest.TestCase):
         child, error, reason = _map_request_payload_with_reason(mapper, raw)
         self.assertIsNone(child)
         self.assertIsNotNone(error)
-        self.assertEqual(reason, "outside-declared-mount")
+        self.assertEqual(reason, "host-path-outside-declared-mount")
         self.assertNotIn("Users", reason)
+
+    def test_container_namespace_rejection_reason_is_distinct(self):
+        mapper = RpcPathMapper.from_mounts([
+            {"source": r"C:\DevWorks\candidate", "destination": "/run/candidate", "access": "rw"},
+        ])
+        raw = json.dumps({
+            "jsonrpc": "2.0", "id": 12, "method": "fs/getMetadata",
+            "params": {"path": "file:///var/private.txt"},
+        }).encode("utf-8")
+        child, error, reason = _map_request_payload_with_reason(mapper, raw)
+        self.assertIsNone(child)
+        self.assertIsNotNone(error)
+        self.assertEqual(reason, "container-path-outside-declared-mount")
 
     def test_config_path_shape_has_fixed_rejection_reason(self):
         mapper = RpcPathMapper.from_mounts([

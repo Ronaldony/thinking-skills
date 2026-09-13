@@ -1,15 +1,16 @@
 # feynman-thinking 작업 상태
 
-현재 재개 지점: [LOG-064](feynman-work-log/LOG-064-corrected-startup-request-mapping-20260913.md).
+현재 재개 지점: [LOG-065](feynman-work-log/LOG-065-namespace-rejection-reason-split-20260913.md).
 payload-free rejection reason telemetry와 ephemeral App Server `thread/start`
 진단기를 구현했다. `/run/candidate` 보정 후에도 `-32603`으로 종료됐고, thread
 0, turn/model generation 0이다. request mapping rejection은
 `environmentConfig/read:1` (`invalid-host-path`)과 `fs/getMetadata:6`
 (`outside-declared-mount`)으로 분리됐다. 전체 `371 tests / 11 skipped`와 구현
 commit `f7ae713`의 정확한 SHA CI 12/12가 통과했고 최종 docs HEAD CI도 7/7
-success다. 다음은 추가 외부 실행 없이 request-side mapper/config builder를
-local fixture로 보정하는 일이다.
-아래 checkpoint들은 역사 기록이며 위 LOG-064를 우선한다.
+success다. generic `outside-declared-mount`를 host/container namespace별 fixed
+reason으로 세분화했고 전체 `372 tests / 11 skipped`가 통과했다. 다음 외부
+실행 전에는 새 reason 분포를 확인해야 하며, 추가 실행은 별도 승인 대상이다.
+아래 checkpoint들은 역사 기록이며 위 LOG-065를 우선한다.
 
 현재 재개 지점: [LOG-062](feynman-work-log/LOG-062-luna-config-metadata-rejections-20260913.md).
 승인된 Luna 1회는 gate 통과 후 exit 1/0-byte trace로 종료됐다. 거부 9건은

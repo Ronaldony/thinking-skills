@@ -1,11 +1,13 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
-> 현재는 `docs/feynman-work-log/LOG-064-corrected-startup-request-mapping-20260913.md`를
+> 현재는 `docs/feynman-work-log/LOG-065-namespace-rejection-reason-split-20260913.md`를
 > 먼저 읽어라. 사용자가 승인한 `/run/candidate` model-free startup 1회는
 > `-32603`으로 끝났고 request rejection은 `environmentConfig/read:1`
 > (`invalid-host-path`), `fs/getMetadata:6` (`outside-declared-mount`)이다.
 > thread/turn/model generation은 0회, child exit 0, response mapping rejection 0이다.
-> 다음은 추가 외부 실행 없이 local request-side mapper/config fixture를 보정하는 일이다.
+> generic metadata reason은 host/container namespace별 fixed label로 세분화됐고
+> 전체 372 tests/11 skipped가 통과했다. 새 외부 실행은 별도 승인 전까지 하지 말고,
+> 다음 작업은 local fixture와 코드 분석을 우선하라.
 > 아래 재개 안내는 역사 기록이다.
 
 > 현재는 `docs/feynman-work-log/LOG-062-luna-config-metadata-rejections-20260913.md`를
