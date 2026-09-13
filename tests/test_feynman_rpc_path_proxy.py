@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 import unittest
 
@@ -16,6 +19,45 @@ from tooling.feynman_rpc_path_proxy import (
 
 
 class RpcPathProxyTests(unittest.TestCase):
+    def test_proxy_drains_healthy_child_after_parent_stdin_closes(self):
+        fixture = ROOT / "tests" / "feynman_subscription_lifecycle_fixture.py"
+        proxy = ROOT / "tooling" / "feynman_rpc_path_proxy.py"
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            telemetry = root / "telemetry.json"
+            docker_args = [
+                "-B", str(fixture), "proxy-child", "-v",
+                f"{root}:/run/candidate:rw",
+            ]
+            process = subprocess.Popen(
+                [sys.executable, "-B", str(proxy), "--docker", sys.executable,
+                 "--telemetry-file", str(telemetry), "--", *docker_args],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, encoding="utf-8", env={
+                    key: os.environ[key]
+                    for key in ("PATH", "SystemRoot", "WINDIR", "ComSpec", "PATHEXT", "TEMP", "TMP")
+                    if key in os.environ
+                },
+            )
+            input_lines = "\n".join([
+                json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+                json.dumps({"jsonrpc": "2.0", "method": "initialized", "params": {}}),
+                json.dumps({"jsonrpc": "2.0", "id": 2, "method": "thread/start", "params": {}}),
+            ]) + "\n"
+            stdout, stderr = process.communicate(input_lines, timeout=10)
+            self.assertEqual(process.returncode, 0, stderr)
+            messages = [json.loads(line) for line in stdout.splitlines()]
+            self.assertEqual([message["id"] for message in messages], [1, 2])
+            value = json.loads(telemetry.read_text(encoding="utf-8"))
+            self.assertEqual(value["requests_seen"], 3)
+            self.assertEqual(value["requests_forwarded"], 3)
+            self.assertEqual(value["responses_seen"], 2)
+            self.assertEqual(value["responses_forwarded"], 2)
+            self.assertEqual(value["responses_matched"], 2)
+            self.assertEqual(value["responses_unmatched"], 0)
+            self.assertEqual(value["pending_request_ids"], 0)
+            self.assertEqual(value["child_exit_code"], 0)
+
     def test_windows_volume_spec_splits_from_the_right(self):
         mounts = _docker_mounts([
             "run", "-v", r"C:\DevWorks\candidate:/run/candidate:rw",

@@ -19,6 +19,7 @@ from pathlib import Path
 import subprocess
 import sys
 import threading
+import time
 from typing import Any
 
 try:
@@ -363,7 +364,13 @@ _SAFE_REJECTION_REASONS = frozenset({
     "probe-config-policy",
     "probe-filesystem-path-policy",
     "invalid-request-structure",
+    "unclassified",
 })
+
+SAFE_TELEMETRY_METHODS = frozenset({*_SAFE_REQUEST_METHODS, "unknown"})
+SAFE_REJECTION_METHODS = frozenset({*REQUEST_PATH_FIELDS, "unknown"})
+SAFE_TELEMETRY_REASONS = _SAFE_REJECTION_REASONS
+SAFE_REJECTION_FIELDS = _SAFE_REJECTION_FIELDS
 
 
 def _map_request_payload_with_reason(
@@ -450,6 +457,37 @@ def _map_request_payload(
         allowed_methods=allowed_methods, allowed_path=allowed_path,
     )
     return payload, rejection
+
+
+def _stop_proxy_child(child: subprocess.Popen[bytes], deadline: float) -> bool:
+    """Terminate the exact proxy child within a caller-owned deadline."""
+    if child.poll() is not None:
+        return True
+    remaining = max(0.1, deadline - time.monotonic())
+    try:
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/PID", str(child.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                check=False, timeout=remaining,
+            )
+        else:
+            child.terminate()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    try:
+        child.wait(timeout=max(0.1, deadline - time.monotonic()))
+        return True
+    except subprocess.TimeoutExpired:
+        try:
+            child.kill()
+        except OSError:
+            pass
+        try:
+            child.wait(timeout=max(0.1, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            return False
+        return True
 
 
 def run_proxy(
@@ -567,21 +605,32 @@ def run_proxy(
     response_thread = threading.Thread(target=forward_responses, name="rpc-proxy-stdout")
     request_thread.start()
     response_thread.start()
-    # A healthy exec-server closes its output after the client closes stdin.
-    # Bound both joins so a broken child or a notification-only peer cannot
-    # hold the App Server process forever.
-    response_thread.join(timeout=30)
-    stop.set()
-    if response_thread.is_alive() and child.poll() is None:
-        child.terminate()
-    request_thread.join(timeout=5)
+    # Keep the proxy alive while its parent still owns stdin.  Once the parent
+    # closes stdin, the request thread closes child.stdin and the child is
+    # allowed to drain its final responses.  Bounded cleanup is used only
+    # after a worker ends unexpectedly or the child ignores EOF.
+    while request_thread.is_alive() and response_thread.is_alive():
+        request_thread.join(timeout=0.25)
+    cleanup_deadline: float | None = None
+    if response_thread.is_alive():
+        cleanup_deadline = time.monotonic() + 15
+        response_thread.join(timeout=max(0.1, cleanup_deadline - time.monotonic()))
+        if response_thread.is_alive():
+            stop.set()
+    else:
+        stop.set()
+        cleanup_deadline = time.monotonic() + 15
     if child.poll() is None:
-        child.terminate()
-    try:
-        exit_code = child.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        child.kill()
-        exit_code = child.wait(timeout=5)
+        if cleanup_deadline is None:
+            cleanup_deadline = time.monotonic() + 15
+        _stop_proxy_child(child, cleanup_deadline)
+    if response_thread.is_alive():
+        response_thread.join(timeout=max(0.1, (cleanup_deadline or time.monotonic()) - time.monotonic()))
+    if request_thread.is_alive():
+        request_thread.join(timeout=max(0.1, (cleanup_deadline or time.monotonic()) - time.monotonic()))
+    exit_code = child.poll()
+    if exit_code is None:
+        exit_code = 1
     with pending_lock:
         telemetry.pending_request_ids(len(pending_methods))
     telemetry.child_exit(exit_code)

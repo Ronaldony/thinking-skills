@@ -23,7 +23,10 @@ from typing import Any
 try:
     from .feynman_subscription_checkpoint import load as load_checkpoint, validate as validate_checkpoint
     from .feynman_remote_exec_environment import validate_files
-    from .feynman_rpc_path_proxy import TELEMETRY_OVERRIDE_ENV
+    from .feynman_rpc_path_proxy import (
+        SAFE_REJECTION_FIELDS, SAFE_REJECTION_METHODS, SAFE_TELEMETRY_METHODS,
+        SAFE_TELEMETRY_REASONS, TELEMETRY_OVERRIDE_ENV,
+    )
     from .feynman_subscription_control_plane_preflight import (
         _failure_category, _notification, _read_json_lines, _request,
         _stop_diagnostic_process,
@@ -35,7 +38,10 @@ try:
 except ImportError:
     from feynman_subscription_checkpoint import load as load_checkpoint, validate as validate_checkpoint
     from feynman_remote_exec_environment import validate_files
-    from feynman_rpc_path_proxy import TELEMETRY_OVERRIDE_ENV
+    from feynman_rpc_path_proxy import (
+        SAFE_REJECTION_FIELDS, SAFE_REJECTION_METHODS, SAFE_TELEMETRY_METHODS,
+        SAFE_TELEMETRY_REASONS, TELEMETRY_OVERRIDE_ENV,
+    )
     from feynman_subscription_control_plane_preflight import (
         _failure_category, _notification, _read_json_lines, _request,
         _stop_diagnostic_process,
@@ -50,7 +56,7 @@ class StartupDiagnosticError(ValueError):
     """The model-free startup diagnostic failed before producing a report."""
 
 
-def _write_failure_artifact(path: Path, stage: str) -> None:
+def _write_failure_artifact(path: Path, stage: str, *, initialize_completed: bool = False) -> None:
     """Persist a payload-free blocked record when the diagnostic itself fails."""
     if not path.is_absolute() or path.exists() or path.is_symlink():
         return
@@ -72,7 +78,7 @@ def _write_failure_artifact(path: Path, stage: str) -> None:
             "ephemeral_thread": False,
             "instruction_sources_present": False,
             "response_payload_preserved": False,
-            "initialize_completed": False,
+            "initialize_completed": initialize_completed,
             "turn_requests_sent": 0,
             "model_generation_requests_sent": 0,
             "process_tree_reaped": False,
@@ -99,14 +105,16 @@ def _write_failure_artifact(path: Path, stage: str) -> None:
 
 def _consume_private_stderr(stream: Any, sink: list[bytes], *, limit: int = 262144) -> None:
     """Drain stderr without persisting it; retain only a bounded in-memory sample."""
-    remaining = limit
+    captured = 0
     try:
-        while remaining > 0:
-            chunk = stream.read(min(65536, remaining))
+        while True:
+            chunk = stream.read(65536)
             if not chunk:
                 break
-            sink.append(chunk)
-            remaining -= len(chunk)
+            if captured < limit:
+                selected = chunk[:limit - captured]
+                sink.append(selected)
+                captured += len(selected)
     except (OSError, ValueError):
         return
 
@@ -242,7 +250,8 @@ def _thread_summary(response: dict[str, Any]) -> dict[str, Any]:
 
 
 def _wait_for_thread_start(received: queue.Queue[dict[str, Any] | None],
-                           identifier: int, timeout_seconds: int
+                           identifier: int, timeout_seconds: float,
+                           *, timeout_stage: str = "thread-start-timeout"
                            ) -> tuple[dict[str, Any], dict[str, int]]:
     notifications: Counter[str] = Counter()
     deadline = time.monotonic() + timeout_seconds
@@ -253,7 +262,7 @@ def _wait_for_thread_start(received: queue.Queue[dict[str, Any] | None],
                 raise queue.Empty
             value = received.get(timeout=remaining)
         except queue.Empty as exc:
-            raise StartupDiagnosticError("thread-start-timeout") from exc
+            raise StartupDiagnosticError(timeout_stage) from exc
         if value is None:
             raise StartupDiagnosticError("app-server-protocol-error")
         method = value.get("method")
@@ -303,20 +312,30 @@ def _safe_proxy_telemetry(path: Path) -> dict[str, Any]:
             for item, count in counter.items()
         ):
             raise StartupDiagnosticError("startup-telemetry-counter-shape")
+    if not set(value["request_methods"]).issubset(SAFE_TELEMETRY_METHODS):
+        raise StartupDiagnosticError("startup-telemetry-method-not-allowed")
+    if not set(value["request_mapping_rejection_methods"]).issubset(SAFE_REJECTION_METHODS):
+        raise StartupDiagnosticError("startup-telemetry-method-not-allowed")
+    if not set(value["request_mapping_rejection_reasons"]).issubset(SAFE_TELEMETRY_REASONS):
+        raise StartupDiagnosticError("startup-telemetry-reason-not-allowed")
     for method, reasons in value["request_mapping_rejection_method_reasons"].items():
-        if not isinstance(method, str) or not isinstance(reasons, dict) or any(
+        if method not in SAFE_REJECTION_METHODS or not isinstance(reasons, dict) or any(
             not isinstance(reason, str) or type(count) is not int or count < 0
             for reason, count in reasons.items()
         ):
             raise StartupDiagnosticError("startup-telemetry-counter-shape")
+        if not set(reasons).issubset(SAFE_TELEMETRY_REASONS):
+            raise StartupDiagnosticError("startup-telemetry-reason-not-allowed")
     for method, reasons in value["request_mapping_rejection_method_reason_fields"].items():
-        if not isinstance(method, str) or not isinstance(reasons, dict):
+        if method not in SAFE_REJECTION_METHODS or not isinstance(reasons, dict):
             raise StartupDiagnosticError("startup-telemetry-counter-shape")
         for reason, fields in reasons.items():
             if (not isinstance(reason, str) or not isinstance(fields, dict)
                     or any(not isinstance(field, str) or type(count) is not int or count < 0
                            for field, count in fields.items())):
                 raise StartupDiagnosticError("startup-telemetry-counter-shape")
+            if reason not in SAFE_TELEMETRY_REASONS or not set(fields).issubset(SAFE_REJECTION_FIELDS):
+                raise StartupDiagnosticError("startup-telemetry-field-not-allowed")
     count_fields = {
         key for key in allowed if key not in {
             "schema_version", "request_methods", "response_error_codes",
@@ -335,10 +354,16 @@ def _safe_proxy_telemetry(path: Path) -> dict[str, Any]:
 
 def _proxy_telemetry_ready(value: dict[str, Any]) -> bool:
     """Require complete request/response accounting before declaring ready."""
+    response_records = (
+        value["responses_seen"] - value["notifications_seen"]
+        - value["malformed_responses"]
+    )
     return (
-        value["requests_seen"] == value["requests_forwarded"]
+        response_records >= 0
+        and value["malformed_responses"] == 0
+        and value["requests_seen"] == value["requests_forwarded"]
         and value["responses_seen"] == value["responses_forwarded"]
-        and value["responses_matched"] == value["responses_seen"]
+        and value["responses_matched"] + value["responses_unmatched"] == response_records
         and value["responses_unmatched"] == 0
         and value["pending_request_ids"] == 0
         and value["request_write_failures"] == 0
@@ -429,6 +454,8 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
         stderr_reader.start()
         forced_shutdown = False
         process_tree_reaped = True
+        startup_deadline = time.monotonic() + timeout_seconds
+        cleanup_deadline = time.monotonic() + 15
         try:
             try:
                 process.stdin.write(_request(1, "initialize", {
@@ -438,7 +465,9 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
                 process.stdin.flush()
             except (OSError, ValueError) as exc:
                 raise StartupDiagnosticError("startup-protocol-write-initialize-invalid") from exc
-            initialized, _ = _wait_for_thread_start(received, 1, timeout_seconds)
+            initialized, _ = _wait_for_thread_start(
+                received, 1, max(0.0, startup_deadline - time.monotonic()),
+                timeout_stage="initialize-timeout")
             if "error" in initialized:
                 raise StartupDiagnosticError("app-server-initialize-error")
             try:
@@ -448,7 +477,8 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
                 process.stdin.flush()
             except (OSError, ValueError) as exc:
                 raise StartupDiagnosticError("startup-protocol-write-thread-start-invalid") from exc
-            response, notifications = _wait_for_thread_start(received, 2, timeout_seconds)
+            response, notifications = _wait_for_thread_start(
+                received, 2, max(0.0, startup_deadline - time.monotonic()))
             thread = _thread_summary(response)
         finally:
             try:
@@ -456,10 +486,11 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
             except (OSError, ValueError):
                 pass
             try:
-                process.wait(timeout=10)
+                process.wait(timeout=max(0.1, min(10, cleanup_deadline - time.monotonic())))
             except subprocess.TimeoutExpired:
                 forced_shutdown = True
-                process_tree_reaped = _stop_diagnostic_process(process)
+                process_tree_reaped = _stop_diagnostic_process(
+                    process, deadline=cleanup_deadline)
             stderr_reader.join(timeout=2)
             stderr_text = b"".join(stderr_chunks).decode("utf-8", errors="replace")
             reader.join(timeout=2)
@@ -587,14 +618,19 @@ def main() -> int:
     except StartupDiagnosticError as exc:
         if checkpoint is not None:
             try:
-                _write_failure_artifact(Path(checkpoint["output"]), str(exc))
+                _write_failure_artifact(
+                    Path(checkpoint["output"]), str(exc),
+                    initialize_completed=str(exc) not in {
+                        "initialize-timeout", "startup-protocol-write-initialize-invalid",
+                        "app-server-protocol-error",
+                    })
             except OSError:
                 # A sandbox or operator ACL may deny the requested artifact
                 # directory.  Preserve the fixed failure label on stdout/stderr
                 # without turning it into an unbounded traceback.
                 pass
         blocked = str(exc) in {
-            "thread-start-timeout", "app-server-protocol-error",
+            "initialize-timeout", "thread-start-timeout", "app-server-protocol-error",
             "app-server-initialize-error", "thread-start-response-shape",
             "thread-start-was-not-ephemeral", "startup-proxy-telemetry-missing",
         } or str(exc).startswith("app-server-exit-")

@@ -50,31 +50,34 @@
       },
       "required": ["thread_started", "error_code", "error_category", "ephemeral_thread", "instruction_sources_present", "response_payload_preserved", "initialize_completed", "turn_requests_sent", "model_generation_requests_sent", "process_tree_reaped", "proxy_telemetry_complete", "proxy_request_response_correlated", "request_mapping_clean"]
     },
-    "notification_methods": {"$ref": "#/$defs/counters"},
+    "notification_methods": {"$ref": "#/$defs/safe_notification_counters"},
     "proxy_telemetry_status": {"enum": ["available", "missing"]},
     "proxy_telemetry": {
       "type": ["object", "null"],
       "additionalProperties": false,
       "properties": {
         "schema_version": {"const": 2},
-        "request_methods": {"$ref": "#/$defs/counters"},
+        "request_methods": {"$ref": "#/$defs/safe_method_counters"},
         "response_error_codes": {"$ref": "#/$defs/counters"},
         "requests_seen": {"$ref": "#/$defs/count"},
         "requests_forwarded": {"$ref": "#/$defs/count"},
         "request_write_failures": {"$ref": "#/$defs/count"},
         "request_id_duplicates": {"$ref": "#/$defs/count"},
         "request_mapping_rejections": {"$ref": "#/$defs/count"},
-        "request_mapping_rejection_methods": {"$ref": "#/$defs/counters"},
-        "request_mapping_rejection_reasons": {"$ref": "#/$defs/counters"},
+        "request_mapping_rejection_methods": {"$ref": "#/$defs/rejection_method_counters"},
+        "request_mapping_rejection_reasons": {"$ref": "#/$defs/safe_reason_counters"},
         "request_mapping_rejection_method_reasons": {
           "type": "object",
-          "additionalProperties": {"$ref": "#/$defs/counters"}
+          "propertyNames": {"enum": ["unknown", "command/exec", "process/exec", "process/start", "environmentConfig/read", "fs/canonicalize", "fs/getMetadata", "fs/walk", "fs/readFile", "fs/writeFile", "resources/read"]},
+          "additionalProperties": {"$ref": "#/$defs/safe_reason_counters"}
         },
         "request_mapping_rejection_method_reason_fields": {
           "type": "object",
+          "propertyNames": {"enum": ["unknown", "command/exec", "process/exec", "process/start", "environmentConfig/read", "fs/canonicalize", "fs/getMetadata", "fs/walk", "fs/readFile", "fs/writeFile", "resources/read"]},
           "additionalProperties": {
             "type": "object",
-            "additionalProperties": {"$ref": "#/$defs/counters"}
+            "propertyNames": {"enum": ["unsupported-file-uri", "unsupported-file-uri-components", "host-path-not-absolute", "host-path-traversal", "invalid-host-path", "host-path-outside-declared-mount", "container-path-not-absolute", "container-path-traversal", "invalid-container-path", "container-path-outside-declared-mount", "invalid-container-file-uri", "invalid-path-field-type", "invalid-path-array-shape", "ambiguous-relative-environment-path", "unsafe-relative-environment-path", "candidate-mount-not-declared", "malformed-request", "probe-method-not-allowed", "probe-read-path-type", "probe-config-policy", "probe-filesystem-path-policy", "invalid-request-structure", "unclassified"]},
+            "additionalProperties": {"$ref": "#/$defs/safe_field_counters"}
           }
         },
         "malformed_requests": {"$ref": "#/$defs/count"},
@@ -114,6 +117,31 @@
     "count": {"type": "integer", "minimum": 0},
     "counters": {
       "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/count"}
+    },
+    "safe_method_counters": {
+      "type": "object",
+      "propertyNames": {"enum": ["unknown", "initialize", "initialized", "thread/start", "environment/info", "command/exec", "process/exec", "process/start", "environmentConfig/read", "fs/canonicalize", "fs/getMetadata", "fs/walk", "fs/readFile", "fs/writeFile", "resources/read"]},
+      "additionalProperties": {"$ref": "#/$defs/count"}
+    },
+    "rejection_method_counters": {
+      "type": "object",
+      "propertyNames": {"enum": ["unknown", "command/exec", "process/exec", "process/start", "environmentConfig/read", "fs/canonicalize", "fs/getMetadata", "fs/walk", "fs/readFile", "fs/writeFile", "resources/read"]},
+      "additionalProperties": {"$ref": "#/$defs/count"}
+    },
+    "safe_reason_counters": {
+      "type": "object",
+      "propertyNames": {"enum": ["unsupported-file-uri", "unsupported-file-uri-components", "host-path-not-absolute", "host-path-traversal", "invalid-host-path", "host-path-outside-declared-mount", "container-path-not-absolute", "container-path-traversal", "invalid-container-path", "container-path-outside-declared-mount", "invalid-container-file-uri", "invalid-path-field-type", "invalid-path-array-shape", "ambiguous-relative-environment-path", "unsafe-relative-environment-path", "candidate-mount-not-declared", "malformed-request", "probe-method-not-allowed", "probe-read-path-type", "probe-config-policy", "probe-filesystem-path-policy", "invalid-request-structure", "unclassified"]},
+      "additionalProperties": {"$ref": "#/$defs/count"}
+    },
+    "safe_field_counters": {
+      "type": "object",
+      "propertyNames": {"enum": ["unknown", "cwd", "path", "uri", "configPaths", "requirementsPaths"]},
+      "additionalProperties": {"$ref": "#/$defs/count"}
+    },
+    "safe_notification_counters": {
+      "type": "object",
+      "propertyNames": {"enum": ["unknown", "configWarning", "environment/connection", "environment/connection/updated", "error", "thread/closed", "thread/environment/connected", "thread/environment/disconnected", "thread/started", "thread/status/changed", "warning"]},
       "additionalProperties": {"$ref": "#/$defs/count"}
     }
   }

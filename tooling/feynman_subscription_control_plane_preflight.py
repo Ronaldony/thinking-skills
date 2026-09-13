@@ -35,14 +35,16 @@ class ControlPlaneError(ValueError):
 
 def _consume_private_stderr(stream: Any, sink: list[bytes], *, limit: int = 262144) -> None:
     """Drain stderr without persisting it; retain only a bounded sample."""
-    remaining = limit
+    captured = 0
     try:
-        while remaining > 0:
-            chunk = stream.read(min(65536, remaining))
+        while True:
+            chunk = stream.read(65536)
             if not chunk:
                 break
-            sink.append(chunk)
-            remaining -= len(chunk)
+            if captured < limit:
+                selected = chunk[:limit - captured]
+                sink.append(selected)
+                captured += len(selected)
     except (OSError, ValueError):
         pass
 
@@ -121,7 +123,7 @@ def _environment_summary(response: dict[str, Any]) -> dict[str, bool]:
     }
 
 
-def _stop_diagnostic_process(process: subprocess.Popen[bytes]) -> bool:
+def _stop_diagnostic_process(process: subprocess.Popen[bytes], *, deadline: float | None = None) -> bool:
     """Stop only the App Server process tree created by this probe.
 
     On Windows the ``.cmd`` launcher can outlive a normal terminate request
@@ -131,20 +133,29 @@ def _stop_diagnostic_process(process: subprocess.Popen[bytes]) -> bool:
     """
     if process.poll() is not None:
         return True
-    if os.name == "nt":
-        subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                       check=False)
-    else:
-        process.terminate()
+    deadline = time.monotonic() + 15 if deadline is None else deadline
+    remaining = max(0.1, deadline - time.monotonic())
     try:
-        process.wait(timeout=2)
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           check=False, timeout=remaining)
+        else:
+            process.terminate()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    try:
+        process.wait(timeout=max(0.1, deadline - time.monotonic()))
     except subprocess.TimeoutExpired:
-        # The termination request has been issued to the exact Popen process
-        # tree.  Do not let a launcher that refuses to reap its child prevent
-        # a completed, model-free diagnostic from emitting its safe report.
-        return False
-    return True
+        try:
+            process.kill()
+        except OSError:
+            pass
+        try:
+            process.wait(timeout=max(0.1, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            return False
+    return process.poll() is not None
 
 
 def run(*, codex_bin: str, control_home: Path, temp_dir: Path,
@@ -183,6 +194,7 @@ def run(*, codex_bin: str, control_home: Path, temp_dir: Path,
     stderr_reader.start()
     forced_shutdown = False
     process_tree_reaped = True
+    cleanup_deadline = time.monotonic() + 15
     try:
         process.stdin.write(_request(1, "initialize", {
             "clientInfo": {"name": "feynman-control-plane-preflight", "version": "0.1.0"},
@@ -202,14 +214,14 @@ def run(*, codex_bin: str, control_home: Path, temp_dir: Path,
         except OSError:
             pass
         try:
-            process.wait(timeout=10)
+            process.wait(timeout=max(0.1, min(10, cleanup_deadline - time.monotonic())))
         except subprocess.TimeoutExpired:
             # App Server may keep its stdio loop alive while its just-opened
             # remote environment finishes teardown.  The successful response
             # above is the contract under test; terminate only our ephemeral
             # diagnostic process and record that bounded shutdown behavior.
             forced_shutdown = True
-            process_tree_reaped = _stop_diagnostic_process(process)
+            process_tree_reaped = _stop_diagnostic_process(process, deadline=cleanup_deadline)
         reader.join(timeout=2)
         stderr_reader.join(timeout=2)
         stderr_text = b"".join(stderr_chunks).decode("utf-8", errors="replace")

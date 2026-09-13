@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 from pathlib import Path
@@ -14,8 +15,9 @@ from tooling.feynman_subscription_startup_diagnostic import (
     APP_SERVER_LOCAL_ISOLATION_OVERRIDES, StartupDiagnosticError,
     _SAFE_NOTIFICATION_METHODS, _safe_proxy_telemetry, _thread_start_params,
     _thread_summary, _wait_for_thread_start, _proxy_telemetry_ready,
-    _write_failure_artifact,
+    _write_failure_artifact, _consume_private_stderr, _read_json_lines,
 )
+from tooling.feynman_rpc_path_proxy import _ProxyTelemetry
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,7 +39,7 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
         assert process.stdin is not None and process.stdout is not None
         received: queue.Queue[dict | None] = queue.Queue()
         reader = threading.Thread(
-            target=_read_json_lines_for_test, args=(process.stdout, received), daemon=True
+            target=_read_json_lines, args=(process.stdout, received), daemon=True
         )
         reader.start()
         return process, received, reader
@@ -82,6 +84,18 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
                 _wait_for_thread_start(received, 1, 0)
         finally:
             self._close_lifecycle_process(process, reader)
+
+    def test_initialize_timeout_has_a_distinct_failure_stage(self):
+        received = queue.Queue()
+        with self.assertRaisesRegex(StartupDiagnosticError, "^initialize-timeout$"):
+            _wait_for_thread_start(received, 1, 0, timeout_stage="initialize-timeout")
+
+    def test_failure_artifact_can_preserve_completed_initialize_stage(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "startup.json"
+            _write_failure_artifact(path, "thread-start-timeout", initialize_completed=True)
+            value = json.loads(path.read_text(encoding="utf-8"))
+            self.assertTrue(value["checks"]["initialize_completed"])
 
     def test_offline_fixture_thread_start_error_is_not_initialize_timeout(self):
         process, received, reader = self._lifecycle_process("thread-start-error")
@@ -223,6 +237,7 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
             "requests_seen": 2, "requests_forwarded": 2,
             "responses_seen": 1, "responses_forwarded": 1,
             "responses_matched": 1, "responses_unmatched": 0,
+            "notifications_seen": 0, "malformed_responses": 0,
             "pending_request_ids": 0, "request_write_failures": 0,
             "request_id_duplicates": 0, "request_mapping_rejections": 0,
             "response_mapping_rejections": 0,
@@ -230,6 +245,38 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
         self.assertTrue(_proxy_telemetry_ready(value))
         value["responses_unmatched"] = 1
         self.assertFalse(_proxy_telemetry_ready(value))
+
+    def test_proxy_telemetry_excludes_notifications_from_response_matching(self):
+        value = {
+            "requests_seen": 1, "requests_forwarded": 1,
+            "responses_seen": 2, "responses_forwarded": 2,
+            "responses_matched": 1, "responses_unmatched": 0,
+            "notifications_seen": 1, "malformed_responses": 0,
+            "pending_request_ids": 0, "request_write_failures": 0,
+            "request_id_duplicates": 0, "request_mapping_rejections": 0,
+            "response_mapping_rejections": 0,
+        }
+        self.assertTrue(_proxy_telemetry_ready(value))
+
+    def test_stderr_sample_is_bounded_but_stream_is_drained_to_eof(self):
+        stream = io.BytesIO(b"x" * 300000)
+        sample = []
+        _consume_private_stderr(stream, sample)
+        self.assertEqual(sum(map(len, sample)), 262144)
+        self.assertEqual(stream.read(), b"")
+
+    def test_nested_telemetry_allowlist_rejects_arbitrary_labels(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "telemetry.json"
+            value = _ProxyTelemetry().snapshot()
+            value["request_mapping_rejection_method_reasons"] = {
+                "SYNTHETIC_PRIVATE_METHOD": {"unclassified": 1},
+            }
+            path.write_text(json.dumps(value), encoding="utf-8")
+            with self.assertRaisesRegex(
+                StartupDiagnosticError, "^startup-telemetry-counter-shape$"
+            ):
+                _safe_proxy_telemetry(path)
 
     def test_failure_artifact_is_blocked_and_payload_free(self):
         with tempfile.TemporaryDirectory() as root:
@@ -279,16 +326,6 @@ def _request_for_test(identifier: int, method: str) -> bytes:
 def _notification_for_test(method: str) -> bytes:
     return (json.dumps({"jsonrpc": "2.0", "method": method, "params": {}})
             + "\n").encode("utf-8")
-
-
-def _read_json_lines_for_test(stream, received: queue.Queue[dict | None]) -> None:
-    for line in stream:
-        try:
-            value = json.loads(line)
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            received.put(None)
-            continue
-        received.put(value if isinstance(value, dict) else None)
 
 
 if __name__ == "__main__":

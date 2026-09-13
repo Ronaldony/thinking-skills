@@ -147,6 +147,15 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
         for key in ("OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN"): self.assertNotIn(key, state["env"])
         self.assertFalse(Path(state["env"]["TMPDIR"]).exists()); self.assertEqual(len(AUTH_CALLS), 1); self.assertEqual(len(PREFLIGHT_CALLS), 1)
 
+    def test_startup_gate_generation_count_reads_nested_checks(self):
+        self.assertEqual(executor._startup_model_generation_requests({
+            "checks": {"model_generation_requests_sent": 0},
+        }), 0)
+        with self.assertRaises(ValueError):
+            executor._startup_model_generation_requests({
+                "checks": {"model_generation_requests_sent": 1},
+            })
+
     def test_command_builder_appends_validated_mcp_overrides_before_stdin(self):
         command = executor.build_codex_exec_command(
             executable="codex.cmd",

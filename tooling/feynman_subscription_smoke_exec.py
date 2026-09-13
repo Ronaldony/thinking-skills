@@ -56,6 +56,17 @@ CANDIDATE_TOOL_ITEM_TYPES = frozenset({
 })
 
 
+def _startup_model_generation_requests(startup_gate: Mapping[str, Any]) -> int:
+    """Read the startup result whether it is a full report or a sentinel."""
+    checks = startup_gate.get("checks", startup_gate)
+    if not isinstance(checks, Mapping):
+        raise ValueError("startup gate result has no checks object")
+    value = checks.get("model_generation_requests_sent")
+    if type(value) is not int or value != 0:
+        raise ValueError("startup gate reported model generation")
+    return value
+
+
 def _no_symlink_components(path: Path, label: str, *, must_exist: bool) -> Path:
     absolute = path.expanduser().absolute()
     parts = absolute.parts
@@ -743,7 +754,7 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
             },
             "startup_gate": {
                 "verdict": startup_gate["verdict"],
-                "model_generation_requests_sent": startup_gate["model_generation_requests_sent"],
+                "model_generation_requests_sent": _startup_model_generation_requests(startup_gate),
             },
             "conversation": {
                 "thread_id": trace["thread_id"],

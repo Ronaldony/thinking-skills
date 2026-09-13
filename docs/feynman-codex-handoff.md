@@ -1,9 +1,10 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-080](feynman-work-log/LOG-080-offline-startup-lifecycle-fixture-20260913.md).
+> 최신: [LOG-081](feynman-work-log/LOG-081-diagnostic-fixes-and-proxy-lifecycle-20260913.md).
 > Windows/Docker checkpoint, native path contract, payload-free telemetry v2,
-> bounded cleanup, 그리고 실제 smoke executor의 fresh startup gate를 구현했다.
-> 전체 검증은 `403 tests OK, 11 skipped`, subscription schema 5개는 `errors=0`.
+> bounded cleanup, 그리고 실제 smoke executor의 fresh startup gate를 구현하고
+> 진단기를 보강했다. 전체 검증은 `410 tests OK, 11 skipped`, subscription schema
+> 5개는 `errors=0`.
 > 새 model-free startup 확인은 `initialize` timeout으로 blocked(exit 1)였고,
 > model/turn/evaluation은 0회다. 동일 startup 반복이나 model-turn을 자동 실행하지
 > 말고, offline lifecycle fixture가 확인한 단계 경계로 원인을 좁힌 뒤 새 정보가
