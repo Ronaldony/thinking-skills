@@ -132,7 +132,7 @@ allowlist의 의도된 결과다. ordinary와 guarded 모두 응답 역매핑 �
 현재 변경 기준 전체 회귀 테스트도 실행했다.
 
 ```powershell
-& $python -m unittest discover -s tests -p 'test_*.py'
+& 'C:\Users\wotmd\AppData\Local\Programs\Python\Python312-arm64\python.exe' -m unittest discover -s tests -p 'test_*.py'
 ```
 
 결과:
