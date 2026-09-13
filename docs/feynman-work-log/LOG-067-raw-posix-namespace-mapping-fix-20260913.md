@@ -74,5 +74,10 @@ path의 허용 필요성을 증명하지는 않는다.
 
 ## 저장 상태
 
-- 이 로그, mapper 변경, 회귀 테스트, 재개 포인터를 feature branch에 commit·push한다.
+- mapper 변경, 회귀 테스트, 이 로그, 재개 포인터는
+  `049c0abca914488a7a2bc6ca75802caa41054ae6`
+  (`fix: preserve raw posix remote path namespace`)로 commit하고 feature branch에
+  일반 push했다.
+- 위 정확한 SHA의 고유 7개 GitHub Actions workflow가 모두 success였다.
 - 사용자 PNG 2개는 untracked로 보존하고 stage하지 않는다.
+- main merge와 force push는 하지 않는다.
