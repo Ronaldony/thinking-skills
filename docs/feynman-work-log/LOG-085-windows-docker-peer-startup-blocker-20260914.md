@@ -118,6 +118,8 @@ git diff --check
 
 ## 커밋·push
 
-- 이 로그 작성 시점에는 코드·테스트·문서 변경을 아직 commit/push하지 않았다.
-- 다음 commit은 기존 feature branch에만 만들고 일반 push한다. main merge와 force push는 하지 않는다.
-- `.tmp/`와 사용자 PNG는 stage 대상에서 제외한다.
+- 명시적으로 선택한 7개 tracked 파일만 stage했다. `.tmp/`와 사용자 PNG 2개는 stage하지 않고 보존했다.
+- 커밋: `583c8119f4554797674d53f9ed07307c303c9519` (`fix: classify Docker peer startup blockers`)
+- `git push origin feat/feynman-thinking-v0.5-draft` 성공.
+- push 후 local HEAD와 `refs/remotes/origin/feat/feynman-thinking-v0.5-draft`가 모두 `583c8119f4554797674d53f9ed07307c303c9519`로 일치한다.
+- main merge와 force push는 하지 않았다.
