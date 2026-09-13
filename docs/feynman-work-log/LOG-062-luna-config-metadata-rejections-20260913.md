@@ -159,7 +159,25 @@ separate authorization if needed.
 ## Commit/push
 
 Starting head 12804ef was already pushed. This log, current handoff pointers and
-the Linux fixture fix will be committed and normally pushed on the existing
-feature branch. Record the resulting full SHA and CI evidence in the final
-handoff. User PNGs remain untracked. No main merge or force push.
+the Linux fixture fix were committed as
+`ea0e6941beea05d157f86837cb6fecfdecc38938` and normally pushed with
+`git push origin feat/feynman-thinking-v0.5-draft` (12804ef..ea0e694).
+User PNGs remain untracked. No main merge or force push.
 
+Final verification commands:
+
+```powershell
+gh run watch 34733635894 --repo Ronaldony/thinking-skills --exit-status --interval 10
+gh run list --repo Ronaldony/thinking-skills --commit ea0e6941beea05d157f86837cb6fecfdecc38938 --limit 20 --json databaseId,status,conclusion,workflowName
+gh run view 34733634553 --repo Ronaldony/thinking-skills --log | Select-String -Pattern 'Ran 364 tests','OK \(skipped='
+git status --short --branch
+```
+
+All seven distinct workflows passed (ten successful runs including push/PR
+duplicates). Run IDs: 34733635892, 34733635901, 34733635897, 34733635894,
+34733635898, 34733635905, 34733635893, 34733634555, 34733634582,
+34733634553. Linux full suite: 364 total, 3 skipped, 361 executed; OK in 1.893s.
+The branch was synchronized with origin, with only the two user PNGs untracked.
+This closing evidence is a subsequent documentation-only commit; CI success
+above is specifically for implementation commit ea0e694, not a prediction for
+later documentation commits.
