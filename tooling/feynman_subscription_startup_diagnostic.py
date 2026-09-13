@@ -394,6 +394,27 @@ def _safe_proxy_telemetry(path: Path) -> dict[str, Any]:
     return value
 
 
+def _wait_for_proxy_telemetry_exit(path: Path, *, deadline: float) -> bool:
+    """Wait for the proxy's final child-exit snapshot within cleanup budget.
+
+    App Server owns the proxy process, so closing App Server stdin does not
+    guarantee that its descendant has written the final telemetry snapshot
+    before the parent exits.  Poll only the already-declared, payload-free
+    telemetry file; never wait beyond the caller's cleanup deadline.
+    """
+    while True:
+        try:
+            value = _safe_proxy_telemetry(path)
+        except StartupDiagnosticError:
+            value = None
+        if value is not None and value["child_exit_code"] is not None:
+            return True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(min(0.05, remaining))
+
+
 def _proxy_telemetry_ready(value: dict[str, Any]) -> bool:
     """Require complete request/response accounting before declaring ready."""
     response_records = (
@@ -537,10 +558,18 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
                 process.stdin.close()
             except (OSError, ValueError):
                 pass
+            process_wait_timed_out = False
             try:
                 process.wait(timeout=max(0.1, min(10, cleanup_deadline - time.monotonic())))
             except subprocess.TimeoutExpired:
                 forced_shutdown = True
+                process_wait_timed_out = True
+            # Give the proxy a chance to publish child_exit_code before
+            # taskkill can reap the App Server process tree.  This turns the
+            # previous null exit-code artifact into either complete evidence
+            # or an explicit cleanup-timeout result.
+            _wait_for_proxy_telemetry_exit(telemetry_path, deadline=cleanup_deadline)
+            if process_wait_timed_out and process.poll() is None:
                 process_tree_reaped = _stop_diagnostic_process(
                     process, deadline=cleanup_deadline)
             stderr_reader.join(timeout=2)

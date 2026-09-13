@@ -1,5 +1,15 @@
 # feynman-thinking 작업 상태
 
+최신 재개 지점: [LOG-084](feynman-work-log/LOG-084-startup-cleanup-evidence-and-next-boundary-20260913.md).
+최종 startup gate의 실제 구독 진단 1회는 `initialize`까지 통과했지만
+`thread/start` `-32603 remote-environment-error`로 blocked됐다. 6/6 request forward,
+5/5 response match, mapping/write/unmatched/pending 0이며 turn/model generation은
+0회다. 당시 `child_exit_code=null`을 남긴 정리 순서 결함을 보강했고, 전체 `421 tests
+OK, 11 skipped`, schema 17개 `errors=0` 및 실제 report instance 검증을 통과했다.
+path mapping을 원인으로 확정하지 않으며, 추가 startup·model evaluation은 실행하지 않는다.
+남은 문제는 Codex 0.154.0 App Server와 remote exec-server response/lifecycle 의미 계약이다.
+
+
 최우선 재개 지점: [LOG-077](feynman-work-log/LOG-077-native-path-mapping-startup-revalidation-20260913.md).
 정확한 full-runner binding 경로를 사용한 `-24` model-free startup 1회가 완료됐다.
 Docker `29.7.2|linux|aarch64`, image/Codex `linux|arm64`/`0.154.0`, child exit 0,

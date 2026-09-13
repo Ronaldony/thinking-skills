@@ -1,16 +1,15 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-083](feynman-work-log/LOG-083-startup-hardening-and-path-contract-equivalence-20260913.md).
-> startup 진단·proxy telemetry를 schema v3로 보강하고, 실제 initialize 상태,
-> cleanup verified, child exit 0, instruction source allowlist, 양방향 mapping
-> rejection 0을 fail-closed로 연결했다. Windows parent-pipe 종료 정리와 atomic
-> telemetry 저장도 고쳤다. pinned remote-boundary Docker fixture에서 direct Linux와
-> Windows path proxy의 순차 exec-server lifecycle이 응답 1..4, process exit 0,
-> sandboxDenied false, 요청/응답 shape 동일로 통과했다. 전체 `419 tests OK,
-> 11 skipped`, schema 17개 `errors=0`이다. 실제 subscription startup/auth/model/
-> evaluation은 0회이며, user PNG와 `.tmp` 증거는 보존된다. 다음 개입 경계는 새
-> 최종 startup gate를 쓰는 실제 subscription diagnostic 1회 선택이다. 실패 시
-> 자동 재시도·fallback·baseline을 실행하지 않는다.
+> 최신: [LOG-084](feynman-work-log/LOG-084-startup-cleanup-evidence-and-next-boundary-20260913.md).
+> 최종 startup gate를 이용한 실제 ChatGPT 구독 startup diagnostic 1회는
+> `initialize` 완료 후 `thread/start -32603 remote-environment-error`로 blocked됐다.
+> proxy는 6/6 request forward, 5/5 response match, mapping/write/unmatched/pending
+> 0을 기록했고 turn/model generation은 0회다. `child_exit_code=null`을 남긴 cleanup
+> 순서 결함을 수정해 final telemetry를 cleanup deadline 안에서 기다리도록 했으며,
+> 전체 `421 tests OK, 11 skipped`, schema 17개 errors=0이다. path mapping이 직접
+> 원인이라고 확정하지 않는다. 같은 startup 반복·fallback·baseline·model evaluation은
+> 하지 않으며, 남은 blocker는 설치된 0.154.0 App Server와 remote exec-server의
+> response/lifecycle 의미 계약이다. user PNG·`.tmp` 증거와 control home은 보존된다.
 
 > 최신: [LOG-082](feynman-work-log/LOG-082-diagnostic-fixes-and-final-startup-evidence-20260913.md).
 > Windows/Docker checkpoint, native path contract, payload-free telemetry v2,

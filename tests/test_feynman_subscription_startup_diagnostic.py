@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 
 from tooling.feynman_subscription_startup_diagnostic import (
@@ -16,7 +17,7 @@ from tooling.feynman_subscription_startup_diagnostic import (
     _SAFE_NOTIFICATION_METHODS, _safe_proxy_telemetry, _thread_start_params,
     _thread_summary, _wait_for_thread_start, _proxy_telemetry_ready,
     _write_failure_artifact, _consume_private_stderr, _read_json_lines,
-    _instruction_sources_allowed,
+    _instruction_sources_allowed, _wait_for_proxy_telemetry_exit,
 )
 from tooling.feynman_rpc_path_proxy import _ProxyTelemetry
 
@@ -306,6 +307,22 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
             "response_mapping_rejections": 0, "child_exit_code": None,
         }
         self.assertFalse(_proxy_telemetry_ready(value))
+
+    def test_cleanup_wait_accepts_final_proxy_child_exit_snapshot(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "telemetry.json"
+            value = _ProxyTelemetry().snapshot()
+            value["child_exit_code"] = 0
+            path.write_text(json.dumps(value), encoding="utf-8")
+            self.assertTrue(_wait_for_proxy_telemetry_exit(
+                path, deadline=time.monotonic() + 1))
+
+    def test_cleanup_wait_times_out_on_partial_proxy_snapshot(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "telemetry.json"
+            path.write_text(json.dumps(_ProxyTelemetry().snapshot()), encoding="utf-8")
+            self.assertFalse(_wait_for_proxy_telemetry_exit(
+                path, deadline=time.monotonic() + 0.01))
 
     def test_stderr_sample_is_bounded_but_stream_is_drained_to_eof(self):
         stream = io.BytesIO(b"x" * 300000)
