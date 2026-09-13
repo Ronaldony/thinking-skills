@@ -84,7 +84,7 @@ git diff --check
 
 - 변경: runtime probe 회귀 테스트 2개, 본 로그, 최신 재개 지점 문서 3개.
 - `.tmp/`와 사용자 PNG 2개는 stage 대상에서 제외하고 보존한다.
-- 커밋·push 상태와 최종 SHA는 후속 receipt commit에 기록한다.
+- 커밋 `abb530d18b2d32d51d592a6398b782a187c51499` (`test: harden Docker runtime probe evidence`)를 생성하고 `origin/feat/feynman-thinking-v0.5-draft`에 일반 push했다. push 후 local HEAD와 remote ref가 동일 SHA임을 확인했다. 이 receipt 보정 문서는 별도 문서 커밋으로 기록한다.
 - 미완료: Docker `create` 요청이 실제로 완료되는 환경 증거, 그 이후 start/node/exec-server initialize, Windows path 의미 비교, 실제 subscription startup gate, 조건부 Luna smoke.
 
 ## 다음 행동
