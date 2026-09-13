@@ -452,3 +452,16 @@ model-free wiring preflight는 이 builder에 full-runner override 13개와 첫 
 않는다. 실제 subscription executor 호출부에서도 binding/adapter/Docker 입력을
 동일한 lineage로 검증한 뒤 이 builder를 사용해야 한다. 그 fail-closed 호출부
 검증이 끝나기 전에는 실제 model turn을 시작하지 않는다.
+
+## 18. canonical executor required inputs
+
+운영용 `feynman_subscription_smoke_exec.py` CLI는 full-runner binding manifest,
+Node adapter, Docker executable/config directory, immutable Docker image ID를
+모두 요구한다. structural preflight 뒤 auth gate 전에 binding의 runner identity,
+profile/job digest, adapter/candidate/Docker 재생성 override를 대조한다. 일부 입력
+또는 lineage drift는 모델 호출 전에 거부된다.
+
+이 검사는 executor가 올바른 full-runner를 사용하도록 보장하지만, App Server에서
+발견한 non-candidate skill을 실제 smoke command plan에 자동 전달하는 단계까지
+완료했다는 뜻은 아니다. transient skill-disable override의 command-plan 결속은
+별도 model-free 단계로 남아 있다.

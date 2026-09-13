@@ -271,6 +271,11 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
         with patch.object(executor, "preflight_files", return_value={"verdict":"blocked"}):
             with self.assertRaises(ValueError): self._run()
 
+    def test_partial_full_runner_inputs_fail_before_auth(self):
+        with self.assertRaises(ValueError):
+            self._run(full_runner_binding_path=self.base / "binding.json")
+        self.assertEqual(AUTH_CALLS, [])
+
     def test_nonzero_and_failed_trace_do_not_promote_result(self):
         self._write_fake_codex(success=False)
         with self.assertRaises(ValueError): self._run()

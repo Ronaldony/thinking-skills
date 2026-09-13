@@ -20,9 +20,21 @@ from typing import Any, Mapping
 
 try:
     from .feynman_subscription_auth_gate import CONFIG_TEXT, check as check_auth
+    from .feynman_full_runner_contract import (
+        FIXED_CANDIDATE_FILE,
+        FIXED_TEST_COMMAND,
+        TOOL_NAMES,
+        build_full_runner_override,
+    )
     from .feynman_subscription_run_preflight import preflight_files
 except ImportError:
     from feynman_subscription_auth_gate import CONFIG_TEXT, check as check_auth
+    from feynman_full_runner_contract import (
+        FIXED_CANDIDATE_FILE,
+        FIXED_TEST_COMMAND,
+        TOOL_NAMES,
+        build_full_runner_override,
+    )
     from feynman_subscription_run_preflight import preflight_files
 
 EXPECTED_ANALYSIS_USE = "not-for-skill-performance-inference"
@@ -382,10 +394,75 @@ def build_codex_exec_command(*, executable: str, model: str, candidate_dir: Path
     return command
 
 
+def _validate_full_runner_binding(*, binding_path: Path, runner_job_path: Path,
+                                  boundary_profile_path: Path, job: dict[str, Any],
+                                  node_bin: Path, adapter: Path, docker_bin: Path,
+                                  docker_config: Path, docker_image_id: str,
+                                  candidate_dir: Path) -> Any:
+    """Validate the immutable full-runner inputs before auth or model use."""
+    binding = _load(binding_path, "full-runner binding")
+    info = job.get("job")
+    versions = job.get("versions")
+    digests = job.get("digests")
+    if not isinstance(info, dict) or not isinstance(versions, dict) or not isinstance(digests, dict):
+        raise ValueError("runner job lacks binding identity blocks")
+    expected_identity = {
+        "schema_version": 1,
+        "verdict": "full-runner-mcp-artifact-chain-bound",
+        "run_id": job.get("run_id"),
+        "case_id": info.get("case_id"),
+        "condition_id": info.get("condition_id"),
+        "model": versions.get("model"),
+        "codex_cli": versions.get("codex_cli"),
+    }
+    if any(binding.get(field) != value for field, value in expected_identity.items()):
+        raise ValueError("full-runner binding identity differs from runner job")
+    lineage = binding.get("lineage")
+    if lineage != {
+        "runner_job_sha256": _sha(runner_job_path),
+        "boundary_profile_sha256": _sha(boundary_profile_path),
+        "eval_plan_sha256": digests.get("eval_plan_sha256"),
+        "candidate_prompt_sha256": digests.get("candidate_prompt_sha256"),
+        "runtime_sha256": digests.get("runtime_sha256"),
+    }:
+        raise ValueError("full-runner binding lineage differs from runner job")
+    full_runner = binding.get("full_runner")
+    if not isinstance(full_runner, dict):
+        raise ValueError("full-runner binding implementation block is missing")
+    override = build_full_runner_override(
+        node_bin=node_bin,
+        adapter=adapter,
+        candidate=candidate_dir,
+        docker_bin=docker_bin,
+        docker_config=docker_config,
+        docker_image_id=docker_image_id,
+    )
+    expected_runner = {
+        "server_name": "feynman_full_runner",
+        "tool_names": list(TOOL_NAMES),
+        "adapter_sha256": override.adapter_sha256,
+        "docker_image_id": override.docker_image_id,
+        "initial_candidate_sha256": override.initial_candidate_sha256,
+        "test_sha256": override.test_sha256,
+        "fixed_candidate_file": FIXED_CANDIDATE_FILE,
+        "fixed_test_command": list(FIXED_TEST_COMMAND),
+        "network_mode": "none",
+    }
+    if any(full_runner.get(field) != value for field, value in expected_runner.items()):
+        raise ValueError("full-runner binding implementation lineage drift")
+    return override
+
+
 def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, evaluator_case_path: Path,
                       runner_job_path: Path, boundary_profile_path: Path,
                       remote_environment_path: Path, output_dir: Path,
-                      codex_bin: str = "codex", timeout_seconds: int = 600) -> dict[str, Any]:
+                      codex_bin: str = "codex", timeout_seconds: int = 600,
+                      full_runner_binding_path: Path | None = None,
+                      full_runner_node_bin: Path | None = None,
+                      full_runner_adapter: Path | None = None,
+                      full_runner_docker_bin: Path | None = None,
+                      full_runner_docker_config: Path | None = None,
+                      full_runner_image_id: str | None = None) -> dict[str, Any]:
     if type(timeout_seconds) is not int or not 30 <= timeout_seconds <= 3600:
         raise ValueError("timeout_seconds must be an integer in 30..3600")
     _assert_invocation_context()
@@ -415,24 +492,48 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
     if preflight.get("verdict") != "ready-for-local-chatgpt-session-check":
         raise ValueError("subscription structural preflight did not pass")
 
-    control_home, remote_environment_path = _validate_control_files(job, remote_environment_path)
-    auth = check_auth(control_home, codex_bin=codex_bin, timeout_seconds=min(timeout_seconds, 120))
-    if auth.get("verdict") != "chatgpt-subscription-authenticated":
-        raise ValueError("ChatGPT subscription auth gate did not pass")
+    full_runner_inputs = (
+        full_runner_binding_path, full_runner_node_bin, full_runner_adapter,
+        full_runner_docker_bin, full_runner_docker_config, full_runner_image_id,
+    )
+    if any(value is not None for value in full_runner_inputs) and not all(
+        value is not None for value in full_runner_inputs
+    ):
+        raise ValueError("full-runner binding, adapter, Docker, and image inputs are all required")
 
     versions = job.get("versions")
     paths = job.get("paths")
     if not isinstance(versions, dict) or not isinstance(paths, dict):
         raise ValueError("runner job lacks versions/paths")
-    if versions.get("codex_cli") != auth.get("codex_cli"):
-        raise ValueError("runner-job Codex version differs from authenticated control Codex")
     model = versions.get("model")
     if not isinstance(model, str) or not model:
         raise ValueError("runner job has invalid model")
     if model.lower().startswith("mock"):
         raise ValueError("subscription smoke executor refuses mock model IDs")
-
     candidate_dir = _directory(Path(paths["candidate_dir"]), "candidate directory")
+    full_runner_override = None
+    if all(value is not None for value in full_runner_inputs):
+        full_runner_override = _validate_full_runner_binding(
+            binding_path=full_runner_binding_path,
+            runner_job_path=runner_job_path,
+            boundary_profile_path=boundary_profile_path,
+            job=job,
+            node_bin=full_runner_node_bin,
+            adapter=full_runner_adapter,
+            docker_bin=full_runner_docker_bin,
+            docker_config=full_runner_docker_config,
+            docker_image_id=full_runner_image_id,
+            candidate_dir=candidate_dir,
+        )
+
+    control_home, remote_environment_path = _validate_control_files(job, remote_environment_path)
+    auth = check_auth(control_home, codex_bin=codex_bin, timeout_seconds=min(timeout_seconds, 120))
+    if auth.get("verdict") != "chatgpt-subscription-authenticated":
+        raise ValueError("ChatGPT subscription auth gate did not pass")
+
+    if versions.get("codex_cli") != auth.get("codex_cli"):
+        raise ValueError("runner-job Codex version differs from authenticated control Codex")
+
     evaluator_dir = _directory(Path(paths["evaluator_dir"]), "evaluator directory")
     if _inside(control_home, evaluator_dir) or _inside(evaluator_dir, control_home):
         raise ValueError("evaluator directory and control CODEX_HOME must be disjoint")
@@ -451,7 +552,11 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
     executable = _resolve_executable(codex_bin)
     env = _safe_exec_env(control_home, control_temp)
     command = build_codex_exec_command(
-        executable=executable, model=model, candidate_dir=candidate_dir)
+        executable=executable,
+        model=model,
+        candidate_dir=candidate_dir,
+        config_overrides=full_runner_override.values if full_runner_override else (),
+    )
 
     stderr_text = ""
     try:
@@ -504,6 +609,7 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
                 "ignore_execpolicy_rules": True,
                 "strict_config": True,
                 "local_execution_disabled": True,
+                "full_runner_mcp_bound": full_runner_override is not None,
             },
             "conversation": {
                 "thread_id": trace["thread_id"],
@@ -543,6 +649,7 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
                 "stderr_nonempty": bool(stderr_text),
                 "raw_auth_status_preserved": False,
                 "control_codex_home_contents_serialized": False,
+                "full_runner_binding_contents_serialized": False,
             },
             "limitations": [
                 "integration smoke only; result must not be used for Feynman skill-effect inference",
@@ -572,6 +679,12 @@ def main() -> int:
     parser.add_argument("--remote-environment", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--codex-bin", default="codex")
+    parser.add_argument("--full-runner-binding", type=Path, required=True)
+    parser.add_argument("--full-runner-node-bin", type=Path, required=True)
+    parser.add_argument("--full-runner-adapter", type=Path, required=True)
+    parser.add_argument("--full-runner-docker-bin", type=Path, required=True)
+    parser.add_argument("--full-runner-docker-config", type=Path, required=True)
+    parser.add_argument("--full-runner-image-id", required=True)
     parser.add_argument("--timeout-seconds", type=int, default=600)
     args = parser.parse_args()
     try:
@@ -586,6 +699,12 @@ def main() -> int:
             output_dir=args.output_dir,
             codex_bin=args.codex_bin,
             timeout_seconds=args.timeout_seconds,
+            full_runner_binding_path=args.full_runner_binding,
+            full_runner_node_bin=args.full_runner_node_bin,
+            full_runner_adapter=args.full_runner_adapter,
+            full_runner_docker_bin=args.full_runner_docker_bin,
+            full_runner_docker_config=args.full_runner_docker_config,
+            full_runner_image_id=args.full_runner_image_id,
         )
     except (ValueError, OSError, UnicodeDecodeError, json.JSONDecodeError, subprocess.SubprocessError) as exc:
         parser.exit(2, f"error: {exc}\n")

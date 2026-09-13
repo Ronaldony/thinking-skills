@@ -2,7 +2,14 @@
 
 최신 실행 checkpoint: 2026-09-13, `feat/feynman-thinking-v0.5-draft` research preview.
 
-최신 checkpoint는 [LOG-054](feynman-work-log/LOG-054-subscription-executor-command-wiring-model-free-20260913.md)이다.
+최신 checkpoint는 [LOG-055](feynman-work-log/LOG-055-subscription-executor-fail-closed-inputs-20260913.md)이다.
+canonical `feynman_subscription_smoke_exec.py` CLI가 full-runner binding, Node
+adapter, Docker executable/config, immutable image ID를 required로 받도록 했다.
+binding identity와 digest는 structural preflight 직후 auth/model 전에 검증되며,
+검증된 13개 full-runner override만 공용 Codex command builder에 전달된다. 부분
+입력은 auth call 전에 거부된다. `355 tests / 11 skipped`가 통과했고 모델·인증
+호출은 0회다. 다음은 이 required 입력과 transient skill-disable override를
+Luna/Terra/Sol 실제 smoke command plan artifact에 model-free로 연결하는 작업이다.
 `feynman_subscription_smoke_exec.py`의 Codex command 조립을 공용 builder로
 추출하고, LOG-053의 two-pass skill isolation과 full-runner override가 이 builder를
 통해 구성되는지 세 모델에 대해 model-free로 검증했다. full-runner 13개 override와

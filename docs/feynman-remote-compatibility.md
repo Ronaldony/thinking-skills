@@ -244,3 +244,15 @@ stdin marker를 유지했고 MCP tool 3개가 확인됐다. 명령·prompt 원�
 model turn, candidate tool selection, baseline/Feynman 비교는 여전히 미실행이다.
 다음은 executor 호출부가 binding/adapter/Docker 입력 없이는 실행되지 않도록 하는
 최종 fail-closed 연결이다.
+
+## LOG-055 결과 — executor required inputs와 pre-auth lineage gate
+
+`feynman_subscription_smoke_exec.py`의 canonical CLI에 full-runner binding, Node
+adapter, Docker executable/config, immutable image ID를 모두 required로 추가했다.
+executor는 structural preflight 직후 auth gate 전에 runner job/profile과 binding의
+identity·digest·재생성 override를 비교한다. 일부 입력만 주어져도 auth 전에 거부한다.
+
+검증된 full-runner override 13개는 공용 `build_codex_exec_command()`에 전달된다.
+관련 unit 및 전체 `355 tests / 11 skipped`가 통과했다. 이번 변경은 실제 auth/model
+호출이나 smoke 결과를 만들지 않았다. 다음은 이 입력 계약과 transient skill-disable
+override를 실제 smoke command plan artifact에 model-free로 연결하는 것이다.
