@@ -1,6 +1,6 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-078](feynman-work-log/LOG-078-startup-gate-checkpoint-and-diagnostic-hardening-20260913.md).
+> 최신: [LOG-079](feynman-work-log/LOG-079-implementation-commit-push-receipt-20260913.md).
 > Windows/Docker checkpoint, native path contract, payload-free telemetry v2,
 > bounded cleanup, 그리고 실제 smoke executor의 fresh startup gate를 구현했다.
 > 전체 검증은 `399 tests OK, 11 skipped`, subscription schema 5개는 `errors=0`.
