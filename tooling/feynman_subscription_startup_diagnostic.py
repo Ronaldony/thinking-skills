@@ -75,9 +75,11 @@ _ERROR_SIGNAL_TERMS = {
 
 
 def _thread_start_params(*, model: str) -> dict[str, Any]:
-    # TurnEnvironmentParams paths use the selected environment's native
-    # syntax.  The canonical candidate destination is fixed by the validated
-    # boundary profile and must not be replaced with the Windows host source.
+    # thread/start cwd uses the selected environment's native syntax.  The
+    # canonical candidate destination is fixed by the validated boundary
+    # profile and must not be replaced with the Windows host source.  The
+    # environment is selected by the configured remote-environment document;
+    # ThreadStartParams has no ad-hoc environments/runtimeWorkspaceRoots fields.
     cwd = CONTAINER_DESTINATIONS["candidate_dir"]
     return {
         "model": model,
@@ -85,11 +87,6 @@ def _thread_start_params(*, model: str) -> dict[str, Any]:
         "approvalPolicy": "never",
         "sandbox": "workspace-write",
         "ephemeral": True,
-        "environments": [{
-            "environmentId": "candidate",
-            "cwd": cwd,
-            "runtimeWorkspaceRoots": [cwd],
-        }],
     }
 
 

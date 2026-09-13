@@ -15,12 +15,15 @@ from tooling.feynman_subscription_startup_diagnostic import (
 class SubscriptionStartupDiagnosticTests(unittest.TestCase):
     def test_thread_start_is_ephemeral_and_has_no_turn_or_prompt(self):
         params = _thread_start_params(model="gpt-5.6-luna")
+        self.assertEqual(
+            set(params), {"model", "cwd", "approvalPolicy", "sandbox", "ephemeral"}
+        )
         self.assertTrue(params["ephemeral"])
         self.assertEqual(params["approvalPolicy"], "never")
         self.assertEqual(params["sandbox"], "workspace-write")
-        self.assertEqual(params["environments"][0]["environmentId"], "candidate")
         self.assertEqual(params["cwd"], "/run/candidate")
-        self.assertEqual(params["environments"][0]["cwd"], "/run/candidate")
+        self.assertNotIn("environments", params)
+        self.assertNotIn("runtimeWorkspaceRoots", params)
         serialized = json.dumps(params)
         self.assertNotIn("prompt", serialized)
         self.assertNotIn("input", serialized)

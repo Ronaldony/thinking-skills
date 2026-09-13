@@ -1,13 +1,12 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최우선: [LOG-074](feynman-work-log/LOG-074-startup-diagnostic-telemetry-missing-20260913.md).
-> 승인된 `-07` model-free startup 1회는 진단기 실행 후 proxy telemetry가 생성되지 않아
-> report/telemetry artifact를 만들지 못했다. 두 파일의 미존재를 확인했으며 자동 재시도는
-> 하지 않았다. 이 결과로 auth, Docker/Windows executor, `thread/start` 성공을 단정하지
-> 않으며 turn/model은 0회다. telemetry 부재를 `proxy_telemetry_status=missing`과 null로
-> 안전하게 표현하고 경로·stderr·payload를 누설하지 않는 보정을 구현했다. 대상 7개와
-> 전체 `386 tests / 11 skipped`가 통과했다. 다음 외부 startup/model 행동은 별도 명시
-> 승인 전에는 실행하지 않는다. 아래 LOG-073 안내는 역사 기록이다.
+> 최우선: [LOG-075](feynman-work-log/LOG-075-thread-start-schema-shape-and-docker-blocker-20260913.md).
+> Codex 0.154.0 schema 대조로 `thread/start`의 비공식 `environments`/
+> `runtimeWorkspaceRoots` 필드 결함을 제거했고 대상 7개·전체 `386 tests / 11 skipped`가
+> 통과했다. 수정 후 `-08` model-free startup은 실행 직전 Docker `info`/image inspect가
+> `Docker Desktop is unable to start`, WSL status가 timeout이라 중단했다. 따라서
+> request-shape 수정 효과나 Windows/Docker 호환성을 성공으로 단정하지 않는다. 아래
+> LOG-074 안내는 역사 기록이다.
 
 > 최우선: [LOG-072](feynman-work-log/LOG-072-startup-revalidation-paired-cause-20260913.md).
 > 사용자 승인 startup diagnostic 정확히 1회는 종료 코드 0으로 끝났지만
