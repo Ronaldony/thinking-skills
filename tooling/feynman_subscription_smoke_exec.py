@@ -587,6 +587,10 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
     candidate_dir = _directory(Path(paths["candidate_dir"]), "candidate directory")
     full_runner_wiring = None
     full_runner_override = None
+    startup_gate: dict[str, Any] = {
+        "verdict": "not-run-no-full-runner-binding",
+        "model_generation_requests_sent": 0,
+    }
     if all(value is not None for value in full_runner_inputs):
         full_runner_wiring = prepare_full_runner_executor_wiring(
             codex_bin=codex_bin,
@@ -627,6 +631,32 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
             )
         if control_plane.get("verdict") != "subscription-control-plane-ready":
             raise ValueError("subscription control-plane preflight did not pass")
+        # The model-facing executor must consume a fresh startup result for
+        # the same job, binding, image, and control home.  A previous
+        # model-free report cannot be replayed as evidence for this process.
+        try:
+            from .feynman_subscription_startup_diagnostic import run as startup_diagnostic
+        except ImportError:
+            from feynman_subscription_startup_diagnostic import run as startup_diagnostic
+        with tempfile.TemporaryDirectory(prefix="feynman-startup-gate-") as startup_root:
+            startup_dir = Path(startup_root)
+            startup_gate = startup_diagnostic(
+                runner_job_path=runner_job_path,
+                boundary_profile_path=boundary_profile_path,
+                remote_environment_path=remote_environment_path,
+                binding_path=full_runner_binding_path,
+                codex_bin=Path(_resolve_executable(codex_bin)),
+                node_bin=full_runner_node_bin,
+                adapter=full_runner_adapter,
+                docker_bin=full_runner_docker_bin,
+                docker_config=full_runner_docker_config,
+                docker_image_id=full_runner_image_id,
+                telemetry_path=startup_dir / "startup-rpc-telemetry.json",
+                output_path=startup_dir / "startup-report.json",
+                timeout_seconds=min(timeout_seconds, 60),
+            )
+        if startup_gate.get("verdict") != "subscription-startup-thread-ready":
+            raise ValueError("subscription startup gate did not pass")
     auth = check_auth(control_home, codex_bin=codex_bin, timeout_seconds=min(timeout_seconds, 120))
     if auth.get("verdict") != "chatgpt-subscription-authenticated":
         raise ValueError("ChatGPT subscription auth gate did not pass")
@@ -710,6 +740,10 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
                 "local_execution_disabled": True,
                 "full_runner_mcp_bound": full_runner_override is not None,
                 "transient_skill_isolation_bound": full_runner_wiring is not None,
+            },
+            "startup_gate": {
+                "verdict": startup_gate["verdict"],
+                "model_generation_requests_sent": startup_gate["model_generation_requests_sent"],
             },
             "conversation": {
                 "thread_id": trace["thread_id"],

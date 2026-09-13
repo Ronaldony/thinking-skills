@@ -55,6 +55,12 @@ def _is_windows_path(value: str) -> bool:
     return len(value) >= 3 and value[1] == ":" and value[0].isalpha() and value[2] in {"/", "\\"}
 
 
+def _is_windows_drive_relative(value: str) -> bool:
+    """Return whether a value is a drive-relative Windows path such as C:foo."""
+    return len(value) >= 2 and value[0].isalpha() and value[1] == ":" \
+        and (len(value) == 2 or value[2] not in {"/", "\\"})
+
+
 def _windows_key(path: PureWindowsPath) -> tuple[str, ...]:
     return tuple(part.casefold() for part in path.parts)
 
@@ -174,7 +180,9 @@ class RpcPathMapper:
             return self._declared_container_path(value).as_posix()
         return self._host_to_container_path(value).as_posix()
 
-    def remote_environment_path(self, value: str) -> str:
+    def remote_environment_path(
+        self, value: str, *, base_path: PurePosixPath | None = None
+    ) -> str:
         """Resolve one relative environment-config path inside candidate.
 
         Codex 0.154.0 may emit relative entries in the executor-internal
@@ -182,18 +190,29 @@ class RpcPathMapper:
         the selected remote environment, not a Windows host path.
         Keep this compatibility rule narrow: only POSIX relative paths without
         traversal or backslash ambiguity are accepted, and they are anchored
-        at the fixed candidate destination.
+        at the mapped environment ``cwd`` when supplied.  The default is the
+        fixed candidate destination, which must be an explicitly declared
+        mount.
         """
         if not isinstance(value, str) or not value:
             raise RpcPathMappingError("declared path field must be a string")
+        if _is_windows_drive_relative(value):
+            raise RpcPathMappingError("relative requirements path is ambiguous")
         if value.startswith("/") or value.startswith("file:") or _is_windows_path(value):
             return self.host_to_container(value)
         if "\\" in value:
             raise RpcPathMappingError("relative requirements path is ambiguous")
+        raw_parts = value.split("/")
         relative = PurePosixPath(value)
-        if relative.is_absolute() or not relative.parts or "." in relative.parts or ".." in relative.parts:
+        if (relative.is_absolute() or not relative.parts
+                or any(part in {".", ".."} for part in raw_parts)):
             raise RpcPathMappingError("relative requirements path is unsafe")
-        return PurePosixPath(CONTAINER_DESTINATIONS["candidate_dir"], *relative.parts).as_posix()
+        candidate_destination = PurePosixPath(CONTAINER_DESTINATIONS["candidate_dir"])
+        if not any(container == candidate_destination for _, container in self.mounts):
+            raise RpcPathMappingError("candidate mount is not declared")
+        root = base_path or candidate_destination
+        self._declared_container_path(root.as_posix())
+        return PurePosixPath(root, *relative.parts).as_posix()
 
     def container_to_host(self, value: str) -> str:
         if value.startswith("file:"):
@@ -237,12 +256,21 @@ class RpcPathMapper:
                 for item in values:
                     if not isinstance(item, list) or not all(isinstance(x, str) for x in item):
                         raise RpcPathMappingError("config path groups must contain only paths")
-                    mapper = (
-                        self.remote_environment_path
-                        if method == "environmentConfig/read"
-                        else self.host_to_container
-                    )
-                    mapped_values.append([mapper(x) for x in item])
+                    mapper = self.remote_environment_path
+                    base = mapped_params.get("cwd")
+                    if isinstance(base, str):
+                        if base.startswith("file:"):
+                            base_kind, base_value = _file_uri_path(base)
+                            if base_kind != "posix":
+                                raise RpcPathMappingError("container file URI must use POSIX paths")
+                            base_path = self._declared_container_path(base_value.as_posix())
+                        else:
+                            base_path = self._declared_container_path(base)
+                    else:
+                        base_path = PurePosixPath(CONTAINER_DESTINATIONS["candidate_dir"])
+                    mapped_values.append([
+                        mapper(x, base_path=base_path) for x in item
+                    ])
                 mapped_params[field] = mapped_values
             except RpcPathMappingError as exc:
                 raise RpcPathMappingError(str(exc), path_field=field) from exc

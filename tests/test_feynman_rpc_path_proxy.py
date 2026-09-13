@@ -59,6 +59,19 @@ class RpcPathProxyTests(unittest.TestCase):
         self.assertNotIn('"path"', serialized)
         self.assertNotIn('"id"', serialized)
 
+    def test_telemetry_bounds_unknown_methods_and_correlates_responses(self):
+        telemetry = _ProxyTelemetry()
+        telemetry.request_seen("SYNTHETIC_PRIVATE_METHOD")
+        telemetry.response_seen(matched=True)
+        telemetry.response_seen(matched=False)
+        telemetry.response_seen(notification=True)
+        snapshot = telemetry.snapshot()
+        self.assertEqual(snapshot["request_methods"], {"unknown": 1})
+        self.assertEqual(snapshot["responses_matched"], 1)
+        self.assertEqual(snapshot["responses_unmatched"], 1)
+        self.assertEqual(snapshot["notifications_seen"], 1)
+        self.assertNotIn("SYNTHETIC_PRIVATE", json.dumps(snapshot))
+
     def test_rejection_pair_does_not_retain_unknown_method_text(self):
         telemetry = _ProxyTelemetry()
         telemetry.request_rejected(

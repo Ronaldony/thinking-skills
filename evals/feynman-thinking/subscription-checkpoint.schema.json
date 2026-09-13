@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Feynman subscription local execution checkpoint v1",
+  "description": "Non-secret Windows/Docker inputs for a local subscription diagnostic.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "runner_job": {"$ref": "#/$defs/absolute_path"},
+    "boundary_profile": {"$ref": "#/$defs/absolute_path"},
+    "remote_environment": {"$ref": "#/$defs/absolute_path"},
+    "binding": {"$ref": "#/$defs/absolute_path"},
+    "codex_bin": {"$ref": "#/$defs/absolute_path"},
+    "node_bin": {"$ref": "#/$defs/absolute_path"},
+    "adapter": {"$ref": "#/$defs/absolute_path"},
+    "docker_bin": {"$ref": "#/$defs/absolute_path"},
+    "docker_config": {"$ref": "#/$defs/absolute_path"},
+    "docker_image_id": {"$ref": "#/$defs/image_id"},
+    "telemetry": {"$ref": "#/$defs/absolute_path"},
+    "output": {"$ref": "#/$defs/absolute_path"}
+  },
+  "required": [
+    "schema_version", "runner_job", "boundary_profile", "remote_environment",
+    "binding", "codex_bin", "node_bin", "adapter", "docker_bin",
+    "docker_config", "docker_image_id", "telemetry", "output"
+  ],
+  "$defs": {
+    "absolute_path": {"type": "string", "minLength": 1, "pattern": "^(?:/|[A-Za-z]:[\\\\/])"},
+    "image_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  }
+}

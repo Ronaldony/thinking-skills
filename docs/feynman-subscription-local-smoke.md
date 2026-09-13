@@ -125,6 +125,25 @@ paths. Do not hand-edit a `C:\...:C:\...` identity mount for a Linux image.
 The compatibility identity mapping in old POSIX fixtures is not a native
 Windows execution contract.
 
+### Freeze the local inputs before starting a diagnostic
+
+The startup diagnostic accepts a v1 JSON checkpoint containing only absolute
+input paths and the pinned Docker image digest. It must not contain login
+files, tokens, API keys, prompts, or account data. Maintain this file outside
+the candidate workspace, then run validation-only first:
+
+```text
+python -m tooling.feynman_subscription_startup_diagnostic \
+  --checkpoint <subscription-checkpoint.json> \
+  --validate-only
+```
+
+This mode validates file kinds, runner/binding lineage, the candidate boundary,
+and the new output paths without launching Codex, Docker, an App Server, or a
+model. A successful checkpoint validation is not a startup or authentication
+success. Use the same checkpoint for the subsequent diagnostic so a hand-edited
+path cannot silently change the test.
+
 ## 5. Execute one frozen job with the canonical executor
 
 Do not manually assemble Codex flags. Run:
@@ -142,7 +161,11 @@ python tooling/feynman_subscription_smoke_exec.py \
   --codex-bin codex
 ```
 
-The executor itself re-runs the structural preflight and auth gate, verifies the frozen smoke-spec hash, checks the requested model and Codex CLI version, rejects API/token-based ambient authentication, and launches the exact `task.txt` through a fixed non-interactive Codex configuration.
+The executor itself re-runs the structural preflight, the model-free remote
+startup gate, and the auth gate. It verifies the frozen smoke-spec hash, checks
+the requested model and Codex CLI version, rejects API/token-based ambient
+authentication, and launches the exact `task.txt` through a fixed
+non-interactive Codex configuration.
 
 Successful executor output includes:
 

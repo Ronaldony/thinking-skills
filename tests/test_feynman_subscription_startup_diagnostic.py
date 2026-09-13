@@ -9,7 +9,8 @@ import unittest
 from tooling.feynman_subscription_startup_diagnostic import (
     APP_SERVER_LOCAL_ISOLATION_OVERRIDES, StartupDiagnosticError,
     _SAFE_NOTIFICATION_METHODS, _safe_proxy_telemetry, _thread_start_params,
-    _thread_summary, _wait_for_thread_start,
+    _thread_summary, _wait_for_thread_start, _proxy_telemetry_ready,
+    _write_failure_artifact,
 )
 
 
@@ -109,19 +110,54 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
 
     def test_durable_thread_is_rejected(self):
         with self.assertRaisesRegex(StartupDiagnosticError, "not-ephemeral"):
-            _thread_summary({"result": {"thread": {"id": "x", "ephemeral": False}}})
+                _thread_summary({"result": {"thread": {"id": "x", "ephemeral": False}}})
+
+    def test_thread_summary_requires_instruction_sources_array(self):
+        with self.assertRaisesRegex(StartupDiagnosticError, "response-shape"):
+            _thread_summary({"result": {"thread": {"id": "x", "ephemeral": True}}})
+
+    def test_proxy_telemetry_requires_complete_correlation(self):
+        value = {
+            "requests_seen": 2, "requests_forwarded": 2,
+            "responses_seen": 1, "responses_forwarded": 1,
+            "responses_matched": 1, "responses_unmatched": 0,
+            "pending_request_ids": 0, "request_write_failures": 0,
+            "request_id_duplicates": 0, "request_mapping_rejections": 0,
+            "response_mapping_rejections": 0,
+        }
+        self.assertTrue(_proxy_telemetry_ready(value))
+        value["responses_unmatched"] = 1
+        self.assertFalse(_proxy_telemetry_ready(value))
+
+    def test_failure_artifact_is_blocked_and_payload_free(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "startup.json"
+            _write_failure_artifact(path, "thread-start-timeout")
+            value = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(value["verdict"], "subscription-startup-thread-blocked")
+            self.assertEqual(value["failure_stage"], "thread-start-timeout")
+            self.assertFalse(value["checks"]["initialize_completed"])
+            self.assertNotIn("SYNTHETIC_PRIVATE", json.dumps(value))
+
+    def test_failure_artifact_sanitizes_unexpected_stage(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "startup.json"
+            _write_failure_artifact(path, "C:\\private\\token")
+            value = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(value["failure_stage"], "diagnostic-failure")
 
     def test_artifact_schema_is_valid_json(self):
         schema = json.loads(Path(
             "evals/feynman-thinking/subscription-startup-diagnostic.schema.json"
         ).read_text(encoding="utf-8"))
-        self.assertEqual(schema["properties"]["schema_version"]["const"], 1)
+        self.assertEqual(schema["properties"]["schema_version"]["const"], 2)
         self.assertEqual(schema["properties"]["checks"]["properties"]
                          ["model_generation_requests_sent"]["const"], 0)
         self.assertIn("request_mapping_rejection_method_reasons",
                       schema["properties"]["proxy_telemetry"]["properties"])
         self.assertIn("request_mapping_rejection_method_reason_fields",
                       schema["properties"]["proxy_telemetry"]["properties"])
+        self.assertIn("proxy_telemetry_complete", schema["properties"]["checks"]["properties"])
         self.assertIn("error_signals", schema["properties"]["checks"]["properties"])
         self.assertIn("error_data_kind", schema["properties"]["checks"]["properties"])
         self.assertEqual(

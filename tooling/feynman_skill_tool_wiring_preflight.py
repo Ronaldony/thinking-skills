@@ -17,6 +17,7 @@ from pathlib import Path
 import queue
 import subprocess
 import threading
+import time
 from typing import Any, Sequence
 
 try:
@@ -140,8 +141,12 @@ def _rpc(process: subprocess.Popen[bytes], received: queue.Queue[dict[str, Any] 
     assert process.stdin is not None
     process.stdin.write(_request(identifier, method, params))
     process.stdin.flush()
+    deadline = time.monotonic() + timeout_seconds
     while True:
-        value = received.get(timeout=timeout_seconds)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ValueError("App Server RPC request timed out")
+        value = received.get(timeout=remaining)
         if value is None:
             raise ValueError("protocol emitted invalid JSON")
         if value.get("id") == identifier:
@@ -157,8 +162,17 @@ def _close(process: subprocess.Popen[bytes], reader: threading.Thread) -> None:
     try:
         process.wait(timeout=10)
     except subprocess.TimeoutExpired:
-        process.terminate()
-        process.wait(timeout=10)
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           check=False)
+        else:
+            process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
     reader.join(timeout=2)
 
 

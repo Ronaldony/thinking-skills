@@ -104,13 +104,35 @@ class RpcPathMappingTests(unittest.TestCase):
         )
 
     def test_environment_config_ambiguous_or_traversal_is_rejected(self):
-        for value, message in (("..\\secret.toml", "ambiguous"), ("../secret.toml", "unsafe")):
+        for value, message in (("..\\secret.toml", "ambiguous"), ("../secret.toml", "unsafe"),
+                               ("C:secret.toml", "ambiguous")):
             with self.subTest(value=value), self.assertRaisesRegex(
                 RpcPathMappingError, message):
                 self.mapper.map_request({
                     "method": "environmentConfig/read",
                     "params": {"configPaths": [[value]]},
                 })
+
+    def test_environment_config_relative_values_use_mapped_cwd(self):
+        mapped = self.mapper.map_request({
+            "method": "environmentConfig/read",
+            "params": {
+                "cwd": r"C:\DevWorks\smoke\candidate\nested",
+                "configPaths": [["config.toml"]],
+            },
+        })
+        self.assertEqual(mapped["params"]["cwd"], "/run/candidate/nested")
+        self.assertEqual(mapped["params"]["configPaths"], [["/run/candidate/nested/config.toml"]])
+
+    def test_environment_config_relative_values_require_candidate_mount(self):
+        mapper = RpcPathMapper.from_mounts([
+            {"source": r"C:\DevWorks\smoke\home", "destination": "/run/home"},
+        ])
+        with self.assertRaisesRegex(RpcPathMappingError, "candidate mount"):
+            mapper.map_request({
+                "method": "environmentConfig/read",
+                "params": {"configPaths": [["config.toml"]]},
+            })
 
     def test_environment_config_path_groups_reject_non_string_items(self):
         for value in ([[None]], [["config.toml", 1]]):

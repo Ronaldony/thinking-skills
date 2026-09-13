@@ -62,9 +62,17 @@ _MAPPING_REJECTION_REASONS = {
     "declared path field must be a string": "invalid-path-field-type",
     "declared path array must be a list": "invalid-path-array-shape",
     "config path groups must contain only paths": "invalid-path-array-shape",
+    "relative requirements path is ambiguous": "ambiguous-relative-environment-path",
+    "relative requirements path is unsafe": "unsafe-relative-environment-path",
+    "candidate mount is not declared": "candidate-mount-not-declared",
     "RPC line is not valid JSON": "malformed-request",
     "RPC message must be a JSON object": "malformed-request",
 }
+
+_SAFE_REQUEST_METHODS = frozenset({
+    "initialize", "initialized", "thread/start", "environment/info",
+    *REQUEST_PATH_FIELDS,
+})
 
 
 def _docker_mounts(docker_args: list[str]) -> list[dict[str, str]]:
@@ -120,14 +128,26 @@ class _ProxyTelemetry:
         self._values: Counter[str] = Counter()
         self._child_exit_code: int | None = None
 
+    @staticmethod
+    def _safe_method(method: str | None) -> str:
+        return method if method in _SAFE_REQUEST_METHODS else "unknown"
+
     def request_seen(self, method: str | None) -> None:
         with self._lock:
             self._values["requests_seen"] += 1
-            self._request_methods[method if isinstance(method, str) else "unknown"] += 1
+            self._request_methods[self._safe_method(method)] += 1
 
     def request_forwarded(self) -> None:
         with self._lock:
             self._values["requests_forwarded"] += 1
+
+    def request_write_failed(self) -> None:
+        with self._lock:
+            self._values["request_write_failures"] += 1
+
+    def request_id_duplicate(self) -> None:
+        with self._lock:
+            self._values["request_id_duplicates"] += 1
 
     def request_rejected(self, *, malformed: bool, method: str | None = None,
                          reason: str | None = None, path_field: str | None = None) -> None:
@@ -148,13 +168,20 @@ class _ProxyTelemetry:
             if malformed:
                 self._values["malformed_requests"] += 1
 
-    def response_seen(self, error_code: Any = None, *, malformed: bool = False) -> None:
+    def response_seen(self, error_code: Any = None, *, malformed: bool = False,
+                      matched: bool | None = None, notification: bool = False) -> None:
         with self._lock:
             self._values["responses_seen"] += 1
             if isinstance(error_code, int) and not isinstance(error_code, bool):
                 self._response_error_codes[str(error_code)] += 1
             if malformed:
                 self._values["malformed_responses"] += 1
+            if notification:
+                self._values["notifications_seen"] += 1
+            elif matched is True:
+                self._values["responses_matched"] += 1
+            elif matched is False:
+                self._values["responses_unmatched"] += 1
 
     def response_forwarded(self) -> None:
         with self._lock:
@@ -183,15 +210,21 @@ class _ProxyTelemetry:
         with self._lock:
             self._child_exit_code = value
 
+    def pending_request_ids(self, count: int) -> None:
+        with self._lock:
+            self._values["pending_request_ids"] = max(0, count)
+
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             values = dict(self._values)
             return {
-                "schema_version": 1,
+                "schema_version": 2,
                 "request_methods": dict(sorted(self._request_methods.items())),
                 "response_error_codes": dict(sorted(self._response_error_codes.items())),
                 "requests_seen": values.get("requests_seen", 0),
                 "requests_forwarded": values.get("requests_forwarded", 0),
+                "request_write_failures": values.get("request_write_failures", 0),
+                "request_id_duplicates": values.get("request_id_duplicates", 0),
                 "request_mapping_rejections": values.get("request_mapping_rejections", 0),
                 "request_mapping_rejection_methods": dict(sorted(self._request_mapping_rejection_methods.items())),
                 "request_mapping_rejection_reasons": dict(sorted(self._request_mapping_rejection_reasons.items())),
@@ -211,6 +244,10 @@ class _ProxyTelemetry:
                 "malformed_requests": values.get("malformed_requests", 0),
                 "responses_seen": values.get("responses_seen", 0),
                 "responses_forwarded": values.get("responses_forwarded", 0),
+                "responses_matched": values.get("responses_matched", 0),
+                "responses_unmatched": values.get("responses_unmatched", 0),
+                "notifications_seen": values.get("notifications_seen", 0),
+                "pending_request_ids": values.get("pending_request_ids", 0),
                 "response_mapping_rejections": values.get("response_mapping_rejections", 0),
                 "malformed_responses": values.get("malformed_responses", 0),
                 "probe_policy_rejections": values.get("probe_policy_rejections", 0),
@@ -468,10 +505,17 @@ def run_proxy(
                 assert payload is not None
                 if request and type(request.get("id")) in {str, int}:
                     with pending_lock:
+                        if request["id"] in pending_methods:
+                            telemetry.request_id_duplicate()
                         pending_methods[request["id"]] = request.get("method")
+                try:
+                    child.stdin.write(payload)
+                    child.stdin.flush()
+                except (BrokenPipeError, OSError):
+                    telemetry.request_write_failed()
+                    stop.set()
+                    break
                 telemetry.request_forwarded()
-                child.stdin.write(payload)
-                child.stdin.flush()
         finally:
             try:
                 child.stdin.close()
@@ -488,10 +532,16 @@ def run_proxy(
                 if response and isinstance(response.get("error"), dict):
                     error_code = response["error"].get("code")
                 request_method = None
+                has_id = response is not None and type(response.get("id")) in {str, int}
                 if response and type(response.get("id")) in {str, int}:
                     with pending_lock:
                         request_method = pending_methods.pop(response["id"], None)
-                telemetry.response_seen(error_code, malformed=response is None)
+                telemetry.response_seen(
+                    error_code,
+                    malformed=response is None,
+                    matched=(request_method is not None) if has_id else None,
+                    notification=(response is not None and not has_id),
+                )
                 if (read_limit is not None and request_method == "fs/readFile"
                         and response is not None and "error" not in response
                         and not _read_response_within_limit(response, read_limit)):
@@ -517,12 +567,23 @@ def run_proxy(
     response_thread = threading.Thread(target=forward_responses, name="rpc-proxy-stdout")
     request_thread.start()
     response_thread.start()
-    response_thread.join()
+    # A healthy exec-server closes its output after the client closes stdin.
+    # Bound both joins so a broken child or a notification-only peer cannot
+    # hold the App Server process forever.
+    response_thread.join(timeout=30)
     stop.set()
-    if child.poll() is None:
+    if response_thread.is_alive() and child.poll() is None:
         child.terminate()
     request_thread.join(timeout=5)
-    exit_code = child.wait()
+    if child.poll() is None:
+        child.terminate()
+    try:
+        exit_code = child.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        child.kill()
+        exit_code = child.wait(timeout=5)
+    with pending_lock:
+        telemetry.pending_request_ids(len(pending_methods))
     telemetry.child_exit(exit_code)
     _write_telemetry(telemetry_path, telemetry)
     return exit_code

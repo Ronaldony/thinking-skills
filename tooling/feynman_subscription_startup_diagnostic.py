@@ -17,9 +17,11 @@ import queue
 import subprocess
 import tempfile
 import threading
+import time
 from typing import Any
 
 try:
+    from .feynman_subscription_checkpoint import load as load_checkpoint, validate as validate_checkpoint
     from .feynman_remote_exec_environment import validate_files
     from .feynman_rpc_path_proxy import TELEMETRY_OVERRIDE_ENV
     from .feynman_subscription_control_plane_preflight import (
@@ -31,6 +33,7 @@ try:
         _validate_control_files, prepare_full_runner_executor_wiring,
     )
 except ImportError:
+    from feynman_subscription_checkpoint import load as load_checkpoint, validate as validate_checkpoint
     from feynman_remote_exec_environment import validate_files
     from feynman_rpc_path_proxy import TELEMETRY_OVERRIDE_ENV
     from feynman_subscription_control_plane_preflight import (
@@ -45,6 +48,67 @@ except ImportError:
 
 class StartupDiagnosticError(ValueError):
     """The model-free startup diagnostic failed before producing a report."""
+
+
+def _write_failure_artifact(path: Path, stage: str) -> None:
+    """Persist a payload-free blocked record when the diagnostic itself fails."""
+    if not path.is_absolute() or path.exists() or path.is_symlink():
+        return
+    if not isinstance(stage, str) or not stage or any(
+        char not in "abcdefghijklmnopqrstuvwxyz0123456789-_" for char in stage
+    ):
+        stage = "diagnostic-failure"
+    result = {
+        "schema_version": 2,
+        "verdict": "subscription-startup-thread-blocked",
+        "failure_stage": stage,
+        "model": "unknown",
+        "checks": {
+            "thread_started": False,
+            "error_code": None,
+            "error_category": "internal-error",
+            "error_signals": _thread_error_signals(None),
+            "error_data_kind": "none",
+            "ephemeral_thread": False,
+            "instruction_sources_present": False,
+            "response_payload_preserved": False,
+            "initialize_completed": False,
+            "turn_requests_sent": 0,
+            "model_generation_requests_sent": 0,
+            "process_tree_reaped": False,
+            "proxy_telemetry_complete": False,
+            "proxy_request_response_correlated": False,
+            "request_mapping_clean": False,
+        },
+        "notification_methods": {},
+        "proxy_telemetry_status": "missing",
+        "proxy_telemetry": None,
+        "privacy": {
+            "request_or_response_payload_preserved": False,
+            "thread_id_preserved": False,
+            "instruction_source_paths_preserved": False,
+            "raw_stderr_preserved": False,
+            "credential_files_directly_read_by_probe": False,
+            "control_home_contents_serialized": False,
+        },
+        "scope": "startup diagnostic failed before a complete evidence record was available",
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _consume_private_stderr(stream: Any, sink: list[bytes], *, limit: int = 262144) -> None:
+    """Drain stderr without persisting it; retain only a bounded in-memory sample."""
+    remaining = limit
+    try:
+        while remaining > 0:
+            chunk = stream.read(min(65536, remaining))
+            if not chunk:
+                break
+            sink.append(chunk)
+            remaining -= len(chunk)
+    except (OSError, ValueError):
+        return
 
 
 _SAFE_NOTIFICATION_METHODS = frozenset({
@@ -163,7 +227,7 @@ def _thread_summary(response: dict[str, Any]) -> dict[str, Any]:
     if thread.get("ephemeral") is not True:
         raise StartupDiagnosticError("thread-start-was-not-ephemeral")
     sources = result.get("instructionSources")
-    if sources is not None and not isinstance(sources, list):
+    if not isinstance(sources, list) or any(not isinstance(source, str) for source in sources):
         raise StartupDiagnosticError("thread-start-response-shape")
     return {
         "thread_started": True,
@@ -181,9 +245,13 @@ def _wait_for_thread_start(received: queue.Queue[dict[str, Any] | None],
                            identifier: int, timeout_seconds: int
                            ) -> tuple[dict[str, Any], dict[str, int]]:
     notifications: Counter[str] = Counter()
+    deadline = time.monotonic() + timeout_seconds
     while True:
         try:
-            value = received.get(timeout=timeout_seconds)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise queue.Empty
+            value = received.get(timeout=remaining)
         except queue.Empty as exc:
             raise StartupDiagnosticError("thread-start-timeout") from exc
         if value is None:
@@ -207,7 +275,7 @@ def _safe_proxy_telemetry(path: Path) -> dict[str, Any]:
         value = json.loads(_regular(path, "startup proxy telemetry").read_text(encoding="utf-8"))
     except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise StartupDiagnosticError("startup-proxy-telemetry-unreadable") from exc
-    if not isinstance(value, dict) or value.get("schema_version") != 1:
+    if not isinstance(value, dict) or value.get("schema_version") != 2:
         raise StartupDiagnosticError("startup-telemetry-shape")
     allowed = {
         "schema_version", "request_methods", "response_error_codes",
@@ -219,11 +287,65 @@ def _safe_proxy_telemetry(path: Path) -> dict[str, Any]:
         "response_mapping_rejections", "malformed_responses",
         "probe_policy_rejections", "probe_read_limit_applied",
         "probe_response_rejections", "probe_rejected_read_max_bytes",
-        "child_exit_code",
+        "child_exit_code", "request_write_failures", "request_id_duplicates",
+        "responses_matched", "responses_unmatched", "notifications_seen",
+        "pending_request_ids",
     }
-    if set(value) - allowed:
+    if set(value) != allowed:
         raise StartupDiagnosticError("startup-telemetry-unexpected-fields")
+    for key in (
+        "request_methods", "response_error_codes",
+        "request_mapping_rejection_methods", "request_mapping_rejection_reasons",
+    ):
+        counter = value.get(key)
+        if not isinstance(counter, dict) or any(
+            not isinstance(item, str) or type(count) is not int or count < 0
+            for item, count in counter.items()
+        ):
+            raise StartupDiagnosticError("startup-telemetry-counter-shape")
+    for method, reasons in value["request_mapping_rejection_method_reasons"].items():
+        if not isinstance(method, str) or not isinstance(reasons, dict) or any(
+            not isinstance(reason, str) or type(count) is not int or count < 0
+            for reason, count in reasons.items()
+        ):
+            raise StartupDiagnosticError("startup-telemetry-counter-shape")
+    for method, reasons in value["request_mapping_rejection_method_reason_fields"].items():
+        if not isinstance(method, str) or not isinstance(reasons, dict):
+            raise StartupDiagnosticError("startup-telemetry-counter-shape")
+        for reason, fields in reasons.items():
+            if (not isinstance(reason, str) or not isinstance(fields, dict)
+                    or any(not isinstance(field, str) or type(count) is not int or count < 0
+                           for field, count in fields.items())):
+                raise StartupDiagnosticError("startup-telemetry-counter-shape")
+    count_fields = {
+        key for key in allowed if key not in {
+            "schema_version", "request_methods", "response_error_codes",
+            "request_mapping_rejection_methods", "request_mapping_rejection_reasons",
+            "request_mapping_rejection_method_reasons",
+            "request_mapping_rejection_method_reason_fields", "child_exit_code",
+        }
+    }
+    for key in count_fields:
+        if type(value.get(key)) is not int or value[key] < 0:
+            raise StartupDiagnosticError("startup-telemetry-count-shape")
+    if value.get("child_exit_code") is not None and type(value["child_exit_code"]) is not int:
+        raise StartupDiagnosticError("startup-telemetry-count-shape")
     return value
+
+
+def _proxy_telemetry_ready(value: dict[str, Any]) -> bool:
+    """Require complete request/response accounting before declaring ready."""
+    return (
+        value["requests_seen"] == value["requests_forwarded"]
+        and value["responses_seen"] == value["responses_forwarded"]
+        and value["responses_matched"] == value["responses_seen"]
+        and value["responses_unmatched"] == 0
+        and value["pending_request_ids"] == 0
+        and value["request_write_failures"] == 0
+        and value["request_id_duplicates"] == 0
+        and value["request_mapping_rejections"] == 0
+        and value["response_mapping_rejections"] == 0
+    )
 
 
 def run(*, runner_job_path: Path, boundary_profile_path: Path,
@@ -301,6 +423,10 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
             target=_read_json_lines, args=(process.stdout, received), daemon=True)
         reader.start()
         stderr_text = ""
+        stderr_chunks: list[bytes] = []
+        stderr_reader = threading.Thread(
+            target=_consume_private_stderr, args=(process.stderr, stderr_chunks), daemon=True)
+        stderr_reader.start()
         forced_shutdown = False
         process_tree_reaped = True
         try:
@@ -310,7 +436,7 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
                     "capabilities": {"experimentalApi": True},
                 }))
                 process.stdin.flush()
-            except ValueError as exc:
+            except (OSError, ValueError) as exc:
                 raise StartupDiagnosticError("startup-protocol-write-initialize-invalid") from exc
             initialized, _ = _wait_for_thread_start(received, 1, timeout_seconds)
             if "error" in initialized:
@@ -320,7 +446,7 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
                 process.stdin.write(_request(
                     2, "thread/start", _thread_start_params(model=model)))
                 process.stdin.flush()
-            except ValueError as exc:
+            except (OSError, ValueError) as exc:
                 raise StartupDiagnosticError("startup-protocol-write-thread-start-invalid") from exc
             response, notifications = _wait_for_thread_start(received, 2, timeout_seconds)
             thread = _thread_summary(response)
@@ -334,12 +460,8 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
             except subprocess.TimeoutExpired:
                 forced_shutdown = True
                 process_tree_reaped = _stop_diagnostic_process(process)
-            try:
-                stderr_text = process.stderr.read().decode("utf-8", errors="replace")
-            except (OSError, ValueError):
-                # The process may have closed its pipe before cleanup.  Raw
-                # stderr is never part of this artifact or its diagnostics.
-                stderr_text = ""
+            stderr_reader.join(timeout=2)
+            stderr_text = b"".join(stderr_chunks).decode("utf-8", errors="replace")
             reader.join(timeout=2)
             try:
                 process.stdout.close()
@@ -362,10 +484,12 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
         # thread/start outcome.  Keep the absence explicit and payload-free.
         telemetry = None
         telemetry_status = "missing"
+    telemetry_complete = telemetry is not None and _proxy_telemetry_ready(telemetry)
     result = {
-        "schema_version": 1,
+        "schema_version": 2,
         "verdict": (
-            "subscription-startup-thread-ready" if thread["thread_started"]
+            "subscription-startup-thread-ready"
+            if (thread["thread_started"] and telemetry_complete and process_tree_reaped)
             else "subscription-startup-thread-blocked"
         ),
         "model": model,
@@ -375,6 +499,11 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
             "turn_requests_sent": 0,
             "model_generation_requests_sent": 0,
             "process_tree_reaped": process_tree_reaped,
+            "proxy_telemetry_complete": telemetry_complete,
+            "proxy_request_response_correlated": telemetry_complete,
+            "request_mapping_clean": bool(
+                telemetry is not None and telemetry["request_mapping_rejections"] == 0
+            ),
         },
         "notification_methods": notifications,
         "proxy_telemetry_status": telemetry_status,
@@ -399,34 +528,78 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--runner-job", type=Path, required=True)
-    parser.add_argument("--boundary-profile", type=Path, required=True)
-    parser.add_argument("--remote-environment", type=Path, required=True)
-    parser.add_argument("--binding", type=Path, required=True)
-    parser.add_argument("--codex-bin", type=Path, required=True)
-    parser.add_argument("--node-bin", type=Path, required=True)
-    parser.add_argument("--adapter", type=Path, required=True)
-    parser.add_argument("--docker-bin", type=Path, required=True)
-    parser.add_argument("--docker-config", type=Path, required=True)
-    parser.add_argument("--docker-image-id", required=True)
-    parser.add_argument("--telemetry", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--checkpoint", type=Path)
+    parser.add_argument("--validate-only", action="store_true")
+    parser.add_argument("--runner-job", type=Path)
+    parser.add_argument("--boundary-profile", type=Path)
+    parser.add_argument("--remote-environment", type=Path)
+    parser.add_argument("--binding", type=Path)
+    parser.add_argument("--codex-bin", type=Path)
+    parser.add_argument("--node-bin", type=Path)
+    parser.add_argument("--adapter", type=Path)
+    parser.add_argument("--docker-bin", type=Path)
+    parser.add_argument("--docker-config", type=Path)
+    parser.add_argument("--docker-image-id")
+    parser.add_argument("--telemetry", type=Path)
+    parser.add_argument("--output", type=Path)
     parser.add_argument("--timeout-seconds", type=int, default=30)
     args = parser.parse_args()
+    checkpoint: dict[str, Any] | None = None
     try:
+        if args.checkpoint is not None:
+            if any(getattr(args, name) is not None for name in (
+                    "runner_job", "boundary_profile", "remote_environment", "binding",
+                    "codex_bin", "node_bin", "adapter", "docker_bin", "docker_config",
+                    "docker_image_id", "telemetry", "output")):
+                raise ValueError("checkpoint cannot be combined with individual input arguments")
+            checkpoint = load_checkpoint(args.checkpoint)
+            # Validate every file, boundary, and binding before any execution
+            # path can launch a subprocess.  The normal run() validation is
+            # retained for callers that use the Python API directly.
+            validate_checkpoint(checkpoint)
+        else:
+            fields = (
+                "runner_job", "boundary_profile", "remote_environment", "binding",
+                "codex_bin", "node_bin", "adapter", "docker_bin", "docker_config",
+                "docker_image_id", "telemetry", "output",
+            )
+            missing = next((name for name in fields if getattr(args, name) is None), None)
+            if missing is not None:
+                raise ValueError("missing startup diagnostic input: " + missing)
+            checkpoint = {"schema_version": 1, **{
+                name: str(getattr(args, name)) for name in fields
+            }}
+        if args.validate_only:
+            result = validate_checkpoint(checkpoint)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
         result = run(
-            runner_job_path=args.runner_job,
-            boundary_profile_path=args.boundary_profile,
-            remote_environment_path=args.remote_environment,
-            binding_path=args.binding, codex_bin=args.codex_bin,
-            node_bin=args.node_bin, adapter=args.adapter,
-            docker_bin=args.docker_bin, docker_config=args.docker_config,
-            docker_image_id=args.docker_image_id,
-            telemetry_path=args.telemetry, output_path=args.output,
+            runner_job_path=Path(checkpoint["runner_job"]),
+            boundary_profile_path=Path(checkpoint["boundary_profile"]),
+            remote_environment_path=Path(checkpoint["remote_environment"]),
+            binding_path=Path(checkpoint["binding"]), codex_bin=Path(checkpoint["codex_bin"]),
+            node_bin=Path(checkpoint["node_bin"]), adapter=Path(checkpoint["adapter"]),
+            docker_bin=Path(checkpoint["docker_bin"]), docker_config=Path(checkpoint["docker_config"]),
+            docker_image_id=checkpoint["docker_image_id"],
+            telemetry_path=Path(checkpoint["telemetry"]), output_path=Path(checkpoint["output"]),
             timeout_seconds=args.timeout_seconds,
         )
     except StartupDiagnosticError as exc:
-        parser.exit(2, "error: startup diagnostic failed: " + str(exc) + "\n")
+        if checkpoint is not None:
+            try:
+                _write_failure_artifact(Path(checkpoint["output"]), str(exc))
+            except OSError:
+                # A sandbox or operator ACL may deny the requested artifact
+                # directory.  Preserve the fixed failure label on stdout/stderr
+                # without turning it into an unbounded traceback.
+                pass
+        blocked = str(exc) in {
+            "thread-start-timeout", "app-server-protocol-error",
+            "app-server-initialize-error", "thread-start-response-shape",
+            "thread-start-was-not-ephemeral", "startup-proxy-telemetry-missing",
+        } or str(exc).startswith("app-server-exit-")
+        parser.exit(1 if blocked else 2,
+                    "error: startup diagnostic failed: " + str(exc) + "\n")
     except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError,
             subprocess.SubprocessError, queue.Empty) as exc:
         # Do not echo filesystem paths or peer-provided diagnostic text.
@@ -440,14 +613,9 @@ def main() -> int:
             label = "queue-error"
         else:
             label = "value-error"
-        line = 0
-        traceback = exc.__traceback__
-        while traceback is not None:
-            line = traceback.tb_lineno
-            traceback = traceback.tb_next
         parser.exit(2, "error: startup diagnostic failed: "
                     "startup-diagnostic-input-invalid-" + label
-                    + "-line-" + str(line) + "\n")
+                    + "\n")
     telemetry = result.get("proxy_telemetry") or {}
     print(json.dumps({
         "verdict": result["verdict"],
@@ -466,7 +634,7 @@ def main() -> int:
         "request_mapping_rejection_method_reason_fields": telemetry.get(
             "request_mapping_rejection_method_reason_fields", {}),
     }, ensure_ascii=False, indent=2))
-    return 0
+    return 0 if result["verdict"] == "subscription-startup-thread-ready" else 1
 
 
 if __name__ == "__main__":

@@ -54,9 +54,20 @@
         "web_search": {"const": "disabled"},
         "ignore_execpolicy_rules": {"const": true},
         "strict_config": {"const": true},
-        "local_execution_disabled": {"const": true}
+        "local_execution_disabled": {"const": true},
+        "full_runner_mcp_bound": {"type": "boolean"},
+        "transient_skill_isolation_bound": {"type": "boolean"}
       },
-      "required": ["non_interactive", "jsonl_trace", "ephemeral_session", "approval_policy", "sandbox", "web_search", "ignore_execpolicy_rules", "strict_config", "local_execution_disabled"]
+      "required": ["non_interactive", "jsonl_trace", "ephemeral_session", "approval_policy", "sandbox", "web_search", "ignore_execpolicy_rules", "strict_config", "local_execution_disabled", "full_runner_mcp_bound", "transient_skill_isolation_bound"]
+    },
+    "startup_gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "verdict": {"enum": ["subscription-startup-thread-ready", "not-run-no-full-runner-binding"]},
+        "model_generation_requests_sent": {"const": 0}
+      },
+      "required": ["verdict", "model_generation_requests_sent"]
     },
     "conversation": {
       "type": "object",
@@ -104,14 +115,16 @@
         "raw_stderr_preserved": {"const": false},
         "stderr_nonempty": {"type": "boolean"},
         "raw_auth_status_preserved": {"const": false},
-        "control_codex_home_contents_serialized": {"const": false}
+        "control_codex_home_contents_serialized": {"const": false},
+        "full_runner_binding_contents_serialized": {"const": false},
+        "skill_discovery_paths_serialized": {"const": false}
       },
-      "required": ["process_environment_inherited", "raw_stderr_preserved", "stderr_nonempty", "raw_auth_status_preserved", "control_codex_home_contents_serialized"]
+      "required": ["process_environment_inherited", "raw_stderr_preserved", "stderr_nonempty", "raw_auth_status_preserved", "control_codex_home_contents_serialized", "full_runner_binding_contents_serialized", "skill_discovery_paths_serialized"]
     },
     "limitations": {"type": "array", "minItems": 4, "items": {"type": "string", "minLength": 1}},
     "scope": {"type": "string", "minLength": 1}
   },
-  "required": ["schema_version", "verdict", "run_id", "job", "versions", "authentication", "execution_controls", "conversation", "candidate_tool_activity", "usage", "digests", "privacy", "limitations", "scope"],
+  "required": ["schema_version", "verdict", "run_id", "job", "versions", "authentication", "execution_controls", "startup_gate", "conversation", "candidate_tool_activity", "usage", "digests", "privacy", "limitations", "scope"],
   "$defs": {
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
   }

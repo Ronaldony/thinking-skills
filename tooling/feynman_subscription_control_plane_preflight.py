@@ -18,6 +18,7 @@ from pathlib import Path
 import queue
 import subprocess
 import threading
+import time
 from typing import Any, Sequence
 
 try:
@@ -30,6 +31,20 @@ except ImportError:
 
 class ControlPlaneError(ValueError):
     """A model-free control-plane check failed with a safe fixed category."""
+
+
+def _consume_private_stderr(stream: Any, sink: list[bytes], *, limit: int = 262144) -> None:
+    """Drain stderr without persisting it; retain only a bounded sample."""
+    remaining = limit
+    try:
+        while remaining > 0:
+            chunk = stream.read(min(65536, remaining))
+            if not chunk:
+                break
+            sink.append(chunk)
+            remaining -= len(chunk)
+    except (OSError, ValueError):
+        pass
 
 
 def _request(identifier: int, method: str, params: dict[str, Any]) -> bytes:
@@ -74,9 +89,13 @@ def _failure_category(stderr: str) -> str:
 
 def _wait_response(received: queue.Queue[dict[str, Any] | None], identifier: int,
                    timeout_seconds: int) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout_seconds
     while True:
         try:
-            value = received.get(timeout=timeout_seconds)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise queue.Empty
+            value = received.get(timeout=remaining)
         except queue.Empty as exc:
             raise ControlPlaneError("control-plane-timeout") from exc
         if value is None:
@@ -158,6 +177,10 @@ def run(*, codex_bin: str, control_home: Path, temp_dir: Path,
     reader = threading.Thread(target=_read_json_lines, args=(process.stdout, received), daemon=True)
     reader.start()
     stderr_text = ""
+    stderr_chunks: list[bytes] = []
+    stderr_reader = threading.Thread(
+        target=_consume_private_stderr, args=(process.stderr, stderr_chunks), daemon=True)
+    stderr_reader.start()
     forced_shutdown = False
     process_tree_reaped = True
     try:
@@ -188,13 +211,11 @@ def run(*, codex_bin: str, control_home: Path, temp_dir: Path,
             forced_shutdown = True
             process_tree_reaped = _stop_diagnostic_process(process)
         reader.join(timeout=2)
-        try:
-            if process_tree_reaped:
-                stderr_text = process.stderr.read().decode("utf-8", errors="replace")
-        finally:
-            if process_tree_reaped:
-                process.stdout.close()
-                process.stderr.close()
+        stderr_reader.join(timeout=2)
+        stderr_text = b"".join(stderr_chunks).decode("utf-8", errors="replace")
+        if process_tree_reaped:
+            process.stdout.close()
+            process.stderr.close()
     if process.returncode != 0 and not forced_shutdown:
         raise ControlPlaneError("app-server-exit-" + _failure_category(stderr_text))
     if not proxy_telemetry.is_file() or proxy_telemetry.is_symlink():

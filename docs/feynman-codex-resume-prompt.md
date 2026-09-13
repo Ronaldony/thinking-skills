@@ -1,6 +1,16 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 현재 최우선 재개 지점은
+> `docs/feynman-work-log/LOG-078-startup-gate-checkpoint-and-diagnostic-hardening-20260913.md`다.
+> checkpoint/경로 contract/telemetry v2/startup gate hardening은 구현됐고,
+> 오프라인 전체 검증은 `399 tests OK, 11 skipped`, subscription schema 5개는
+> `errors=0`이다. 새 Windows/Docker model-free startup 확인은 `initialize`
+> 응답 대기의 `thread-start-timeout`, exit code 1로 blocked였고, 실제 model/turn은
+> 0회다. 동일 startup 반복, auth 재검증, model-turn, baseline을 자동 실행하지 말고
+> timeout 단계의 오프라인 lifecycle fixture와 원인 분리를 먼저 수행하라. 기존
+> control home과 사용자 PNG untracked 변경은 보존한다. 아래 블록은 역사 기록이다.
+
+> 현재 최우선 재개 지점은
 > `docs/feynman-work-log/LOG-077-native-path-mapping-startup-revalidation-20260913.md`다.
 > 정확한 binding 경로로 수행한 유효한 `-24` model-free startup은 Docker/image/version
 > parity, initialize, child reap, native path mapping rejection 0을 통과했지만
