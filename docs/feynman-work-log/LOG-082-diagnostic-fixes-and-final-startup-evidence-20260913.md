@@ -115,5 +115,11 @@ OpenAI Platform API/API key, 로그인 파일·토큰·전체 환경변수는 �
 
 ## 커밋·push 상태
 
-이 로그와 보정 코드는 현재 작업 묶음으로 커밋·push할 예정이다. 실제 commit
-hash와 원격 일치 여부는 push receipt에서 확정한다.
+- 구현·테스트·문서 변경은 `faf88ef` (`fix: close startup telemetry evidence gap`)로
+  커밋했다.
+- `git push origin feat/feynman-thinking-v0.5-draft`가 성공했고,
+  `git rev-parse HEAD`와
+  `git rev-parse origin/feat/feynman-thinking-v0.5-draft`가 모두
+  `faf88ef85fcebe5393084a1ac75506bf1c2d3245`를 반환했다.
+- 현재 worktree에는 사용자 제공 PNG 2개만 untracked로 남아 있으며, 변경 묶음에
+  포함하지 않았다. main 병합과 force push는 수행하지 않았다.
