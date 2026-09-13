@@ -2,7 +2,15 @@
 
 작성일: 2026-09-09 (Asia/Seoul). 이 문서는 개발 담당 Codex의 인계 자료다. 평가 대상 candidate에게 전달하지 않는다.
 
-> 최신 상태(2026-09-13)는 [LOG-058](feynman-work-log/LOG-058-luna-model-turn-failed-20260913.md)을 우선한다.
+> 최신 상태(2026-09-13)는 [LOG-059](feynman-work-log/LOG-059-control-plane-environment-info-path-fix-20260913.md)을 우선한다.
+> LOG-058의 Luna exit 1/0-byte trace 뒤 model-free control-plane `environment/info`
+> 진단으로 Linux remote cwd를 Windows host mount로 역매핑하던 결함을 보정했다.
+> exact full-runner/skill override handoff는 remote connect 및 response mapping
+> rejection 0으로 통과했고 model/thread/turn/tool 호출은 0회였다. executor는 이
+> gate를 auth/model 앞에 fail-closed로 둔다. 실제 model request는 실행하지 않았고,
+> 새 Luna model-turn은 별도 명시 승인 없이는 시작하지 않는다.
+>
+> 직전 상태는 [LOG-058](feynman-work-log/LOG-058-luna-model-turn-failed-20260913.md)이다.
 > 승인된 Luna model-turn은 preflight/auth 후 `codex exec` exit 1로 종료됐고
 > trace는 0바이트였다. 자동 retry는 하지 않았으며 model/tool-use 증거는 없다.
 > 정확한 상태와 다음 결정 지점은 LOG-058이다.

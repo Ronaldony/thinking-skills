@@ -31,6 +31,7 @@ PROXY_ERROR_CODE = -32001
 PROBE_READ_LIMIT_ENV = "FEYNMAN_PROBE_RPC_READ_LIMIT_BYTES"
 PROBE_ALLOWED_METHODS_ENV = "FEYNMAN_PROBE_RPC_ALLOWED_METHODS"
 PROBE_ALLOWED_PATH_ENV = "FEYNMAN_PROBE_RPC_ALLOWED_PATH"
+TELEMETRY_OVERRIDE_ENV = "FEYNMAN_RPC_TELEMETRY_OVERRIDE"
 PROBE_CONFIG_PATH = "file:///run/candidate/.feynman-diagnostic-absent.toml"
 
 
@@ -173,6 +174,24 @@ def _write_telemetry(path: Path | None, telemetry: _ProxyTelemetry) -> None:
     path.write_text(json.dumps(telemetry.snapshot(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def _effective_telemetry_path(configured: Path | None) -> Path | None:
+    """Use a caller-owned diagnostic telemetry path when explicitly supplied.
+
+    The remote-environment document has a stable telemetry destination for a
+    real evaluator run.  Model-free control-plane probes must not overwrite
+    that artifact, so they can pass one fresh absolute path through a private
+    host-only environment variable.  The container receives ``env -i`` and
+    cannot observe this setting.
+    """
+    override = os.environ.get(TELEMETRY_OVERRIDE_ENV)
+    if override is None:
+        return configured
+    candidate = Path(override).expanduser()
+    if not candidate.is_absolute() or candidate.is_symlink() or candidate.exists():
+        raise ValueError("invalid telemetry override path")
+    return candidate
+
+
 def _probe_policy_from_env() -> tuple[int | None, frozenset[str] | None, str | None]:
     """Read only fixed probe controls; never serialize the process environment."""
     raw_limit = os.environ.get(PROBE_READ_LIMIT_ENV)
@@ -309,6 +328,7 @@ def run_proxy(
     allowed_path: str | None = None,
 ) -> int:
     mapper = RpcPathMapper.from_mounts(_docker_mounts(docker_args))
+    telemetry_path = _effective_telemetry_path(telemetry_path)
     telemetry = _ProxyTelemetry()
     child = subprocess.Popen(
         [docker, *docker_args],
@@ -378,7 +398,8 @@ def run_proxy(
                     continue
                 try:
                     line = raw.decode("utf-8")
-                    mapped = map_json_line(mapper, line, response=True)
+                    mapped = map_json_line(
+                        mapper, line, response=True, request_method=request_method)
                     payload = (mapped + "\n").encode("utf-8")
                 except (UnicodeDecodeError, RpcPathMappingError, ValueError):
                     telemetry.response_rejected()

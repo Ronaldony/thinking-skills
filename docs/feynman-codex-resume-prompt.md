@@ -1,7 +1,16 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 2026-09-13 최신 재개 지점: 먼저
-> `docs/feynman-work-log/LOG-058-luna-model-turn-failed-20260913.md`를 읽어라.
+> `docs/feynman-work-log/LOG-059-control-plane-environment-info-path-fix-20260913.md`를 읽어라.
+> LOG-058의 Luna exit 1/0-byte trace 뒤, model-free App Server `environment/info`
+> 경로에서 Linux remote cwd의 잘못된 Windows host reverse mapping을 발견·보정했다.
+> exact full-runner/skill override control-plane preflight는 remote connection,
+> response mapping rejection 0, remote child exit 0으로 통과했고 모델/thread/turn/tool
+> 호출은 없다. canonical executor는 이 preflight를 auth/model 앞에 fail-closed로
+> 실행한다. 새 model-turn은 별도 명시 승인 없이는 시작하지 마라.
+>
+> 직전 checkpoint:
+> `docs/feynman-work-log/LOG-058-luna-model-turn-failed-20260913.md`.
 > 승인된 Luna model-turn은 preflight/auth 후 `codex exec` exit 1로 종료됐고
 > trace는 0바이트였다. 자동 retry/fallback하지 마라. model/tool-use 증거는
 > 없다. 다음은 별도 non-model 진단/구현 보정 또는 추가 model 실행 여부를

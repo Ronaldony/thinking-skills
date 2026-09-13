@@ -197,13 +197,21 @@ class RpcPathMapper:
         mapped["params"] = mapped_params
         return mapped
 
-    def map_response(self, message: Mapping[str, Any]) -> dict[str, Any]:
+    def map_response(self, message: Mapping[str, Any], *, request_method: str | None = None) -> dict[str, Any]:
         mapped = dict(message)
+        fields = RESPONSE_PATH_FIELDS
+        if request_method == "environment/info":
+            # App Server documents this response's cwd as using the remote
+            # environment's native syntax.  A Linux remote cwd (for example
+            # its service default outside a candidate mount) is therefore
+            # not a host path and must not be forced through the declared
+            # Windows mount map.
+            fields = RESPONSE_PATH_FIELDS - {"cwd"}
         for envelope in ("result", "error"):
             value = mapped.get(envelope)
             if isinstance(value, Mapping):
                 mapped_value = dict(value)
-                for field in RESPONSE_PATH_FIELDS:
+                for field in fields:
                     item = mapped_value.get(field)
                     if isinstance(item, str) and (item.startswith("file:") or item.startswith("/")):
                         mapped_value[field] = self.container_to_host(item)
@@ -211,7 +219,8 @@ class RpcPathMapper:
         return mapped
 
 
-def map_json_line(mapper: RpcPathMapper, line: str, *, response: bool = False) -> str:
+def map_json_line(mapper: RpcPathMapper, line: str, *, response: bool = False,
+                  request_method: str | None = None) -> str:
     """Map one JSON-RPC line while preserving all non-path values."""
     try:
         message = json.loads(line)
@@ -219,7 +228,8 @@ def map_json_line(mapper: RpcPathMapper, line: str, *, response: bool = False) -
         raise RpcPathMappingError("RPC line is not valid JSON") from exc
     if not isinstance(message, Mapping):
         raise RpcPathMappingError("RPC message must be a JSON object")
-    mapped = mapper.map_response(message) if response else mapper.map_request(message)
+    mapped = (mapper.map_response(message, request_method=request_method)
+              if response else mapper.map_request(message))
     if mapped == message:
         return line.rstrip("\r\n")
     return json.dumps(mapped, ensure_ascii=False, separators=(",", ":"))

@@ -605,6 +605,28 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
         full_runner_override = full_runner_wiring["full_runner_override"]
 
     control_home, remote_environment_path = _validate_control_files(job, remote_environment_path)
+    if full_runner_wiring is not None:
+        # This must run before the auth gate and any model-facing command.  It
+        # verifies that the actual protected control home can hand off to its
+        # selected remote environment with the exact transient full-runner and
+        # skill-isolation overrides.  Its disposable telemetry never touches
+        # the evaluator's canonical runtime telemetry.
+        try:
+            from .feynman_subscription_control_plane_preflight import run as control_plane_preflight
+        except ImportError:
+            from feynman_subscription_control_plane_preflight import run as control_plane_preflight
+        with tempfile.TemporaryDirectory(prefix="feynman-control-plane-") as control_plane_root:
+            control_plane_dir = Path(control_plane_root)
+            control_plane = control_plane_preflight(
+                codex_bin=codex_bin,
+                control_home=control_home,
+                temp_dir=control_plane_dir,
+                proxy_telemetry=control_plane_dir / "rpc-proxy-telemetry.json",
+                config_overrides=full_runner_wiring["all_config_overrides"],
+                timeout_seconds=min(timeout_seconds, 30),
+            )
+        if control_plane.get("verdict") != "subscription-control-plane-ready":
+            raise ValueError("subscription control-plane preflight did not pass")
     auth = check_auth(control_home, codex_bin=codex_bin, timeout_seconds=min(timeout_seconds, 120))
     if auth.get("verdict") != "chatgpt-subscription-authenticated":
         raise ValueError("ChatGPT subscription auth gate did not pass")

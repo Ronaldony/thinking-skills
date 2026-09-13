@@ -2,6 +2,15 @@
 
 최신 실행 checkpoint: 2026-09-13, `feat/feynman-thinking-v0.5-draft` research preview.
 
+최신 checkpoint는 [LOG-059](feynman-work-log/LOG-059-control-plane-environment-info-path-fix-20260913.md)다.
+LOG-058의 0-byte Luna trace 뒤, protected control home의 Codex App Server
+`environment/info`를 model-free로 실제 연결해 remote control-plane handoff의
+response path-mapping 결함을 발견·보정했다. 최종 exact full-runner/skill override
+preflight는 remote connect, response mapping rejection 0, child exit 0을 확인했고
+model/thread/turn/MCP tool은 모두 0회였다. executor는 앞으로 이 gate를 auth/model
+전에 fail-closed로 적용한다. 이는 실제 Luna 모델 응답·tool-use 증거가 아니므로
+새 model-turn은 별도 명시 승인 없이는 시작하지 않는다.
+
 최신 checkpoint는 [LOG-058](feynman-work-log/LOG-058-luna-model-turn-failed-20260913.md)이다.
 승인된 Luna model-turn은 auth 및 preflight 후 `codex exec` exit 1로 종료됐고
 trace는 0바이트였다. 자동 retry는 하지 않았으며, 모델 응답·tool-use 증거는

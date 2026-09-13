@@ -70,6 +70,12 @@ class RpcPathMappingTests(unittest.TestCase):
         self.assertEqual(mapped["result"]["path"], "file:///C:/DevWorks/smoke/candidate/x.txt")
         self.assertEqual(mapped["result"]["text"], "safe")
 
+    def test_environment_info_response_keeps_remote_native_cwd(self):
+        message = {"jsonrpc": "2.0", "id": 1, "result": {
+            "shell": {"name": "sh", "path": "/bin/sh"}, "cwd": "/"}}
+        mapped = self.mapper.map_response(message, request_method="environment/info")
+        self.assertEqual(mapped["result"]["cwd"], "/")
+
     def test_json_line_does_not_rewrite_arbitrary_strings(self):
         line = json.dumps({"method": "resources/read", "params": {"uri": "file:///C:/DevWorks/smoke/candidate/x.txt", "note": "C:\\DevWorks\\smoke\\candidate"}})
         mapped = json.loads(map_json_line(self.mapper, line))
