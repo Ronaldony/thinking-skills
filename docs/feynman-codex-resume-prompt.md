@@ -1,6 +1,13 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 최신 재개 지점은
+> `docs/feynman-work-log/LOG-087-docker-runtime-stage-blocker-20260914.md`다.
+> 단계별 Docker runtime probe의 첫 `entrypoint-echo`가 `docker-runtime-blocked`로
+> 재현됐다. CLI exit 1, timeout, stdout/stderr 0/0, container inspect 불가이며
+> node·exec-server 단계는 실행하지 않았다. Docker run/container 생성 원인을 먼저
+> 좁히고 실제 구독 startup·인증·모델 평가를 재실행하지 마라.
+
+> 직전 재개 지점은
 > `docs/feynman-work-log/LOG-086-probe-io-and-namespace-hardening-20260914.md`다.
 > path probe의 stderr/stdout drain, response 중복 집계, 원본 response namespace
 > 보존을 보강했다. fixture 회귀 `72 tests OK`, 전체 회귀 `426 tests OK, 11 skipped`다.

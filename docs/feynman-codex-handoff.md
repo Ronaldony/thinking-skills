@@ -1,6 +1,13 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-086](feynman-work-log/LOG-086-probe-io-and-namespace-hardening-20260914.md).
+> 최신: [LOG-087](feynman-work-log/LOG-087-docker-runtime-stage-blocker-20260914.md).
+> 단계별 Docker runtime probe를 추가했으며 고정 image의 첫 `entrypoint-echo`부터
+> `docker-runtime-blocked`가 발생했다. CLI exit 1, timeout, stdout/stderr 0/0,
+> container inspect 불가다. node와 exec-server initialize는 실행하지 않았고,
+> Docker run/container 생성 단계의 원인을 먼저 좁혀야 한다. 실제 구독 startup·인증·
+> 모델 실행은 하지 않았다.
+
+> 직전: [LOG-086](feynman-work-log/LOG-086-probe-io-and-namespace-hardening-20260914.md).
 > path probe의 stderr/stdout drain, response 중복 집계, 원본 response namespace
 > 보존을 보강했다. fixture `72 tests OK`, 전체 `426 tests OK, 11 skipped`, schema
 > 17개 errors=0이다. 수정된 Docker probe는 direct/proxy 양쪽에서 initialize 전에

@@ -1,6 +1,13 @@
 # feynman-thinking 작업 상태
 
-최신 재개 지점: [LOG-086](feynman-work-log/LOG-086-probe-io-and-namespace-hardening-20260914.md).
+최신 재개 지점: [LOG-087](feynman-work-log/LOG-087-docker-runtime-stage-blocker-20260914.md).
+단계별 Docker runtime probe를 추가했다. 고정 image의 `entrypoint-echo`부터
+`docker-runtime-blocked`가 재현됐고, CLI exit `1`, timeout, stdout/stderr `0/0`,
+container inspect 불가로 끝나 node·exec-server 단계는 실행하지 않았다. 이는 Docker
+run/container 생성 단계 blocker이며 path semantics나 구독 startup 원인으로 확대
+해석하지 않는다. 변경 영역 회귀 `21 tests OK`, 전체 회귀는 최신 로그의 수치를 따른다.
+
+직전 지점: [LOG-086](feynman-work-log/LOG-086-probe-io-and-namespace-hardening-20260914.md).
 probe의 stderr/stdout drain, response 중복 집계, 원본 response namespace 보존을
 보강했다. fixture 회귀와 전체 회귀는 각각 `72 tests OK`, `426 tests OK, 11
 skipped`이며 ResourceWarning은 없다. 수정된 Docker probe도 direct/proxy 모두
