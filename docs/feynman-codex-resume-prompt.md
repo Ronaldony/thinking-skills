@@ -1,15 +1,18 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 현재 최우선 재개 지점은
-> `docs/feynman-work-log/LOG-081-diagnostic-fixes-and-proxy-lifecycle-20260913.md`다.
-> checkpoint/경로 contract/telemetry v2/startup gate hardening과 diagnostic fix는
-> 구현됐고, 오프라인 전체 검증은 `410 tests OK, 11 skipped`, subscription schema 5개는
-> `errors=0`이다. 새 Windows/Docker model-free startup 확인은 `initialize`
-> 응답 대기의 `thread-start-timeout`, exit code 1로 blocked였고, 실제 model/turn은
-> 0회다. 오프라인 lifecycle fixture와 proxy subprocess 검증은 통과했다. 동일 startup 반복,
-> auth 재검증, model-turn, baseline을 자동 실행하지 말고 fixture가 증명한 경계를
-> 이용해 timeout 단계의 원인 분리를 먼저 수행하라. 기존
-> control home과 사용자 PNG untracked 변경은 보존한다. 아래 블록은 역사 기록이다.
+> `docs/feynman-work-log/LOG-082-diagnostic-fixes-and-final-startup-evidence-20260913.md`다.
+> 진단기·proxy의 stderr drain, notification 분리, 중첩 telemetry allowlist,
+> 공통 startup deadline, partial telemetry 보존, child exit 필수 판정이 구현됐다.
+> 오프라인 전체 검증은 `411 tests OK, 11 skipped`, subscription schema 5개는
+> `errors=0`이다. 허용된 마지막 Windows/Docker model-free startup 1회는
+> `initialize` 후 `thread/start -32603 remote-environment-error`로 blocked됐고,
+> 6/6 request forward, 5/5 response match, mapping/write/unmatched/pending 0을
+> 확인했다. raw telemetry의 `child_exit_code=null` 때문에 complete evidence로
+> 승격하지 않도록 보정했다. 실제 model/turn/auth/evaluation은 0회다. 동일 startup
+> 반복이나 model-turn을 자동 실행하지 말고, 설치된 0.154.0 remote environment
+> lifecycle 계약의 offline/static 원인 분리를 먼저 수행하라. 기존 control home과
+> 사용자 PNG untracked 변경은 보존한다. 아래 블록은 역사 기록이다.
 
 > 현재 최우선 재개 지점은
 > `docs/feynman-work-log/LOG-077-native-path-mapping-startup-revalidation-20260913.md`다.

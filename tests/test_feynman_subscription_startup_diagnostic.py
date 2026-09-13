@@ -240,7 +240,7 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
             "notifications_seen": 0, "malformed_responses": 0,
             "pending_request_ids": 0, "request_write_failures": 0,
             "request_id_duplicates": 0, "request_mapping_rejections": 0,
-            "response_mapping_rejections": 0,
+            "response_mapping_rejections": 0, "child_exit_code": 0,
         }
         self.assertTrue(_proxy_telemetry_ready(value))
         value["responses_unmatched"] = 1
@@ -254,9 +254,21 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
             "notifications_seen": 1, "malformed_responses": 0,
             "pending_request_ids": 0, "request_write_failures": 0,
             "request_id_duplicates": 0, "request_mapping_rejections": 0,
-            "response_mapping_rejections": 0,
+            "response_mapping_rejections": 0, "child_exit_code": 0,
         }
         self.assertTrue(_proxy_telemetry_ready(value))
+
+    def test_proxy_telemetry_without_child_exit_is_incomplete(self):
+        value = {
+            "requests_seen": 1, "requests_forwarded": 1,
+            "responses_seen": 1, "responses_forwarded": 1,
+            "responses_matched": 1, "responses_unmatched": 0,
+            "notifications_seen": 0, "malformed_responses": 0,
+            "pending_request_ids": 0, "request_write_failures": 0,
+            "request_id_duplicates": 0, "request_mapping_rejections": 0,
+            "response_mapping_rejections": 0, "child_exit_code": None,
+        }
+        self.assertFalse(_proxy_telemetry_ready(value))
 
     def test_stderr_sample_is_bounded_but_stream_is_drained_to_eof(self):
         stream = io.BytesIO(b"x" * 300000)

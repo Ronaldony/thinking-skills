@@ -370,6 +370,7 @@ def _proxy_telemetry_ready(value: dict[str, Any]) -> bool:
         and value["request_id_duplicates"] == 0
         and value["request_mapping_rejections"] == 0
         and value["response_mapping_rejections"] == 0
+        and value["child_exit_code"] is not None
     )
 
 

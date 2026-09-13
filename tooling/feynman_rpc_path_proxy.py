@@ -502,6 +502,18 @@ def run_proxy(
     mapper = RpcPathMapper.from_mounts(_docker_mounts(docker_args))
     telemetry_path = _effective_telemetry_path(telemetry_path)
     telemetry = _ProxyTelemetry()
+    telemetry_file_lock = threading.Lock()
+
+    def persist_telemetry() -> None:
+        if telemetry_path is None:
+            return
+        with telemetry_file_lock:
+            _write_telemetry(telemetry_path, telemetry)
+
+    # Materialize a safe initial snapshot before any child launch.  Later
+    # snapshots make partial lifecycle evidence durable even when App Server
+    # tears down the proxy before EOF.
+    persist_telemetry()
     child = subprocess.Popen(
         [docker, *docker_args],
         stdin=subprocess.PIPE,
@@ -523,6 +535,7 @@ def run_proxy(
                     break
                 request = _json_object(raw)
                 telemetry.request_seen(request.get("method") if request else None)
+                persist_telemetry()
                 if request and request.get("method") == "fs/readFile" and read_limit is not None:
                     telemetry.probe_read_limit_applied()
                 if allowed_methods is not None and (request is None or request.get("method") not in allowed_methods):
@@ -538,6 +551,7 @@ def run_proxy(
                         reason=rejection_reason,
                         path_field=rejection_field,
                     )
+                    persist_telemetry()
                     _write_stdout(output_lock, rejection)
                     continue
                 assert payload is not None
@@ -551,9 +565,11 @@ def run_proxy(
                     child.stdin.flush()
                 except (BrokenPipeError, OSError):
                     telemetry.request_write_failed()
+                    persist_telemetry()
                     stop.set()
                     break
                 telemetry.request_forwarded()
+                persist_telemetry()
         finally:
             try:
                 child.stdin.close()
@@ -580,10 +596,12 @@ def run_proxy(
                     matched=(request_method is not None) if has_id else None,
                     notification=(response is not None and not has_id),
                 )
+                persist_telemetry()
                 if (read_limit is not None and request_method == "fs/readFile"
                         and response is not None and "error" not in response
                         and not _read_response_within_limit(response, read_limit)):
                     telemetry.probe_response_rejected(_read_response_size(response))
+                    persist_telemetry()
                     _write_stdout(output_lock, _fixed_error(response.get("id")))
                     continue
                 try:
@@ -593,11 +611,13 @@ def run_proxy(
                     payload = (mapped + "\n").encode("utf-8")
                 except (UnicodeDecodeError, RpcPathMappingError, ValueError):
                     telemetry.response_rejected()
+                    persist_telemetry()
                     stop.set()
                     child.terminate()
                     break
                 _write_stdout(output_lock, payload)
                 telemetry.response_forwarded()
+                persist_telemetry()
         finally:
             stop.set()
 
@@ -634,7 +654,7 @@ def run_proxy(
     with pending_lock:
         telemetry.pending_request_ids(len(pending_methods))
     telemetry.child_exit(exit_code)
-    _write_telemetry(telemetry_path, telemetry)
+    persist_telemetry()
     return exit_code
 
 

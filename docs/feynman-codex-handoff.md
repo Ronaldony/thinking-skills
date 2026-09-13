@@ -1,14 +1,17 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-081](feynman-work-log/LOG-081-diagnostic-fixes-and-proxy-lifecycle-20260913.md).
+> 최신: [LOG-082](feynman-work-log/LOG-082-diagnostic-fixes-and-final-startup-evidence-20260913.md).
 > Windows/Docker checkpoint, native path contract, payload-free telemetry v2,
-> bounded cleanup, 그리고 실제 smoke executor의 fresh startup gate를 구현하고
-> 진단기를 보강했다. 전체 검증은 `410 tests OK, 11 skipped`, subscription schema
-> 5개는 `errors=0`.
-> 새 model-free startup 확인은 `initialize` timeout으로 blocked(exit 1)였고,
-> model/turn/evaluation은 0회다. 동일 startup 반복이나 model-turn을 자동 실행하지
-> 말고, offline lifecycle fixture가 확인한 단계 경계로 원인을 좁힌 뒤 새 정보가
-> 있을 때만 다음 확인을 계획한다. 기존 ChatGPT control home과 사용자 untracked
+> bounded cleanup, fresh startup gate와 partial telemetry/child-exit completeness
+> 판정을 구현했다. 전체 검증은 `411 tests OK, 11 skipped`, subscription schema
+> 5개는 `errors=0`이다.
+> 허용된 마지막 model-free startup 1회는 `initialize` 후 `thread/start -32603
+> remote-environment-error`로 blocked됐다. proxy는 6/6 request forward,
+> 5/5 response match, mapping/write/unmatched/pending 0을 기록했지만 raw
+> telemetry의 `child_exit_code=null`로 lifecycle complete 증거는 아니다. model/
+> turn/evaluation은 0회다. 동일 startup 반복이나 model-turn을 자동 실행하지
+> 말고, 설치된 Codex 0.154.0 remote environment lifecycle 계약을 offline/static
+> 자료와 fixture로 먼저 좁힌다. 기존 ChatGPT control home과 사용자 untracked
 > PNG는 보존한다.
 
 > 최우선: [LOG-077](feynman-work-log/LOG-077-native-path-mapping-startup-revalidation-20260913.md).
