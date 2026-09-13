@@ -22,7 +22,15 @@ except ImportError:
 
 
 class RpcPathMappingError(ValueError):
-    """A declared RPC path cannot be safely mapped."""
+    """A declared RPC path cannot be safely mapped.
+
+    ``path_field`` is an optional, fixed protocol-field label used only by
+    payload-free telemetry.  It never contains the rejected value itself.
+    """
+
+    def __init__(self, message: str, *, path_field: str | None = None) -> None:
+        super().__init__(message)
+        self.path_field = path_field
 
 
 REQUEST_PATH_FIELDS: dict[str, frozenset[str]] = {
@@ -183,25 +191,31 @@ class RpcPathMapper:
         for field in fields:
             if field not in mapped_params:
                 continue
-            value = mapped_params[field]
-            if not isinstance(value, str):
-                raise RpcPathMappingError("declared path field must be a string")
-            # Every declared path is mapped or rejected.  Silently passing a
-            # relative/ambiguous value through would defer a boundary error to
-            # the remote server and could make a host path look remote.
-            mapped_params[field] = self.host_to_container(value)
+            try:
+                value = mapped_params[field]
+                if not isinstance(value, str):
+                    raise RpcPathMappingError("declared path field must be a string")
+                # Every declared path is mapped or rejected.  Silently passing a
+                # relative/ambiguous value through would defer a boundary error to
+                # the remote server and could make a host path look remote.
+                mapped_params[field] = self.host_to_container(value)
+            except RpcPathMappingError as exc:
+                raise RpcPathMappingError(str(exc), path_field=field) from exc
         for field in REQUEST_PATH_ARRAY_FIELDS.get(method, ()):
             if field not in mapped_params:
                 continue
-            values = mapped_params[field]
-            if not isinstance(values, list):
-                raise RpcPathMappingError("declared path array must be a list")
-            mapped_values = []
-            for item in values:
-                if not isinstance(item, list) or not all(isinstance(x, str) for x in item):
-                    raise RpcPathMappingError("config path groups must contain only paths")
-                mapped_values.append([self.host_to_container(x) for x in item])
-            mapped_params[field] = mapped_values
+            try:
+                values = mapped_params[field]
+                if not isinstance(values, list):
+                    raise RpcPathMappingError("declared path array must be a list")
+                mapped_values = []
+                for item in values:
+                    if not isinstance(item, list) or not all(isinstance(x, str) for x in item):
+                        raise RpcPathMappingError("config path groups must contain only paths")
+                    mapped_values.append([self.host_to_container(x) for x in item])
+                mapped_params[field] = mapped_values
+            except RpcPathMappingError as exc:
+                raise RpcPathMappingError(str(exc), path_field=field) from exc
         mapped["params"] = mapped_params
         return mapped
 

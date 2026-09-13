@@ -56,6 +56,10 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
         self.assertEqual(schema["properties"]["schema_version"]["const"], 1)
         self.assertEqual(schema["properties"]["checks"]["properties"]
                          ["model_generation_requests_sent"]["const"], 0)
+        self.assertIn("request_mapping_rejection_method_reasons",
+                      schema["properties"]["proxy_telemetry"]["properties"])
+        self.assertIn("request_mapping_rejection_method_reason_fields",
+                      schema["properties"]["proxy_telemetry"]["properties"])
 
 
 if __name__ == "__main__":

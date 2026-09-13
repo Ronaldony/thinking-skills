@@ -147,6 +147,8 @@ def _safe_proxy_telemetry(path: Path) -> dict[str, Any]:
         "schema_version", "request_methods", "response_error_codes",
         "requests_seen", "requests_forwarded", "request_mapping_rejections",
         "request_mapping_rejection_methods", "request_mapping_rejection_reasons",
+        "request_mapping_rejection_method_reasons",
+        "request_mapping_rejection_method_reason_fields",
         "malformed_requests", "responses_seen", "responses_forwarded",
         "response_mapping_rejections", "malformed_responses",
         "probe_policy_rejections", "probe_read_limit_applied",
@@ -330,6 +332,10 @@ def main() -> int:
             "request_mapping_rejection_methods", {}),
         "request_mapping_rejection_reasons": result["proxy_telemetry"].get(
             "request_mapping_rejection_reasons", {}),
+        "request_mapping_rejection_method_reasons": result["proxy_telemetry"].get(
+            "request_mapping_rejection_method_reasons", {}),
+        "request_mapping_rejection_method_reason_fields": result["proxy_telemetry"].get(
+            "request_mapping_rejection_method_reason_fields", {}),
     }, ensure_ascii=False, indent=2))
     return 0
 

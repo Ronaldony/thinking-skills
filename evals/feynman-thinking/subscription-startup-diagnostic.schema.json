@@ -39,6 +39,17 @@
         "request_mapping_rejections": {"$ref": "#/$defs/count"},
         "request_mapping_rejection_methods": {"$ref": "#/$defs/counters"},
         "request_mapping_rejection_reasons": {"$ref": "#/$defs/counters"},
+        "request_mapping_rejection_method_reasons": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/counters"}
+        },
+        "request_mapping_rejection_method_reason_fields": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {"$ref": "#/$defs/counters"}
+          }
+        },
         "malformed_requests": {"$ref": "#/$defs/count"},
         "responses_seen": {"$ref": "#/$defs/count"},
         "responses_forwarded": {"$ref": "#/$defs/count"},

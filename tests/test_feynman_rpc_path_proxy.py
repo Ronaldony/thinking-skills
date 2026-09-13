@@ -47,11 +47,32 @@ class RpcPathProxyTests(unittest.TestCase):
         self.assertEqual(snapshot["request_mapping_rejection_methods"], {"fs/walk": 1})
         self.assertEqual(snapshot["request_mapping_rejection_reasons"],
                          {"host-path-outside-declared-mount": 1})
+        self.assertEqual(snapshot["request_mapping_rejection_method_reasons"], {
+            "fs/walk": {"host-path-outside-declared-mount": 1},
+        })
+        self.assertEqual(snapshot["request_mapping_rejection_method_reason_fields"], {
+            "fs/walk": {"host-path-outside-declared-mount": {"unknown": 1}},
+        })
         self.assertEqual(snapshot["response_error_codes"], {"-32001": 1})
         self.assertEqual(snapshot["requests_forwarded"], 1)
         serialized = json.dumps(snapshot)
         self.assertNotIn('"path"', serialized)
         self.assertNotIn('"id"', serialized)
+
+    def test_rejection_pair_does_not_retain_unknown_method_text(self):
+        telemetry = _ProxyTelemetry()
+        telemetry.request_rejected(
+            malformed=False, method="SYNTHETIC_PRIVATE_METHOD",
+            reason="container-path-outside-declared-mount")
+        snapshot = telemetry.snapshot()
+        self.assertEqual(snapshot["request_mapping_rejection_methods"], {"unknown": 1})
+        self.assertEqual(snapshot["request_mapping_rejection_method_reasons"], {
+            "unknown": {"container-path-outside-declared-mount": 1},
+        })
+        self.assertEqual(snapshot["request_mapping_rejection_method_reason_fields"], {
+            "unknown": {"container-path-outside-declared-mount": {"unknown": 1}},
+        })
+        self.assertNotIn("SYNTHETIC_PRIVATE", json.dumps(snapshot))
 
     def test_mapping_error_response_contains_no_rejected_value(self):
         payload = _fixed_error(7)
@@ -84,10 +105,11 @@ class RpcPathProxyTests(unittest.TestCase):
             "jsonrpc": "2.0", "id": 10, "method": "fs/getMetadata",
             "params": {"path": "file:///C:/Users/wotmd/private.txt"},
         }).encode("utf-8")
-        child, error, reason = _map_request_payload_with_reason(mapper, raw)
+        child, error, reason, field = _map_request_payload_with_reason(mapper, raw)
         self.assertIsNone(child)
         self.assertIsNotNone(error)
         self.assertEqual(reason, "host-path-outside-declared-mount")
+        self.assertEqual(field, "path")
         self.assertNotIn("Users", reason)
 
     def test_declared_path_field_type_has_fixed_rejection_reason(self):
@@ -98,10 +120,11 @@ class RpcPathProxyTests(unittest.TestCase):
             "jsonrpc": "2.0", "id": 14, "method": "fs/getMetadata",
             "params": {"path": None},
         }).encode("utf-8")
-        child, error, reason = _map_request_payload_with_reason(mapper, raw)
+        child, error, reason, field = _map_request_payload_with_reason(mapper, raw)
         self.assertIsNone(child)
         self.assertIsNotNone(error)
         self.assertEqual(reason, "invalid-path-field-type")
+        self.assertEqual(field, "path")
 
     def test_container_namespace_rejection_reason_is_distinct(self):
         mapper = RpcPathMapper.from_mounts([
@@ -111,10 +134,11 @@ class RpcPathProxyTests(unittest.TestCase):
             "jsonrpc": "2.0", "id": 12, "method": "fs/getMetadata",
             "params": {"path": "file:///var/private.txt"},
         }).encode("utf-8")
-        child, error, reason = _map_request_payload_with_reason(mapper, raw)
+        child, error, reason, field = _map_request_payload_with_reason(mapper, raw)
         self.assertIsNone(child)
         self.assertIsNotNone(error)
         self.assertEqual(reason, "container-path-outside-declared-mount")
+        self.assertEqual(field, "path")
 
     def test_raw_posix_path_stays_in_container_namespace(self):
         mapper = RpcPathMapper.from_mounts([
@@ -124,10 +148,11 @@ class RpcPathProxyTests(unittest.TestCase):
             "jsonrpc": "2.0", "id": 13, "method": "fs/getMetadata",
             "params": {"path": "/var/private.txt"},
         }).encode("utf-8")
-        child, error, reason = _map_request_payload_with_reason(mapper, raw)
+        child, error, reason, field = _map_request_payload_with_reason(mapper, raw)
         self.assertIsNone(child)
         self.assertIsNotNone(error)
         self.assertEqual(reason, "container-path-outside-declared-mount")
+        self.assertEqual(field, "path")
 
     def test_config_path_shape_has_fixed_rejection_reason(self):
         mapper = RpcPathMapper.from_mounts([
@@ -137,10 +162,25 @@ class RpcPathProxyTests(unittest.TestCase):
             "jsonrpc": "2.0", "id": 11, "method": "environmentConfig/read",
             "params": {"cwd": r"C:\DevWorks\candidate", "configPaths": [r"C:\DevWorks\candidate\config.toml"]},
         }).encode("utf-8")
-        child, error, reason = _map_request_payload_with_reason(mapper, raw)
+        child, error, reason, field = _map_request_payload_with_reason(mapper, raw)
         self.assertIsNone(child)
         self.assertIsNotNone(error)
         self.assertEqual(reason, "invalid-path-array-shape")
+        self.assertEqual(field, "configPaths")
+
+    def test_config_cwd_namespace_rejection_identifies_cwd_field(self):
+        mapper = RpcPathMapper.from_mounts([
+            {"source": r"C:\DevWorks\candidate", "destination": "/run/candidate", "access": "rw"},
+        ])
+        raw = json.dumps({
+            "jsonrpc": "2.0", "id": 15, "method": "environmentConfig/read",
+            "params": {"cwd": "/var/private", "configPaths": [], "requirementsPaths": []},
+        }).encode("utf-8")
+        child, error, reason, field = _map_request_payload_with_reason(mapper, raw)
+        self.assertIsNone(child)
+        self.assertIsNotNone(error)
+        self.assertEqual(reason, "container-path-outside-declared-mount")
+        self.assertEqual(field, "cwd")
 
     def test_probe_policy_forces_one_byte_candidate_read(self):
         mapper = RpcPathMapper.from_mounts([
