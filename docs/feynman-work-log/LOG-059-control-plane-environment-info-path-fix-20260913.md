@@ -112,7 +112,10 @@ availability/entitlement 및 full tool-use/model response는 여전히 승인된
 
 ## 저장 상태와 다음 행동
 
-- 구현·문서·테스트 변경은 이 로그와 함께 commit/push할 예정이다.
+- 구현·문서·테스트는 commit `787fab5` (`fix: preflight remote control-plane handoff`)로
+  저장했고, `origin/feat/feynman-thinking-v0.5-draft`에 일반 push했다.
+- push 직후 GitHub Actions의 해당 SHA 조회는 아직 run을 반환하지 않았다. CI 상태는
+  pending이며, 성공으로 간주하지 않는다.
 - 사용자 PNG 2개는 untracked로 보존하며 stage하지 않는다.
 - main merge와 force push는 하지 않는다.
 - 다음 사람 개입 지점은 **새 Luna model-turn을 실행할지 여부의 명시적 승인**이다.
