@@ -1,6 +1,13 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 최신 재개 지점은
+> `docs/feynman-work-log/LOG-088-docker-create-engine-request-blocker-20260914.md`다.
+> runtime probe v2의 실제 `docker create` 1회가 30초 timeout으로 끝났고, stdout/stderr
+> 0/0, name inspect 불가, cleanup not-observed다. Docker client→engine container create
+> 단계가 image entrypoint/node/Codex보다 앞선 blocker다. 환경 정상화 전에는 path
+> contract·구독 startup·인증·모델 평가를 재실행하지 마라.
+
+> 직전 재개 지점은
 > `docs/feynman-work-log/LOG-087-docker-runtime-stage-blocker-20260914.md`다.
 > 단계별 Docker runtime probe의 첫 `entrypoint-echo`가 `docker-runtime-blocked`로
 > 재현됐다. CLI exit 1, timeout, stdout/stderr 0/0, container inspect 불가이며

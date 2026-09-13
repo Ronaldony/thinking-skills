@@ -1,6 +1,13 @@
 # feynman-thinking 작업 상태
 
-최신 재개 지점: [LOG-087](feynman-work-log/LOG-087-docker-runtime-stage-blocker-20260914.md).
+최신 재개 지점: [LOG-088](feynman-work-log/LOG-088-docker-create-engine-request-blocker-20260914.md).
+runtime probe v2가 `docker create`와 `docker start`를 분리했다. 실제 create 1회는
+30초 timeout, CLI exit 1, stdout/stderr 0/0, inspect 불가로 `container-create`에서
+blocked됐다. 이는 image entrypoint/node/Codex보다 앞선 Docker client→engine create
+요청 단계의 외부 blocker다. 전체 `432 tests OK, 11 skipped`, schema 17개 errors=0이며
+path contract·구독 startup·모델 평가는 아직 실행하지 않는다.
+
+직전 지점: [LOG-087](feynman-work-log/LOG-087-docker-runtime-stage-blocker-20260914.md).
 단계별 Docker runtime probe를 추가했다. 고정 image의 `entrypoint-echo`부터
 `docker-runtime-blocked`가 재현됐고, CLI exit `1`, timeout, stdout/stderr `0/0`,
 container inspect 불가로 끝나 node·exec-server 단계는 실행하지 않았다. 이는 Docker
