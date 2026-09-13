@@ -1,13 +1,15 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-063](feynman-work-log/LOG-063-model-free-startup-reason-diagnostic-20260913.md).
+> 최신: [LOG-064](feynman-work-log/LOG-064-corrected-startup-request-mapping-20260913.md).
 > rejection reason telemetry와 ephemeral `thread/start` 진단기를 구현했다. 첫
 > model-free run은 `-32603`, thread/turn/model 0, mapping rejection 0이었다.
-> environment-native cwd를 `/run/candidate`로 보정한 두 번째 run은 자동 승인
-> 검토에서 실행 전에 거부됐다. 전체 371 tests/11 skipped는 통과했다. 다음은
-> 보정된 model-free diagnostic 정확히 1회에 대한 사용자 명시 승인이다. 구현
-> commit `f7ae713`의 정확한 SHA CI는 중복 run 포함 12/12 success다.
-> 아래 최신 표기는 역사 기록이며 이 안내가 우선한다.
+> environment-native cwd `/run/candidate` 보정 후 승인된 model-free startup 1회를
+> 실행했지만 `-32603`으로 막혔다. request rejection은
+> `environmentConfig/read:1` (`invalid-host-path`), `fs/getMetadata:6`
+> (`outside-declared-mount`)이다. thread/turn/model generation은 0회, child exit
+> 0, response mapping rejection 0이다. 다음은 추가 외부 실행 없이 local
+> request-side mapper/config fixture를 보정하는 일이다.
+> 아래 과거 표기는 역사 기록이며 이 안내가 우선한다.
 
 > 최신: [LOG-062](feynman-work-log/LOG-062-luna-config-metadata-rejections-20260913.md).
 > 승인된 Luna 1회는 gate 통과 후 exit 1, trace 0바이트다. request 거부는
