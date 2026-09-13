@@ -2,7 +2,14 @@
 
 작성일: 2026-09-09 (Asia/Seoul). 이 문서는 개발 담당 Codex의 인계 자료다. 평가 대상 candidate에게 전달하지 않는다.
 
-> 최신 상태(2026-09-13)는 [LOG-059](feynman-work-log/LOG-059-control-plane-environment-info-path-fix-20260913.md)을 우선한다.
+> 최신 상태(2026-09-13)는 [LOG-060](feynman-work-log/LOG-060-luna-model-turn-request-mapping-blocker-20260913.md)을 우선한다.
+> LOG-059 control-plane gate는 통과했지만 승인된 새 Luna model-turn 1회는 모델 요청
+> 전에 startup filesystem/config request mapping 9건이 거부되어 exit 1/0-byte trace로
+> 끝났다. Docker child exit 0, response mapping rejection 0이므로 남은 문제는
+> request-side native Windows path allowlist다. 자동 retry/fallback하지 말고 먼저
+> per-method rejection을 model-free로 진단하라.
+>
+> 직전 상태는 [LOG-059](feynman-work-log/LOG-059-control-plane-environment-info-path-fix-20260913.md)이다.
 > LOG-058의 Luna exit 1/0-byte trace 뒤 model-free control-plane `environment/info`
 > 진단으로 Linux remote cwd를 Windows host mount로 역매핑하던 결함을 보정했다.
 > exact full-runner/skill override handoff는 remote connect 및 response mapping

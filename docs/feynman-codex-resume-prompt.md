@@ -1,7 +1,15 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 2026-09-13 최신 재개 지점: 먼저
-> `docs/feynman-work-log/LOG-059-control-plane-environment-info-path-fix-20260913.md`를 읽어라.
+> `docs/feynman-work-log/LOG-060-luna-model-turn-request-mapping-blocker-20260913.md`를 읽어라.
+> LOG-059 control-plane은 통과했지만 새로 승인된 Luna model-turn 1회는 모델 요청
+> 전에 startup request mapping 9건 거부로 exit 1/0-byte trace가 됐다. Docker child
+> exit 0, response mapping rejection 0이다. 같은 model command를 반복하지 말고,
+> `environmentConfig/read`, `fs/canonicalize`, `fs/getMetadata`, `fs/walk`의
+> per-method request rejection을 model-free로 먼저 계측하라.
+>
+> 직전 checkpoint:
+> `docs/feynman-work-log/LOG-059-control-plane-environment-info-path-fix-20260913.md`.
 > LOG-058의 Luna exit 1/0-byte trace 뒤, model-free App Server `environment/info`
 > 경로에서 Linux remote cwd의 잘못된 Windows host reverse mapping을 발견·보정했다.
 > exact full-runner/skill override control-plane preflight는 remote connection,

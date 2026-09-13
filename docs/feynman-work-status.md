@@ -2,6 +2,13 @@
 
 최신 실행 checkpoint: 2026-09-13, `feat/feynman-thinking-v0.5-draft` research preview.
 
+최신 checkpoint는 [LOG-060](feynman-work-log/LOG-060-luna-model-turn-request-mapping-blocker-20260913.md)다.
+새로 승인된 Luna model-turn 1회는 LOG-059 control-plane gate 통과 후 실행됐지만,
+모델 요청 전에 remote startup request mapping 9건이 거부되어 exit 1, 0-byte trace로
+종료됐다. Docker child exit 0 및 response mapping rejection 0으로 LOG-059 보정은
+유효하다. 다음은 model-free per-method rejection 진단이며, 그 gate 전에는 model
+retry/fallback/Terra/Sol/baseline을 시작하지 않는다.
+
 최신 checkpoint는 [LOG-059](feynman-work-log/LOG-059-control-plane-environment-info-path-fix-20260913.md)다.
 LOG-058의 0-byte Luna trace 뒤, protected control home의 Codex App Server
 `environment/info`를 model-free로 실제 연결해 remote control-plane handoff의
