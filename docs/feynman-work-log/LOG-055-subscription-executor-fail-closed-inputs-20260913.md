@@ -126,8 +126,23 @@ git diff --check
 
 ## 저장 상태
 
-- 구현 commit: pending
-- push/remote HEAD/CI: pending
+- 구현 commit: `cb5ebe53e4c51c785599514aea9c73cc75fc3085`
+  (`feat: require full-runner inputs for smoke CLI`)
+- push: `origin/feat/feynman-thinking-v0.5-draft`에 완료했다.
+- `git ls-remote`로 원격 feature branch가 같은 `cb5ebe53...`임을 확인했다.
+- 해당 commit의 최신 PR-triggered workflow 7개가 모두 success였다.
+
+| workflow | run ID |
+|---|---:|
+| validate-feynman-remote-patch-reference | 34728831857 |
+| validate-feynman-codex-reference | 34728831859 |
+| validate-feynman-unit-diagnostic | 34728831844 |
+| validate-feynman-remote-exec-reference | 34728831836 |
+| validate-feynman-subscription-readiness | 34728831835 |
+| validate-feynman | 34728831916 |
+| validate-feynman-docker-reference | 34728831840 |
+
+- 이 로그의 storage update는 docs-only 후속 commit으로 저장한다.
 - 사용자 PNG 2개는 계속 untracked로 보존한다.
 - main merge와 force push는 하지 않는다.
 
