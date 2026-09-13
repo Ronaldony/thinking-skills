@@ -439,3 +439,16 @@ lineage, candidate filesystem skill set, task의 명시적 skill marker, App Ser
 고정 test가 시작·종료되고 candidate source가 불변이면 buggy fixture의 test failure와
 wiring failure를 구분한다. 실제 executor 명령에 같은 override를 결속하고 별도
 preflight하기 전에는 model smoke를 시작하지 않는다.
+
+## 17. subscription executor command binding
+
+`feynman_subscription_smoke_exec.py`의 `build_codex_exec_command()`가 canonical
+Codex argv를 만드는 단일 함수다. 기존 fixed controls를 보존하면서, preflight가
+검증한 full-runner MCP와 transient `skills.config` override를 stdin marker 앞에
+추가할 수 있다. 함수는 실행·인증·설정 파일 읽기를 수행하지 않는다.
+
+model-free wiring preflight는 이 builder에 full-runner override 13개와 첫 discovery
+결과의 transient skill-disable override를 전달하고, command payload 자체는 저장하지
+않는다. 실제 subscription executor 호출부에서도 binding/adapter/Docker 입력을
+동일한 lineage로 검증한 뒤 이 builder를 사용해야 한다. 그 fail-closed 호출부
+검증이 끝나기 전에는 실제 model turn을 시작하지 않는다.

@@ -2,7 +2,15 @@
 
 최신 실행 checkpoint: 2026-09-13, `feat/feynman-thinking-v0.5-draft` research preview.
 
-최신 checkpoint는 [LOG-053](feynman-work-log/LOG-053-skill-tool-wiring-model-free-20260913.md)이다.
+최신 checkpoint는 [LOG-054](feynman-work-log/LOG-054-subscription-executor-command-wiring-model-free-20260913.md)이다.
+`feynman_subscription_smoke_exec.py`의 Codex command 조립을 공용 builder로
+추출하고, LOG-053의 two-pass skill isolation과 full-runner override가 이 builder를
+통해 구성되는지 세 모델에 대해 model-free로 검증했다. full-runner 13개 override와
+transient skill-disable 1개가 모두 연결됐고, MCP 3개·network-disabled fixed test·
+candidate source 불변성도 확인했다. Schema 상수 오류를 발견해 13개로 보정한 뒤
+세 artifact schema와 전체 `354 tests / 11 skipped`를 통과했다. 모델·인증 호출은
+0회다. 다음은 binding/adapter/Docker 입력을 실제 subscription executor 호출부에서
+fail-closed로 요구하는 작업이며, 그 전에는 실제 model smoke를 시작하지 않는다.
 LOG-052 binding에 연결된 Luna/Terra/Sol candidate를 Codex App Server
 `skills/list(forceReload=true)`와 fixed full-runner adapter로 모델 없이 검증했다.
 빈 disposable `CODEX_HOME`만으로는 주변 skill 7개가 계속 노출되는 것을 발견했고,

@@ -223,3 +223,24 @@ MCP tool은 fixed read/write/test 3개였다. adapter에는 write가 아니라 �
 최종 `codex exec` 명령에 결속하지 않았다. 다음 model-free 작업은 executor command
 builder에 동일 계약을 fail-closed로 연결하는 것이다. 그 전에는 실제 subscription
 smoke나 baseline을 시작하지 않는다.
+
+## LOG-054 결과 — subscription executor command builder 결속
+
+기존 `feynman_subscription_smoke_exec.py` 내부의 고정 Codex argv 조립을
+`build_codex_exec_command()`로 추출했다. executor 자체와 wiring preflight가 같은
+함수를 사용하므로, model-free 검사에서 통과한 설정과 실제 실행 경로의 command
+construction이 달라지는 위험을 줄였다.
+
+세 모델의 실제 model-free preflight에서 full-runner MCP override 13개와 transient
+skill-disable override 1개가 builder에 전달됐다. 최종 명령은 fixed controls와
+stdin marker를 유지했고 MCP tool 3개가 확인됐다. 명령·prompt 원문은 artifact에
+저장하지 않았다.
+
+첫 schema 검증은 실제 full-runner override 개수 13개를 12개로 잘못 기대해 실패했다.
+실행 경로에는 오류가 없었으며 schema 상수를 13으로 보정한 뒤 세 산출물 모두
+`schema-valid=3`이 됐다. 관련 테스트 21개와 전체 354개 테스트가 통과했다.
+
+이번 결과는 executor가 실제 모델을 실행할 권한을 얻었다는 뜻이 아니다. auth gate,
+model turn, candidate tool selection, baseline/Feynman 비교는 여전히 미실행이다.
+다음은 executor 호출부가 binding/adapter/Docker 입력 없이는 실행되지 않도록 하는
+최종 fail-closed 연결이다.

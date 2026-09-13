@@ -345,6 +345,43 @@ def _parse_trace(path: Path) -> dict[str, Any]:
     }
 
 
+def build_codex_exec_command(*, executable: str, model: str, candidate_dir: Path,
+                             config_overrides: tuple[str, ...] = ()) -> list[str]:
+    """Build the canonical smoke command with optional fixed MCP overrides.
+
+    The caller supplies only deterministic, already-validated ``-c`` values.
+    This function does not read configuration, authenticate, start Codex, or
+    inspect a model response.  The model still cannot choose the executable,
+    candidate cwd, or stdin task.
+    """
+    if not executable or not model:
+        raise ValueError("Codex command requires executable and model")
+    command = [
+        executable, "exec",
+        "--json",
+        "--ephemeral",
+        "--strict-config",
+        "--ignore-rules",
+        "--skip-git-repo-check",
+        # Set the frozen non-interactive policy explicitly. --approve-for-me
+        # selects automatic review and conflicts with --sandbox on 0.153.4.
+        "-c", 'approval_policy="never"',
+        "--sandbox", "workspace-write",
+        "--model", model,
+        "--cd", str(candidate_dir),
+        "-c", 'web_search="disabled"',
+        "-c", "hide_agent_reasoning=true",
+        "-c", "show_raw_agent_reasoning=false",
+        "-c", "check_for_update_on_startup=false",
+    ]
+    for value in config_overrides:
+        if not isinstance(value, str) or not value:
+            raise ValueError("Codex config override must be a nonempty string")
+        command.extend(("-c", value))
+    command.append("-")
+    return command
+
+
 def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, evaluator_case_path: Path,
                       runner_job_path: Path, boundary_profile_path: Path,
                       remote_environment_path: Path, output_dir: Path,
@@ -413,25 +450,8 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
 
     executable = _resolve_executable(codex_bin)
     env = _safe_exec_env(control_home, control_temp)
-    command = [
-        executable, "exec",
-        "--json",
-        "--ephemeral",
-        "--strict-config",
-        "--ignore-rules",
-        "--skip-git-repo-check",
-        # Set the frozen non-interactive policy explicitly. --approve-for-me
-        # selects automatic review and conflicts with --sandbox on 0.153.4.
-        "-c", 'approval_policy="never"',
-        "--sandbox", "workspace-write",
-        "--model", model,
-        "--cd", str(candidate_dir),
-        "-c", 'web_search="disabled"',
-        "-c", "hide_agent_reasoning=true",
-        "-c", "show_raw_agent_reasoning=false",
-        "-c", "check_for_update_on_startup=false",
-        "-",
-    ]
+    command = build_codex_exec_command(
+        executable=executable, model=model, candidate_dir=candidate_dir)
 
     stderr_text = ""
     try:

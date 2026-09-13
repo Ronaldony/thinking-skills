@@ -33,6 +33,7 @@ try:
     from .feynman_mcp_catalog_preflight import summarize_status
     from .feynman_runner_job_validate import _load as load_job
     from .feynman_runner_job_validate import validate_job
+    from .feynman_subscription_smoke_exec import build_codex_exec_command, _resolve_executable
 except ImportError:
     from feynman_boundary_profile import validate_profile_file
     from feynman_eval_preflight import preflight as filesystem_skill_preflight
@@ -47,6 +48,7 @@ except ImportError:
     from feynman_mcp_catalog_preflight import summarize_status
     from feynman_runner_job_validate import _load as load_job
     from feynman_runner_job_validate import validate_job
+    from feynman_subscription_smoke_exec import build_codex_exec_command, _resolve_executable
 
 
 SYSTEM_ENV_KEYS = ("PATH", "SystemRoot", "WINDIR", "ComSpec", "PATHEXT", "TEMP", "TMP")
@@ -365,6 +367,7 @@ def _app_server_probe(*, codex_bin: Path, codex_home: Path, candidate_home: Path
             "tool_names": server["tool_names"],
             "tools_error_present": False,
         },
+        "transient_config_overrides": tuple(final_overrides),
     }
 
 
@@ -504,6 +507,18 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
         candidate=candidate, override=override, expected_skills=expected_skills,
         timeout_seconds=timeout_seconds,
     )
+    executable = _resolve_executable(str(codex_bin))
+    command_overrides = tuple(app_server["transient_config_overrides"])
+    command = build_codex_exec_command(
+        executable=executable,
+        model=job["versions"]["model"],
+        candidate_dir=candidate,
+        config_overrides=command_overrides,
+    )
+    if command[-1] != "-" or command.count("-c") != 5 + len(command_overrides):
+        raise ValueError("subscription smoke command builder did not bind fixed overrides")
+    if any(key in "\n".join(command) for key in RETIRED_AUTH_KEYS):
+        raise ValueError("subscription smoke command contains retired auth key")
     fixed_test = _fixed_test_probe(
         node_bin=node_bin, adapter=adapter, docker_bin=docker_bin,
         docker_config=docker_config, docker_image_id=docker_image_id,
@@ -535,6 +550,9 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
             "app_server_candidate_skill_set_exact": True,
             "non_candidate_enabled_skills_absent": True,
             "full_runner_catalog_exact": True,
+            "subscription_smoke_command_builder_bound": True,
+            "full_runner_overrides_bound": True,
+            "transient_skill_disable_bound": True,
             "fixed_test_command_started": True,
             "candidate_source_unchanged": True,
             "model_calls": 0,
@@ -549,6 +567,17 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
         "tool_wiring": {
             "mcp": app_server["mcp"],
             "fixed_test": fixed_test,
+            "subscription_smoke_command": {
+                "builder": "feynman_subscription_smoke_exec.build_codex_exec_command",
+                "argv_terminates_with_stdin_marker": command[-1] == "-",
+                "base_config_override_count": 5,
+                "full_runner_and_skill_override_count": len(command_overrides),
+                "full_runner_override_count": len(override.values),
+                "transient_skill_disable_override_count": len(command_overrides) - len(override.values),
+                "full_runner_mcp_bound": True,
+                "transient_skill_isolation_bound": True,
+                "command_payload_preserved": False,
+            },
         },
         "privacy": {
             "model_request_started": False,

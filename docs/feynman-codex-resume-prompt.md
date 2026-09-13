@@ -1,7 +1,14 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 2026-09-13 최신 재개 지점: 먼저
-> `docs/feynman-work-log/LOG-053-skill-tool-wiring-model-free-20260913.md`를 읽어라.
+> `docs/feynman-work-log/LOG-054-subscription-executor-command-wiring-model-free-20260913.md`를 읽어라.
+> `feynman_subscription_smoke_exec.py`의 공용 command builder에 LOG-053의
+> full-runner 13개 override와 transient skill-disable override를 연결했고,
+> Luna/Terra/Sol 모두 model-free preflight에서 `full-runner-skill-tool-wiring-ready`를
+> 얻었다. Schema 상수 오류를 발견·보정했고 `354 tests OK, 11 skipped`, 세 artifact
+> schema 검증을 통과했다. 모델·인증 호출은 0회다. 다음은 실제 subscription executor
+> 호출부에서 binding/adapter/Docker 입력을 필수로 묶는 model-free fail-closed 검사다.
+> 실제 model smoke, 자동 retry, baseline/frozen evaluation은 시작하지 마라.
 > LOG-052 binding에 연결된 Luna/Terra/Sol candidate에서 exact skill exposure,
 > full-runner 3-tool catalog, network-disabled fixed test 시작과 source 불변성을
 > model-free로 확인했다. 빈 disposable Codex home에도 주변 skill 7개가 발견돼,

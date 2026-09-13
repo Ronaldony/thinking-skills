@@ -35,12 +35,15 @@
         "app_server_candidate_skill_set_exact": {"const": true},
         "non_candidate_enabled_skills_absent": {"const": true},
         "full_runner_catalog_exact": {"const": true},
+        "subscription_smoke_command_builder_bound": {"const": true},
+        "full_runner_overrides_bound": {"const": true},
+        "transient_skill_disable_bound": {"const": true},
         "fixed_test_command_started": {"const": true},
         "candidate_source_unchanged": {"const": true},
         "model_calls": {"const": 0},
         "authentication_used": {"const": false}
       },
-      "required": ["runner_job_profile_valid", "binding_lineage_valid", "filesystem_candidate_skill_set_exact", "explicit_skill_invocation_bound", "app_server_candidate_skill_set_exact", "non_candidate_enabled_skills_absent", "full_runner_catalog_exact", "fixed_test_command_started", "candidate_source_unchanged", "model_calls", "authentication_used"]
+      "required": ["runner_job_profile_valid", "binding_lineage_valid", "filesystem_candidate_skill_set_exact", "explicit_skill_invocation_bound", "app_server_candidate_skill_set_exact", "non_candidate_enabled_skills_absent", "full_runner_catalog_exact", "subscription_smoke_command_builder_bound", "full_runner_overrides_bound", "transient_skill_disable_bound", "fixed_test_command_started", "candidate_source_unchanged", "model_calls", "authentication_used"]
     },
     "skill_exposure": {
       "type": "object",
@@ -107,6 +110,22 @@
           },
           "required": ["server_name", "tool_names", "tools_error_present"]
         },
+        "subscription_smoke_command": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "builder": {"const": "feynman_subscription_smoke_exec.build_codex_exec_command"},
+            "argv_terminates_with_stdin_marker": {"const": true},
+            "base_config_override_count": {"const": 5},
+            "full_runner_and_skill_override_count": {"type": "integer", "minimum": 13},
+            "full_runner_override_count": {"const": 13},
+            "transient_skill_disable_override_count": {"type": "integer", "minimum": 0},
+            "full_runner_mcp_bound": {"const": true},
+            "transient_skill_isolation_bound": {"const": true},
+            "command_payload_preserved": {"const": false}
+          },
+          "required": ["builder", "argv_terminates_with_stdin_marker", "base_config_override_count", "full_runner_and_skill_override_count", "full_runner_override_count", "transient_skill_disable_override_count", "full_runner_mcp_bound", "transient_skill_isolation_bound", "command_payload_preserved"]
+        },
         "fixed_test": {
           "type": "object",
           "additionalProperties": false,
@@ -139,7 +158,7 @@
           "required": ["tool_name", "fixed_command", "started", "timed_out", "exit_code", "candidate_test_passed", "candidate_test_outcome", "candidate_source_unchanged", "network_mode", "raw_stdout_preserved", "raw_stderr_preserved", "tool_payload_preserved", "write_tool_invoked"]
         }
       },
-      "required": ["mcp", "fixed_test"]
+      "required": ["mcp", "fixed_test", "subscription_smoke_command"]
     },
     "privacy": {
       "type": "object",

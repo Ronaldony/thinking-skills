@@ -2,7 +2,14 @@
 
 작성일: 2026-09-09 (Asia/Seoul). 이 문서는 개발 담당 Codex의 인계 자료다. 평가 대상 candidate에게 전달하지 않는다.
 
-> 최신 상태(2026-09-13)는 [LOG-053](feynman-work-log/LOG-053-skill-tool-wiring-model-free-20260913.md)을 우선한다.
+> 최신 상태(2026-09-13)는 [LOG-054](feynman-work-log/LOG-054-subscription-executor-command-wiring-model-free-20260913.md)을 우선한다.
+> `feynman_subscription_smoke_exec.py`의 실제 Codex command 조립을 공용 builder로
+> 연결하고, LOG-053의 two-pass skill isolation과 full-runner override가 세 모델의
+> model-free 실행에서 builder에 들어가는 것을 확인했다. full-runner override 13개,
+> transient skill-disable 1개, MCP 3개가 검증됐다. Schema 개수 상수 오류를 13으로
+> 보정했고 전체 회귀는 `354 tests OK, 11 skipped`다. 모델·인증 호출은 0회다.
+> 다음은 실제 executor 호출부가 binding/adapter/Docker 입력 없이는 fail-closed하도록
+> 연결하는 일이며 실제 model smoke/baseline은 아직 시작하지 않는다.
 > LOG-052 full-runner binding에 연결된 Luna/Terra/Sol candidate에서 exact
 > `feynman-thinking` skill exposure, fixed MCP 3-tool catalog, network-disabled
 > test 시작과 source 불변성을 model-free로 검증했다. 빈 disposable Codex home에도
