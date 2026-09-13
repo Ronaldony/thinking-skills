@@ -168,6 +168,48 @@ class RpcPathProxyTests(unittest.TestCase):
         self.assertEqual(reason, "invalid-path-array-shape")
         self.assertEqual(field, "configPaths")
 
+    def test_relative_config_path_has_specific_rejection_reason(self):
+        mapper = RpcPathMapper.from_mounts([
+            {"source": r"C:\DevWorks\candidate", "destination": "/run/candidate", "access": "rw"},
+        ])
+        raw = json.dumps({
+            "jsonrpc": "2.0", "id": 16, "method": "environmentConfig/read",
+            "params": {"cwd": "/run/candidate", "configPaths": [["config.toml"]]},
+        }).encode("utf-8")
+        child, error, reason, field = _map_request_payload_with_reason(mapper, raw)
+        self.assertIsNone(child)
+        self.assertIsNotNone(error)
+        self.assertEqual(reason, "host-path-not-absolute")
+        self.assertEqual(field, "configPaths")
+
+    def test_host_traversal_has_specific_rejection_reason(self):
+        mapper = RpcPathMapper.from_mounts([
+            {"source": r"C:\DevWorks\candidate", "destination": "/run/candidate", "access": "rw"},
+        ])
+        raw = json.dumps({
+            "jsonrpc": "2.0", "id": 17, "method": "fs/getMetadata",
+            "params": {"path": r"C:\DevWorks\candidate\..\private.txt"},
+        }).encode("utf-8")
+        child, error, reason, field = _map_request_payload_with_reason(mapper, raw)
+        self.assertIsNone(child)
+        self.assertIsNotNone(error)
+        self.assertEqual(reason, "host-path-traversal")
+        self.assertEqual(field, "path")
+
+    def test_container_traversal_has_specific_rejection_reason(self):
+        mapper = RpcPathMapper.from_mounts([
+            {"source": r"C:\DevWorks\candidate", "destination": "/run/candidate", "access": "rw"},
+        ])
+        raw = json.dumps({
+            "jsonrpc": "2.0", "id": 18, "method": "fs/getMetadata",
+            "params": {"path": "/run/candidate/../private.txt"},
+        }).encode("utf-8")
+        child, error, reason, field = _map_request_payload_with_reason(mapper, raw)
+        self.assertIsNone(child)
+        self.assertIsNotNone(error)
+        self.assertEqual(reason, "container-path-traversal")
+        self.assertEqual(field, "path")
+
     def test_config_cwd_namespace_rejection_identifies_cwd_field(self):
         mapper = RpcPathMapper.from_mounts([
             {"source": r"C:\DevWorks\candidate", "destination": "/run/candidate", "access": "rw"},

@@ -130,8 +130,10 @@ class RpcPathMapper:
         else:
             value = PurePosixPath(path)
             parts = _posix_key(value)
-        if not value.is_absolute() or ".." in value.parts:
-            raise RpcPathMappingError("host path must be absolute and traversal-free")
+        if not value.is_absolute():
+            raise RpcPathMappingError("host path must be absolute")
+        if ".." in value.parts:
+            raise RpcPathMappingError("host path must be traversal-free")
         for host, container in self.mounts:
             host_parts = _windows_key(host) if isinstance(host, PureWindowsPath) else _posix_key(host)
             relative = _relative(parts, host_parts)
@@ -143,8 +145,10 @@ class RpcPathMapper:
 
     def _container_to_host_path(self, path: str) -> PureWindowsPath | PurePosixPath:
         value = PurePosixPath(path)
-        if not value.is_absolute() or ".." in value.parts:
-            raise RpcPathMappingError("container path must be absolute and traversal-free")
+        if not value.is_absolute():
+            raise RpcPathMappingError("container path must be absolute")
+        if ".." in value.parts:
+            raise RpcPathMappingError("container path must be traversal-free")
         for host, container in self.mounts:
             relative = _relative(_posix_key(value), _posix_key(container))
             if relative is not None:
