@@ -173,7 +173,12 @@ server가 `configPaths`를 어떤 기준으로 생성해야 하는지를 증명�
   포함됐다.
 - `origin/feat/feynman-thinking-v0.5-draft`는
   `89e8e3d04cd9fd28086d68ab35ea9567223160ff`를 가리키며 push가 확인됐다.
-- 이 후속 상태 보정 자체는 아직 별도 commit/push 전이다.
+- commit/push receipt 보정은 `4e832eb docs: finalize startup checkpoint receipt`로
+  저장·push됐고, 최종 원격 branch SHA는
+  `4e832eb5f8afffbaf63ed8b904b44a2be6afd1e2`다.
+- PR check 재조회 결과 `codex-reference-boundary`, `docker-reference-boundary`,
+  `mock-model-remote-exec`, `mock-model-remote-patch`, `structural-readiness`,
+  `structural-validation`, `unit-diagnostic` 7개가 모두 `pass`다.
 - user PNG 2개는 계속 untracked로 보존한다.
 - main merge와 force push는 하지 않는다.
 - 현재 branch의 외부 runner 성공 조건은 아직 달성되지 않았다.
