@@ -148,9 +148,12 @@ model/candidate cwd 결속 boolean만 기록한다.
 
 ## 저장 상태
 
-- 현재 source/docs 변경은 이 로그 작성 시점에 아직 commit/push 전이다.
-- 다음 행동은 `git diff --check`, 전체 테스트 재확인 후 source commit과 push,
-  PR-triggered workflow 7개 확인이다.
-- 이후 docs-only storage update가 필요하면 별도 commit으로 남긴다.
+- 구현 commit: `03457b135da1a79de7a3ef61f5ab508261eb1b89`
+  (`feat: bind subscription executor skill isolation preflight`)
+- `origin/feat/feynman-thinking-v0.5-draft`에 push했고 local/remote HEAD가
+  `03457b1`로 일치한다.
+- `git diff --check` 통과, 전체 `358 tests / 11 skipped` 통과.
+- PR-triggered workflow 7개가 모두 `completed / success`다.
+- 이 문구 보정은 docs-only 후속 commit으로 저장한다.
 - main merge와 force push는 하지 않는다.
 - 사용자 PNG 2개는 계속 untracked로 보존한다.
