@@ -1,13 +1,14 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-079](feynman-work-log/LOG-079-implementation-commit-push-receipt-20260913.md).
+> 최신: [LOG-080](feynman-work-log/LOG-080-offline-startup-lifecycle-fixture-20260913.md).
 > Windows/Docker checkpoint, native path contract, payload-free telemetry v2,
 > bounded cleanup, 그리고 실제 smoke executor의 fresh startup gate를 구현했다.
-> 전체 검증은 `399 tests OK, 11 skipped`, subscription schema 5개는 `errors=0`.
+> 전체 검증은 `403 tests OK, 11 skipped`, subscription schema 5개는 `errors=0`.
 > 새 model-free startup 확인은 `initialize` timeout으로 blocked(exit 1)였고,
 > model/turn/evaluation은 0회다. 동일 startup 반복이나 model-turn을 자동 실행하지
-> 말고, offline lifecycle fixture로 원인을 좁힌 뒤 새 정보가 있을 때만 다음 확인을
-> 계획한다. 기존 ChatGPT control home과 사용자 untracked PNG는 보존한다.
+> 말고, offline lifecycle fixture가 확인한 단계 경계로 원인을 좁힌 뒤 새 정보가
+> 있을 때만 다음 확인을 계획한다. 기존 ChatGPT control home과 사용자 untracked
+> PNG는 보존한다.
 
 > 최우선: [LOG-077](feynman-work-log/LOG-077-native-path-mapping-startup-revalidation-20260913.md).
 > 정확한 binding 경로의 `-24` model-free startup에서 Docker/image/Codex parity,

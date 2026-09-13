@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import queue
+import subprocess
+import sys
 import tempfile
+import threading
 import unittest
 
 from tooling.feynman_subscription_startup_diagnostic import (
@@ -14,7 +18,105 @@ from tooling.feynman_subscription_startup_diagnostic import (
 )
 
 
+ROOT = Path(__file__).resolve().parents[1]
+LIFECYCLE_FIXTURE = ROOT / "tests" / "feynman_subscription_lifecycle_fixture.py"
+
+
 class SubscriptionStartupDiagnosticTests(unittest.TestCase):
+    def _lifecycle_process(self, mode: str):
+        process = subprocess.Popen(
+            [sys.executable, "-B", str(LIFECYCLE_FIXTURE), mode],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env={
+                key: os.environ[key]
+                for key in ("PATH", "SystemRoot", "WINDIR", "ComSpec", "PATHEXT", "TEMP", "TMP")
+                if key in os.environ
+            },
+            bufsize=0,
+        )
+        assert process.stdin is not None and process.stdout is not None
+        received: queue.Queue[dict | None] = queue.Queue()
+        reader = threading.Thread(
+            target=_read_json_lines_for_test, args=(process.stdout, received), daemon=True
+        )
+        reader.start()
+        return process, received, reader
+
+    def _close_lifecycle_process(self, process, reader):
+        assert process.stdin is not None
+        process.stdin.close()
+        process.wait(timeout=5)
+        reader.join(timeout=2)
+        if process.stdout is not None:
+            process.stdout.close()
+        if process.stderr is not None:
+            process.stderr.close()
+        self.assertEqual(process.returncode, 0)
+
+    def test_offline_fixture_healthy_lifecycle_sends_no_turn(self):
+        process, received, reader = self._lifecycle_process("healthy")
+        try:
+            assert process.stdin is not None
+            process.stdin.write(_request_for_test(1, "initialize"))
+            process.stdin.flush()
+            initialize, _ = _wait_for_thread_start(received, 1, 5)
+            self.assertIn("result", initialize)
+            process.stdin.write(_notification_for_test("initialized"))
+            process.stdin.write(_request_for_test(2, "thread/start"))
+            process.stdin.flush()
+            response, notifications = _wait_for_thread_start(received, 2, 5)
+            summary = _thread_summary(response)
+            self.assertTrue(summary["thread_started"])
+            self.assertEqual(notifications, {})
+            self.assertEqual(process.poll(), None)
+        finally:
+            self._close_lifecycle_process(process, reader)
+
+    def test_offline_fixture_initialize_timeout_is_client_timeout(self):
+        process, received, reader = self._lifecycle_process("initialize-timeout")
+        try:
+            assert process.stdin is not None
+            process.stdin.write(_request_for_test(1, "initialize"))
+            process.stdin.flush()
+            with self.assertRaisesRegex(StartupDiagnosticError, "^thread-start-timeout$"):
+                _wait_for_thread_start(received, 1, 0)
+        finally:
+            self._close_lifecycle_process(process, reader)
+
+    def test_offline_fixture_thread_start_error_is_not_initialize_timeout(self):
+        process, received, reader = self._lifecycle_process("thread-start-error")
+        try:
+            assert process.stdin is not None
+            process.stdin.write(_request_for_test(1, "initialize"))
+            process.stdin.flush()
+            initialize, _ = _wait_for_thread_start(received, 1, 5)
+            self.assertNotIn("error", initialize)
+            process.stdin.write(_notification_for_test("initialized"))
+            process.stdin.write(_request_for_test(2, "thread/start"))
+            process.stdin.flush()
+            response, _ = _wait_for_thread_start(received, 2, 5)
+            summary = _thread_summary(response)
+            self.assertEqual(summary["error_code"], -32603)
+            self.assertEqual(summary["error_category"], "remote-environment-error")
+        finally:
+            self._close_lifecycle_process(process, reader)
+
+    def test_offline_fixture_ignores_unmatched_response_id(self):
+        process, received, reader = self._lifecycle_process("wrong-response-id")
+        try:
+            assert process.stdin is not None
+            process.stdin.write(_request_for_test(1, "initialize"))
+            process.stdin.flush()
+            _wait_for_thread_start(received, 1, 5)
+            process.stdin.write(_notification_for_test("initialized"))
+            process.stdin.write(_request_for_test(2, "thread/start"))
+            process.stdin.flush()
+            response, _ = _wait_for_thread_start(received, 2, 5)
+            self.assertEqual(response["id"], 2)
+            self.assertEqual(_thread_summary(response)["thread_started"], True)
+        finally:
+            self._close_lifecycle_process(process, reader)
+
     def test_probe_isolates_local_project_discovery(self):
         self.assertEqual(
             APP_SERVER_LOCAL_ISOLATION_OVERRIDES,
@@ -168,6 +270,25 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
             schema["properties"]["proxy_telemetry"]["type"],
             ["object", "null"],
         )
+
+def _request_for_test(identifier: int, method: str) -> bytes:
+    return (json.dumps({"jsonrpc": "2.0", "id": identifier, "method": method, "params": {}})
+            + "\n").encode("utf-8")
+
+
+def _notification_for_test(method: str) -> bytes:
+    return (json.dumps({"jsonrpc": "2.0", "method": method, "params": {}})
+            + "\n").encode("utf-8")
+
+
+def _read_json_lines_for_test(stream, received: queue.Queue[dict | None]) -> None:
+    for line in stream:
+        try:
+            value = json.loads(line)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            received.put(None)
+            continue
+        received.put(value if isinstance(value, dict) else None)
 
 
 if __name__ == "__main__":
