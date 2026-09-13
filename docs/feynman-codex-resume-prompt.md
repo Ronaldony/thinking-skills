@@ -1,5 +1,18 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
+> 최신 재개 지점은
+> `docs/feynman-work-log/LOG-083-startup-hardening-and-path-contract-equivalence-20260913.md`다.
+> startup 진단은 schema v3로 강화됐다. initialize 완료 상태를 실제 상태값으로
+> 기록하고, cleanup verified·child exit 0·instruction source allowlist·양방향
+> mapping rejection 0을 모두 요구한다. Windows named-pipe shutdown, atomic
+> telemetry, pending counter 갱신도 보강됐다. 고정 remote-boundary Docker fixture의
+> 직접 Linux 실행과 Windows path proxy 실행은 순차 exec-server lifecycle로
+> `rpc-path-contract-equivalent`를 통과했다. 전체 `418 tests OK, 11 skipped`,
+> schema 17개 `errors=0`이다. 실제 subscription startup/auth/model/evaluation은
+> 이 checkpoint에서 0회다. 다음 사람 개입 지점은 새 최종 gate를 사용하는 실제
+> subscription startup diagnostic 1회 선택이며, 자동 재시도·fallback·baseline은
+> 하지 않는다. 기존 로그인 홈·사용자 PNG·`.tmp` 증거를 보존한다.
+
 > 현재 최우선 재개 지점은
 > `docs/feynman-work-log/LOG-082-diagnostic-fixes-and-final-startup-evidence-20260913.md`다.
 > 진단기·proxy의 stderr drain, notification 분리, 중첩 telemetry allowlist,

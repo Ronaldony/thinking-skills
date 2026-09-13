@@ -1,5 +1,17 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
+> 최신: [LOG-083](feynman-work-log/LOG-083-startup-hardening-and-path-contract-equivalence-20260913.md).
+> startup 진단·proxy telemetry를 schema v3로 보강하고, 실제 initialize 상태,
+> cleanup verified, child exit 0, instruction source allowlist, 양방향 mapping
+> rejection 0을 fail-closed로 연결했다. Windows parent-pipe 종료 정리와 atomic
+> telemetry 저장도 고쳤다. pinned remote-boundary Docker fixture에서 direct Linux와
+> Windows path proxy의 순차 exec-server lifecycle이 응답 1..4, process exit 0,
+> sandboxDenied false, 요청/응답 shape 동일로 통과했다. 전체 `418 tests OK,
+> 11 skipped`, schema 17개 `errors=0`이다. 실제 subscription startup/auth/model/
+> evaluation은 0회이며, user PNG와 `.tmp` 증거는 보존된다. 다음 개입 경계는 새
+> 최종 startup gate를 쓰는 실제 subscription diagnostic 1회 선택이다. 실패 시
+> 자동 재시도·fallback·baseline을 실행하지 않는다.
+
 > 최신: [LOG-082](feynman-work-log/LOG-082-diagnostic-fixes-and-final-startup-evidence-20260913.md).
 > Windows/Docker checkpoint, native path contract, payload-free telemetry v2,
 > bounded cleanup, fresh startup gate와 partial telemetry/child-exit completeness
