@@ -100,10 +100,15 @@ subprocess를 실행하지 않았다.
 
 ## 저장 상태와 다음 행동
 
-이번 변경 파일은 이 로그 작성 시점에 commit하지 않았다. 다음 저장 단위는
-이 로그와 재개 포인터를 함께 stage하여 테스트 결과 및 push 상태를 기록하는
-것이다. 그 다음은 수정된 매퍼를 포함한 model-free startup 1회 재검토이며,
-실제 모델 turn은 그 선행 조건이 성공하기 전까지 보류한다.
+구현 변경은 `70592c4 fix: reject undeclared RPC path field shapes`로 commit했고
+feature branch에 push했다. `git ls-remote`로 원격
+`feat/feynman-thinking-v0.5-draft`가
+`70592c4391045f6e30897cca667e948874777321`임을 확인했다. 이 commit의 GitHub
+Actions 7개 workflow는 확인 시점에 모두 `completed / success`였다.
+
+이 로그와 재개 포인터의 저장 사실을 반영하는 문서 전용 checkpoint는 이 변경을
+포함해 별도로 commit/push한다. 그 다음은 수정된 매퍼를 포함한 model-free startup
+1회 재검토이며, 실제 모델 turn은 그 선행 조건이 성공하기 전까지 보류한다.
 
 사용자 PNG 2개는 untracked로 유지하고 stage하지 않는다. main merge와 force push는
 하지 않는다.
