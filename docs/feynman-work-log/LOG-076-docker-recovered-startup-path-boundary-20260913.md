@@ -155,3 +155,15 @@ git diff --check
 
 이 로그와 `cwd=candidate` code change를 검증 후 feature branch에만 commit/push한다.
 main merge와 force push는 하지 않는다. 사용자 PNG 2개는 계속 untracked로 보존한다.
+
+## Commit/push receipt
+
+- code/docs commit: `6148093 fix: isolate startup diagnostic working directory`
+- push: `fd7b6b1..6148093` to `origin/feat/feynman-thinking-v0.5-draft`
+- remote SHA: `6148093278d65d5938aaa2cdcb3931a460f854ac`
+- 해당 SHA의 GitHub Actions 7개 workflow: 모두 `completed / success`
+  (`validate-feynman`, `validate-feynman-codex-reference`,
+  `validate-feynman-docker-reference`, `validate-feynman-remote-exec-reference`,
+  `validate-feynman-remote-patch-reference`, `validate-feynman-subscription-readiness`,
+  `validate-feynman-unit-diagnostic`)
+- main merge/force push: 하지 않음
