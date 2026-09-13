@@ -86,8 +86,7 @@ python -c "from pathlib import Path; import json; from jsonschema import Draft20
 
 ## 저장·남은 문제·다음 행동
 
-- 이 로그 작성 시점의 코드 수정은 아직 commit 전이다. 다음 작업은 수정 파일과 이 로그·최신 pointer 문서만 명시적으로 stage하여 feature branch에 commit하고 일반 push하는 것이다. main merge와 force push는 하지 않는다.
+- 코드·테스트·문서 변경은 `e77038683899dc82f05c495cf6b68ec21a9f297d` (`fix: preserve proxy cleanup evidence`)로 feature branch에 commit했다. `git push origin feat/feynman-thinking-v0.5-draft`가 성공했고, local HEAD와 `refs/remotes/origin/feat/feynman-thinking-v0.5-draft`가 모두 `e77038683899dc82f05c495cf6b68ec21a9f297d`로 일치한다. main merge와 force push는 하지 않았다.
 - 실제 startup은 이미 계획된 1회를 사용했으므로 같은 입력으로 재실행하지 않는다.
 - 남은 문제: `thread/start -32603 remote-environment-error`의 내부 원인, 그리고 설치된 0.154.0 App Server가 기대하는 exec-server response namespace/shape가 현재 reverse mapping과 일치하는지 여부.
-- 다음 한 행동: commit/push 후, `child_exit_code`가 완전하게 수집되는 offline lifecycle 회귀와 현재 실제 run artifact를 기준으로 최신 재개 지점을 갱신한다. 추가 startup 또는 Luna smoke는 새 결함 수정과 그 결함을 겨냥한 회귀 증거가 생길 때만 별도 판단한다.
-
+- 다음 한 행동: 설치된 0.154.0 App Server와 remote exec-server의 response/lifecycle 계약을 offline/static 자료로 더 좁히는 것이다. 추가 startup 또는 Luna smoke는 새 결함 수정과 그 결함을 겨냥한 회귀 증거가 생길 때만 별도 판단한다.
