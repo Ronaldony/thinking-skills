@@ -73,6 +73,38 @@ class RpcPathMappingTests(unittest.TestCase):
         with self.assertRaisesRegex(RpcPathMappingError, "declared path field must be a string"):
             self.mapper.map_request({"method": "fs/getMetadata", "params": {"path": None}})
 
+    def test_environment_config_path_groups_map_each_declared_namespace(self):
+        message = {
+            "method": "environmentConfig/read",
+            "params": {
+                "cwd": r"C:\DevWorks\smoke\candidate",
+                "configPaths": [[r"C:\DevWorks\smoke\candidate\config.toml"]],
+                "requirementsPaths": [["/run/home/requirements.toml"]],
+            },
+        }
+        mapped = self.mapper.map_request(message)
+        self.assertEqual(mapped["params"]["cwd"], "/run/candidate")
+        self.assertEqual(mapped["params"]["configPaths"], [["/run/candidate/config.toml"]])
+        self.assertEqual(mapped["params"]["requirementsPaths"], [["/run/home/requirements.toml"]])
+
+    def test_environment_config_path_groups_reject_relative_values(self):
+        for field in ("configPaths", "requirementsPaths"):
+            with self.subTest(field=field), self.assertRaisesRegex(
+                RpcPathMappingError, "host path must be absolute"):
+                self.mapper.map_request({
+                    "method": "environmentConfig/read",
+                    "params": {field: [["config.toml"]]},
+                })
+
+    def test_environment_config_path_groups_reject_non_string_items(self):
+        for value in ([[None]], [["config.toml", 1]]):
+            with self.subTest(value=value), self.assertRaisesRegex(
+                RpcPathMappingError, "config path groups must contain only paths"):
+                self.mapper.map_request({
+                    "method": "environmentConfig/read",
+                    "params": {"configPaths": value},
+                })
+
     def test_outside_mount_and_traversal_are_rejected(self):
         with self.assertRaises(RpcPathMappingError):
             self.mapper.host_to_container("file:///C:/Users/wotmd/secret.txt")

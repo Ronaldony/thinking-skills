@@ -1,5 +1,17 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
+> 현재 최우선 재개 지점은
+> `docs/feynman-work-log/LOG-072-startup-revalidation-paired-cause-20260913.md`다.
+> 사용자 승인 model-free startup diagnostic 정확히 1회는 종료 코드 0으로 끝났지만
+> `initialize` 뒤 `thread/start`가 `-32603 remote-environment-error`로 차단됐다.
+> payload-free attribution은 `environmentConfig/read → invalid-host-path →
+> configPaths` 1건과 `fs/getMetadata → path` 6건(container 2, host 4)을 연결했다.
+> `turn/start`·model generation은 0회, child reap·schema·privacy는 통과했다. 실제
+> path와 App Server의 config path 생성 semantics는 미확정이므로 mount 확대·상대경로
+> 자동 보정·추가 외부 실행을 하지 마라. 두 config 배열의 namespace/relative/non-string
+> fail-closed 계약 테스트를 추가했고 전체 `381 tests / 11 skipped`가 통과했다.
+> 아래 첫 블록은 역사 기록이며 LOG-072를 우선하라.
+
 > 먼저 `docs/feynman-work-log/LOG-071-canonical-remote-binding-verification-20260913.md`를
 > 읽어라. 승인된 추가 startup 진단 1회는 완료됐고 `-32603`, 모델 생성 0회다.
 > container 2 / host 4 / invalid-host 1은 실제 namespace를 확정하지 않는다.

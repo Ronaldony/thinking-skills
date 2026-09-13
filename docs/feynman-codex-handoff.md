@@ -1,5 +1,18 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
+> 최우선: [LOG-072](feynman-work-log/LOG-072-startup-revalidation-paired-cause-20260913.md).
+> 사용자 승인 startup diagnostic 정확히 1회는 종료 코드 0으로 끝났지만
+> `initialize` 뒤 `thread/start`가 `-32603 remote-environment-error`로 차단됐다.
+> payload-free telemetry가 처음으로 원인을 연결했다: `environmentConfig/read`의
+> `configPaths` 1건은 `invalid-host-path`, `fs/getMetadata`의 `path` 6건은
+> container namespace 2건과 host namespace 4건이다. 실제 model/turn은 0회,
+> child reap·schema·privacy 검증은 통과했다. 실제 path와 App Server의 config path
+> 생성 semantics는 보존·공개되지 않았으므로 mount 확대나 상대경로 자동 보정은
+> 하지 않는다. 두 config 배열의 매핑/fail-closed 오프라인 계약 테스트를 추가했고
+> 전체 `381 tests / 11 skipped`가 통과했다. 아래 과거 안내보다 이 문단과 LOG-072를
+> 우선한다.
+> 아래의 이전 LOG-071 안내는 역사 기록이다.
+
 > 최우선: [LOG-071](feynman-work-log/LOG-071-canonical-remote-binding-verification-20260913.md).
 > 승인된 추가 진단은 `-32603`, 모델 생성 0회다. 거부 이유 container 2 / host 4 /
 > invalid-host 1은 예외 분기별 집계다. raw POSIX도 host 분기로 떨어지는 로컬

@@ -1,6 +1,15 @@
 # feynman-thinking 작업 상태
 
-최우선 재개 지점: [LOG-071](feynman-work-log/LOG-071-canonical-remote-binding-verification-20260913.md).
+최우선 재개 지점: [LOG-072](feynman-work-log/LOG-072-startup-revalidation-paired-cause-20260913.md).
+사용자 승인 model-free startup 진단 정확히 1회가 완료됐고 종료 코드는 0이지만,
+App Server `initialize` 뒤 `thread/start`가 `-32603 remote-environment-error`로
+차단됐다. payload-free attribution으로 `environmentConfig/read → invalid-host-path
+→ configPaths` 1건과 `fs/getMetadata → path` 6건(container namespace 2, host
+namespace 4)을 확인했다. `turn/start`·model generation은 0회이며 child reap,
+report schema, privacy 검증은 통과했다. 실제 경로 값과 App Server의 config path
+생성 semantics는 미확정이므로 mount 확대·상대경로 자동 보정·추가 외부 실행은 하지
+않는다. 두 config 배열의 namespace/relative/non-string 계약 회귀 테스트를 추가했고
+전체 `381 tests / 11 skipped`가 통과했다. 아래의 이전 재개 지점과 집계는 역사 기록이다.
 승인된 namespace 진단 1회는 `-32603`, turn/model 생성 0회로 종료됐다.
 거부 사유는 container 2 / host 4 / invalid-host 1이다. 로컬 재현에서 raw POSIX
 경로도 host로 분류됨을 확인했으므로 이 수치를 실제 경로 namespace로 단정하지
