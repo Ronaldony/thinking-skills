@@ -137,8 +137,13 @@ thread ID, instruction source path는 읽어 저장하지 않았다.
 
 ## 저장 상태
 
-- 이번 보정은 다음 commit으로 저장할 예정이다.
-- push 후 원격 branch SHA와 해당 commit의 CI 결과를 확인한다.
+- commit: `44e8b96 fix: classify missing startup telemetry safely`
+- `origin/feat/feynman-thinking-v0.5-draft` push 완료; 원격 SHA는
+  `44e8b967868d1db9e2b92fa64f5a9e0227ebc208`로 확인했다.
+- 해당 SHA의 CI 7개가 모두 `completed / success`다: `validate-feynman`,
+  `validate-feynman-unit-diagnostic`, `validate-feynman-subscription-readiness`,
+  `validate-feynman-remote-exec-reference`, `validate-feynman-docker-reference`,
+  `validate-feynman-remote-patch-reference`, `validate-feynman-codex-reference`.
 - main 병합과 force push는 하지 않는다.
 
 이 문서는 개발 담당 Codex용 작업 로그이며 baseline candidate나 평가 prompt로 전달하지
