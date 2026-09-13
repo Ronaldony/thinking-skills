@@ -142,7 +142,7 @@ python -c "from pathlib import Path; import json; from jsonschema import Draft20
 
 Results:
 
-- full suite: `Ran 418 tests in 14.255s`, `OK (skipped=11)`;
+- full suite: `Ran 419 tests in 13.923s`, `OK (skipped=11)`;
 - schema validation: `schema_files=17 errors=0`;
 - compile and `git diff --check`: exit `0`;
 - the 11 skips remain host-capability/Windows/Node/Docker/symlink conditions;

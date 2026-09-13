@@ -6,7 +6,7 @@
 > rejection 0을 fail-closed로 연결했다. Windows parent-pipe 종료 정리와 atomic
 > telemetry 저장도 고쳤다. pinned remote-boundary Docker fixture에서 direct Linux와
 > Windows path proxy의 순차 exec-server lifecycle이 응답 1..4, process exit 0,
-> sandboxDenied false, 요청/응답 shape 동일로 통과했다. 전체 `418 tests OK,
+> sandboxDenied false, 요청/응답 shape 동일로 통과했다. 전체 `419 tests OK,
 > 11 skipped`, schema 17개 `errors=0`이다. 실제 subscription startup/auth/model/
 > evaluation은 0회이며, user PNG와 `.tmp` 증거는 보존된다. 다음 개입 경계는 새
 > 최종 startup gate를 쓰는 실제 subscription diagnostic 1회 선택이다. 실패 시

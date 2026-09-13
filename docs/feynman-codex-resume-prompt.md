@@ -7,7 +7,7 @@
 > mapping rejection 0을 모두 요구한다. Windows named-pipe shutdown, atomic
 > telemetry, pending counter 갱신도 보강됐다. 고정 remote-boundary Docker fixture의
 > 직접 Linux 실행과 Windows path proxy 실행은 순차 exec-server lifecycle로
-> `rpc-path-contract-equivalent`를 통과했다. 전체 `418 tests OK, 11 skipped`,
+> `rpc-path-contract-equivalent`를 통과했다. 전체 `419 tests OK, 11 skipped`,
 > schema 17개 `errors=0`이다. 실제 subscription startup/auth/model/evaluation은
 > 이 checkpoint에서 0회다. 다음 사람 개입 지점은 새 최종 gate를 사용하는 실제
 > subscription startup diagnostic 1회 선택이며, 자동 재시도·fallback·baseline은
