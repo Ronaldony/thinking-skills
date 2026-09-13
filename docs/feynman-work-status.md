@@ -1,6 +1,6 @@
 # feynman-thinking 작업 상태
 
-최우선 재개 지점: [LOG-070](feynman-work-log/LOG-070-payload-free-request-field-attribution-20260913.md).
+최우선 재개 지점: [LOG-071](feynman-work-log/LOG-071-canonical-remote-binding-verification-20260913.md).
 승인된 namespace 진단 1회는 `-32603`, turn/model 생성 0회로 종료됐다.
 거부 사유는 container 2 / host 4 / invalid-host 1이다. 로컬 재현에서 raw POSIX
 경로도 host로 분류됨을 확인했으므로 이 수치를 실제 경로 namespace로 단정하지
@@ -10,8 +10,9 @@ skipped가 통과했다. 선언된 scalar path field의 상대경로/비문자�
 후 승인된 startup 재검증을 1회 수행했지만 `-32603`으로 다시 차단됐다. thread/turn/
 model generation은 0회였다. method/reason의 주변 집계로는 원인을 더 좁힐 수 없어,
 payload 없는 method→reason→field attribution telemetry를 추가했다. 다음은 이를
-포함한 별도 승인 model-free startup 1회다. 아래의 이전 재개 지점 및 해석은 역사
-기록이며 LOG-070을 우선한다.
+포함한 별도 승인 model-free startup 1회다. canonical remote binding이 현재
+attribution proxy를 가리키는 것도 확인했다. 아래의 이전 재개 지점 및 해석은
+역사 기록이며 LOG-071을 우선한다.
 
 현재 재개 지점: [LOG-065](feynman-work-log/LOG-065-namespace-rejection-reason-split-20260913.md).
 payload-free rejection reason telemetry와 ephemeral App Server `thread/start`

@@ -1,6 +1,6 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최우선: [LOG-070](feynman-work-log/LOG-070-payload-free-request-field-attribution-20260913.md).
+> 최우선: [LOG-071](feynman-work-log/LOG-071-canonical-remote-binding-verification-20260913.md).
 > 승인된 추가 진단은 `-32603`, 모델 생성 0회다. 거부 이유 container 2 / host 4 /
 > invalid-host 1은 예외 분기별 집계다. raw POSIX도 host 분기로 떨어지는 로컬
 > 재현이 있어 실제 namespace 확정 증거가 아니다. method와 reason도 개별
@@ -11,7 +11,8 @@
 > 수정 후 startup 재검증 1회도 수행했지만 `-32603`으로 다시 차단됐다. method/reason의
 > 개별 집계 공백을 닫는 field attribution telemetry를 추가했으며, 다음 startup
 > 재검증은 별도 승인 없이는
-> 실행하지 않는다. 아래 과거 안내보다 이 문단과 LOG-070을 우선한다.
+> 실행하지 않는다. canonical remote binding이 현재 attribution proxy를 가리키는
+> 것도 확인했다. 아래 과거 안내보다 이 문단과 LOG-071을 우선한다.
 
 > 최신: [LOG-065](feynman-work-log/LOG-065-namespace-rejection-reason-split-20260913.md).
 > rejection reason telemetry와 ephemeral `thread/start` 진단기를 구현했다. 첫

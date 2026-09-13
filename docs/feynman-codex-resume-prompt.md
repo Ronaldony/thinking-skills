@@ -1,6 +1,6 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
-> 먼저 `docs/feynman-work-log/LOG-070-payload-free-request-field-attribution-20260913.md`를
+> 먼저 `docs/feynman-work-log/LOG-071-canonical-remote-binding-verification-20260913.md`를
 > 읽어라. 승인된 추가 startup 진단 1회는 완료됐고 `-32603`, 모델 생성 0회다.
 > container 2 / host 4 / invalid-host 1은 실제 namespace를 확정하지 않는다.
 > raw POSIX 경로의 host fallback과 별개 method/reason 집계의 한계를 로컬에서
@@ -10,7 +10,8 @@
 > scalar path field의 fail-open은 수정됐고 전체 376 tests/11 skipped가 통과했다.
 > 승인된 수정 후 startup 재검증 1회도 수행했지만 `-32603`으로 다시 차단됐다.
 > method→reason→field payload-free telemetry를 구현했으며, 다음은 이를 포함한
-> 별도 승인 startup diagnostic 1회다.
+> 별도 승인 startup diagnostic 1회다. canonical remote binding은 현재 attribution
+> proxy를 가리키는 것으로 확인됐다.
 > 아래 안내는 역사 기록이다.
 
 > 현재는 `docs/feynman-work-log/LOG-065-namespace-rejection-reason-split-20260913.md`를
