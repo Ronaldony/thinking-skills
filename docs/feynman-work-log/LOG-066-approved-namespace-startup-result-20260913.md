@@ -138,6 +138,23 @@ not affect execution or change files.
 
 ## Commit/push
 
-The result and interpretation corrections are recorded in a feature-branch
-documentation commit. Final commit/push and CI evidence will be appended after
-execution. The two user PNGs remain untracked. No main merge or force push.
+The result and interpretation corrections were committed as
+`a2f1e753df6ea6fcfa87ff28cdf3a6513f2a45ec` and pushed normally with
+`git push origin feat/feynman-thinking-v0.5-draft` (33c0730..a2f1e75).
+
+```powershell
+$diagnosticSha = git rev-parse HEAD
+gh run list --repo Ronaldony/thinking-skills --commit $diagnosticSha --limit 20 --json databaseId,workflowName,status,conclusion
+git status --short --branch
+```
+
+All seven workflows for that exact SHA completed successfully. Run IDs:
+34736432353 (subscription-readiness), 34736432345 (validate-feynman),
+34736432354 (docker-reference), 34736432360 (unit-diagnostic),
+34736432349 (remote-patch-reference), 34736432359 (remote-exec-reference),
+34736432368 (codex-reference). These CI checks do not validate live subscription
+startup or model behavior. Status showed the feature branch synchronized with
+origin, with only the two user PNGs untracked.
+
+This CI receipt is a subsequent documentation-only commit, not part of the SHA
+whose CI results are recorded above. No main merge or force push.
