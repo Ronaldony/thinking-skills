@@ -1,16 +1,14 @@
 # feynman-thinking 작업 상태
 
-최우선 재개 지점: [LOG-076](feynman-work-log/LOG-076-docker-recovered-startup-path-boundary-20260913.md).
-Docker Desktop recovery 후 고정 runner image와 ChatGPT subscription control plane으로
-수정된 `thread/start` model-free diagnostic `-08`을 정확히 1회 실행했다. Docker
-`29.7.2|linux|aarch64`, image `linux|arm64`, child exit 0, initialize 완료를
-확인했지만 `thread/start`는 `-32603 remote-environment-error`로 차단됐다. request
-mapping rejection은 `environmentConfig/read.cwd:1`과 `fs/getMetadata.path:8` 모두
-`host-path-outside-declared-mount`였다. 실제 turn/model generation은 0회다. App
-Server가 repository root에서 implicit discovery하지 않도록 startup subprocess의
-`cwd=candidate` 보정을 적용하고 targeted 55 tests/compileall/diff check를 통과했다.
-새 startup 재검증은 자동 반복하지 않으며 다음 승인 지점이다. 아래 LOG-075 문단은
-역사 기록이다.
+최우선 재개 지점: [LOG-077](feynman-work-log/LOG-077-native-path-mapping-startup-revalidation-20260913.md).
+정확한 full-runner binding 경로를 사용한 `-24` model-free startup 1회가 완료됐다.
+Docker `29.7.2|linux|aarch64`, image/Codex `linux|arm64`/`0.154.0`, child exit 0,
+initialize 완료, startup request mapping rejection 0, response mapping rejection 0을
+확인했다. native Windows path-mapping은 통과했지만 `thread/start`는 여전히
+`-32603 remote-environment-error`로 차단됐다. thread/turn/model generation은 0회다.
+유효한 binding은 `C:\DevWorks\feynman-full-runner-binding-20260913-01` 아래에 있다.
+추가 startup 반복과 실제 model evaluation은 이 environment lifecycle blocker가
+해결되고 별도 승인될 때까지 수행하지 않는다. 아래 LOG-076 이하 문단은 역사 기록이다.
 
 최우선 재개 지점: [LOG-072](feynman-work-log/LOG-072-startup-revalidation-paired-cause-20260913.md).
 사용자 승인 model-free startup 진단 정확히 1회가 완료됐고 종료 코드는 0이지만,

@@ -20,7 +20,6 @@ import threading
 from typing import Any
 
 try:
-    from .feynman_path_mapping import CONTAINER_DESTINATIONS
     from .feynman_remote_exec_environment import validate_files
     from .feynman_rpc_path_proxy import TELEMETRY_OVERRIDE_ENV
     from .feynman_subscription_control_plane_preflight import (
@@ -32,7 +31,6 @@ try:
         _validate_control_files, prepare_full_runner_executor_wiring,
     )
 except ImportError:
-    from feynman_path_mapping import CONTAINER_DESTINATIONS
     from feynman_remote_exec_environment import validate_files
     from feynman_rpc_path_proxy import TELEMETRY_OVERRIDE_ENV
     from feynman_subscription_control_plane_preflight import (
@@ -55,10 +53,22 @@ _SAFE_NOTIFICATION_METHODS = frozenset({
     "environment/connection/updated",
     "error",
     "thread/closed",
+    "thread/environment/connected",
+    "thread/environment/disconnected",
     "thread/started",
     "thread/status/changed",
     "warning",
 })
+
+# The startup probe must exercise the configured remote environment, not the
+# repository that happens to launch the probe.  These are Codex config keys
+# (not thread/start fields) and are intentionally scoped to this probe's
+# transient App Server process.  The actual smoke executor keeps its own
+# candidate cwd and --skip-git-repo-check contract unchanged.
+APP_SERVER_LOCAL_ISOLATION_OVERRIDES = (
+    "project_root_markers=[]",
+    "project_doc_max_bytes=0",
+)
 
 _ERROR_SIGNAL_TERMS = {
     "mentions_environment": ("environment",),
@@ -75,15 +85,13 @@ _ERROR_SIGNAL_TERMS = {
 
 
 def _thread_start_params(*, model: str) -> dict[str, Any]:
-    # thread/start cwd uses the selected environment's native syntax.  The
-    # canonical candidate destination is fixed by the validated boundary
-    # profile and must not be replaced with the Windows host source.  The
-    # environment is selected by the configured remote-environment document;
-    # ThreadStartParams has no ad-hoc environments/runtimeWorkspaceRoots fields.
-    cwd = CONTAINER_DESTINATIONS["candidate_dir"]
+    # The canonical remote environment document declares candidate as its
+    # default and owns the environment-native cwd.  Omitting the optional
+    # thread/start cwd prevents App Server's local discovery cwd from being
+    # reintroduced into environmentConfig/read.  Do not manufacture the
+    # unsupported environments/runtimeWorkspaceRoots fields here.
     return {
         "model": model,
-        "cwd": cwd,
         "approvalPolicy": "never",
         "sandbox": "workspace-write",
         "ephemeral": True,
@@ -250,19 +258,25 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
     if not isinstance(model, str) or not model or model.lower().startswith("mock"):
         raise ValueError("runner job has invalid subscription model")
     control_home, _ = _validate_control_files(job, remote_environment_path)
-    wiring = prepare_full_runner_executor_wiring(
-        codex_bin=str(codex_bin), binding_path=binding_path,
-        runner_job_path=runner_job_path, boundary_profile_path=boundary_profile_path,
-        job=job, candidate_dir=candidate, node_bin=node_bin, adapter=adapter,
-        docker_bin=docker_bin, docker_config=docker_config,
-        docker_image_id=docker_image_id, timeout_seconds=timeout_seconds,
-    )
+    try:
+        wiring = prepare_full_runner_executor_wiring(
+            codex_bin=str(codex_bin), binding_path=binding_path,
+            runner_job_path=runner_job_path, boundary_profile_path=boundary_profile_path,
+            job=job, candidate_dir=candidate, node_bin=node_bin, adapter=adapter,
+            docker_bin=docker_bin, docker_config=docker_config,
+            docker_image_id=docker_image_id, timeout_seconds=timeout_seconds,
+        )
+    except ValueError as exc:
+        # Keep the underlying validation text private while identifying the
+        # bounded pre-start stage that rejected the wiring inputs.
+        raise StartupDiagnosticError("startup-wiring-input-invalid") from exc
     with tempfile.TemporaryDirectory(prefix="feynman-startup-diagnostic-") as temporary:
         temp_dir = Path(temporary).resolve()
         command = [_resolve_executable(str(codex_bin)), "app-server", "--strict-config"]
         for value in wiring["all_config_overrides"]:
             command.extend(("-c", value))
         for value in (
+            *APP_SERVER_LOCAL_ISOLATION_OVERRIDES,
             'web_search="disabled"', "hide_agent_reasoning=true",
             "show_raw_agent_reasoning=false", "check_for_update_on_startup=false",
         ):
@@ -270,10 +284,17 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
         command.append("--stdio")
         environment = _safe_exec_env(control_home, temp_dir)
         environment[TELEMETRY_OVERRIDE_ENV] = str(telemetry_path)
-        process = subprocess.Popen(
-            command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            env=environment, cwd=candidate, bufsize=0,
-        )
+        try:
+            process = subprocess.Popen(
+                command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                # The proxy can map only declared host mounts.  Keep the App
+                # Server's local cwd on the declared candidate mount, while the
+                # isolation overrides above prevent the host repository's project
+                # discovery from being pulled into the remote startup request.
+                env=environment, cwd=candidate, bufsize=0,
+            )
+        except ValueError as exc:
+            raise StartupDiagnosticError("startup-process-input-invalid") from exc
         assert process.stdin is not None and process.stdout is not None and process.stderr is not None
         received: queue.Queue[dict[str, Any] | None] = queue.Queue()
         reader = threading.Thread(
@@ -283,34 +304,51 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
         forced_shutdown = False
         process_tree_reaped = True
         try:
-            process.stdin.write(_request(1, "initialize", {
-                "clientInfo": {"name": "feynman-startup-diagnostic", "version": "0.1.0"},
-                "capabilities": {"experimentalApi": True},
-            }))
-            process.stdin.flush()
+            try:
+                process.stdin.write(_request(1, "initialize", {
+                    "clientInfo": {"name": "feynman-startup-diagnostic", "version": "0.1.0"},
+                    "capabilities": {"experimentalApi": True},
+                }))
+                process.stdin.flush()
+            except ValueError as exc:
+                raise StartupDiagnosticError("startup-protocol-write-initialize-invalid") from exc
             initialized, _ = _wait_for_thread_start(received, 1, timeout_seconds)
             if "error" in initialized:
                 raise StartupDiagnosticError("app-server-initialize-error")
-            process.stdin.write(_notification("initialized", {}))
-            process.stdin.write(_request(
-                2, "thread/start", _thread_start_params(model=model)))
-            process.stdin.flush()
+            try:
+                process.stdin.write(_notification("initialized", {}))
+                process.stdin.write(_request(
+                    2, "thread/start", _thread_start_params(model=model)))
+                process.stdin.flush()
+            except ValueError as exc:
+                raise StartupDiagnosticError("startup-protocol-write-thread-start-invalid") from exc
             response, notifications = _wait_for_thread_start(received, 2, timeout_seconds)
             thread = _thread_summary(response)
         finally:
             try:
                 process.stdin.close()
-            except OSError:
+            except (OSError, ValueError):
                 pass
             try:
                 process.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 forced_shutdown = True
                 process_tree_reaped = _stop_diagnostic_process(process)
-            stderr_text = process.stderr.read().decode("utf-8", errors="replace")
+            try:
+                stderr_text = process.stderr.read().decode("utf-8", errors="replace")
+            except (OSError, ValueError):
+                # The process may have closed its pipe before cleanup.  Raw
+                # stderr is never part of this artifact or its diagnostics.
+                stderr_text = ""
             reader.join(timeout=2)
-            process.stdout.close()
-            process.stderr.close()
+            try:
+                process.stdout.close()
+            except (OSError, ValueError):
+                pass
+            try:
+                process.stderr.close()
+            except (OSError, ValueError):
+                pass
         if process.returncode not in {0, None} and not forced_shutdown:
             raise StartupDiagnosticError("app-server-exit-" + _failure_category(stderr_text))
     try:
@@ -392,7 +430,24 @@ def main() -> int:
     except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError,
             subprocess.SubprocessError, queue.Empty) as exc:
         # Do not echo filesystem paths or peer-provided diagnostic text.
-        parser.exit(2, "error: startup diagnostic failed: startup-diagnostic-input-invalid\n")
+        if isinstance(exc, OSError):
+            label = "os-error"
+        elif isinstance(exc, (UnicodeDecodeError, json.JSONDecodeError)):
+            label = "json-error"
+        elif isinstance(exc, subprocess.SubprocessError):
+            label = "subprocess-error"
+        elif isinstance(exc, queue.Empty):
+            label = "queue-error"
+        else:
+            label = "value-error"
+        line = 0
+        traceback = exc.__traceback__
+        while traceback is not None:
+            line = traceback.tb_lineno
+            traceback = traceback.tb_next
+        parser.exit(2, "error: startup diagnostic failed: "
+                    "startup-diagnostic-input-invalid-" + label
+                    + "-line-" + str(line) + "\n")
     telemetry = result.get("proxy_telemetry") or {}
     print(json.dumps({
         "verdict": result["verdict"],

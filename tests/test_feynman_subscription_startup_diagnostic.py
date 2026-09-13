@@ -7,21 +7,28 @@ import tempfile
 import unittest
 
 from tooling.feynman_subscription_startup_diagnostic import (
-    StartupDiagnosticError, _safe_proxy_telemetry, _thread_start_params,
+    APP_SERVER_LOCAL_ISOLATION_OVERRIDES, StartupDiagnosticError,
+    _SAFE_NOTIFICATION_METHODS, _safe_proxy_telemetry, _thread_start_params,
     _thread_summary, _wait_for_thread_start,
 )
 
 
 class SubscriptionStartupDiagnosticTests(unittest.TestCase):
+    def test_probe_isolates_local_project_discovery(self):
+        self.assertEqual(
+            APP_SERVER_LOCAL_ISOLATION_OVERRIDES,
+            ("project_root_markers=[]", "project_doc_max_bytes=0"),
+        )
+
     def test_thread_start_is_ephemeral_and_has_no_turn_or_prompt(self):
         params = _thread_start_params(model="gpt-5.6-luna")
         self.assertEqual(
-            set(params), {"model", "cwd", "approvalPolicy", "sandbox", "ephemeral"}
+            set(params), {"model", "approvalPolicy", "sandbox", "ephemeral"}
         )
         self.assertTrue(params["ephemeral"])
         self.assertEqual(params["approvalPolicy"], "never")
         self.assertEqual(params["sandbox"], "workspace-write")
-        self.assertEqual(params["cwd"], "/run/candidate")
+        self.assertNotIn("cwd", params)
         self.assertNotIn("environments", params)
         self.assertNotIn("runtimeWorkspaceRoots", params)
         serialized = json.dumps(params)
@@ -81,6 +88,15 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
         self.assertEqual(response["id"], 2)
         self.assertEqual(notifications, {"unknown": 1})
         self.assertNotIn("SYNTHETIC_PRIVATE", json.dumps(notifications))
+
+    def test_environment_connection_notification_uses_current_schema_name(self):
+        received = queue.Queue()
+        received.put({"method": "thread/environment/connected", "params": {}})
+        received.put({"id": 2, "error": {"code": -32603, "message": "environment failed"}})
+        response, notifications = _wait_for_thread_start(received, 2, 10)
+        self.assertEqual(response["id"], 2)
+        self.assertEqual(notifications, {"thread/environment/connected": 1})
+        self.assertIn("thread/environment/connected", _SAFE_NOTIFICATION_METHODS)
 
     def test_missing_proxy_telemetry_is_fixed_and_payload_free(self):
         with tempfile.TemporaryDirectory() as root:

@@ -487,11 +487,11 @@ def run_proxy(
                 error_code = None
                 if response and isinstance(response.get("error"), dict):
                     error_code = response["error"].get("code")
-                telemetry.response_seen(error_code, malformed=response is None)
                 request_method = None
                 if response and type(response.get("id")) in {str, int}:
                     with pending_lock:
                         request_method = pending_methods.pop(response["id"], None)
+                telemetry.response_seen(error_code, malformed=response is None)
                 if (read_limit is not None and request_method == "fs/readFile"
                         and response is not None and "error" not in response
                         and not _read_response_within_limit(response, read_limit)):

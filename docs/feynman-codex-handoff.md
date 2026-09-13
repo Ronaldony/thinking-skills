@@ -1,14 +1,14 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최우선: [LOG-076](feynman-work-log/LOG-076-docker-recovered-startup-path-boundary-20260913.md).
-> Docker recovery 후 fixed runner image와 ChatGPT subscription control plane으로
-> `-08` model-free startup을 정확히 1회 실행했다. Docker/initialize/child reap은
-> 통과했지만 `thread/start`가 `-32603 remote-environment-error`로 차단됐고,
-> request mapping은 `environmentConfig/read.cwd:1` 및 `fs/getMetadata.path:8`의
-> `host-path-outside-declared-mount`였다. turn/model generation은 0회다. App Server가
-> repository root를 implicit discovery하지 않도록 startup `cwd=candidate` 보정을
-> 적용해 targeted 55 tests와 compile/diff 검증을 통과했다. 새 외부 startup 검증은
-> 자동 반복하지 않고 별도 승인 지점으로 남긴다. 아래 LOG-075 안내는 역사 기록이다.
+> 최우선: [LOG-077](feynman-work-log/LOG-077-native-path-mapping-startup-revalidation-20260913.md).
+> 정확한 binding 경로의 `-24` model-free startup에서 Docker/image/Codex parity,
+> initialize, child reap, native path mapping rejection 0을 확인했지만 `thread/start`는
+> `-32603 remote-environment-error`로 차단됐다. turn/model generation은 0회다.
+> binding은 `C:\DevWorks\feynman-full-runner-binding-20260913-01` 아래이며, 이전
+> `C:\Users\wotmd\...` 경로는 입력 오류였다. path mapping은 현재 green으로 기록하고,
+> 남은 App Server↔remote exec-server environment lifecycle contract가 해결되기 전에는
+> 추가 startup 반복·model turn·baseline 평가를 수행하지 않는다. 아래 LOG-076 이하는
+> 역사 기록이다.
 
 > 최우선: [LOG-072](feynman-work-log/LOG-072-startup-revalidation-paired-cause-20260913.md).
 > 사용자 승인 startup diagnostic 정확히 1회는 종료 코드 0으로 끝났지만

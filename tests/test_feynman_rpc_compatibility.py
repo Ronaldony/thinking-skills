@@ -40,10 +40,15 @@ class CompatibilityTests(unittest.TestCase):
         self.assertEqual(json.dumps(message), before)
 
     def test_invalid_config_groups_and_protected_paths_are_rejected(self):
-        for value in (['file:///run/candidate/a'], [['relative']], [[None]],
+        for value in (['file:///run/candidate/a'], [[None]],
                       [['file:///C:/private/a']], [[['file:///run/candidate/a']]]):
             with self.subTest(value=value), self.assertRaises(RpcPathMappingError):
                 self.mapper.map_request({'method': 'environmentConfig/read', 'params': {'configPaths': value}})
+        mapped = self.mapper.map_request({
+            'method': 'environmentConfig/read',
+            'params': {'configPaths': [['relative']]},
+        })
+        self.assertEqual(mapped['params']['configPaths'], [['/run/candidate/relative']])
 
     def test_canonicalize_windows_path_is_mapped(self):
         self.assertEqual(self.mapper.map_request({'method': 'fs/canonicalize', 'params': {

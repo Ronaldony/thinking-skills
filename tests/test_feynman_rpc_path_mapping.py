@@ -87,13 +87,29 @@ class RpcPathMappingTests(unittest.TestCase):
         self.assertEqual(mapped["params"]["configPaths"], [["/run/candidate/config.toml"]])
         self.assertEqual(mapped["params"]["requirementsPaths"], [["/run/home/requirements.toml"]])
 
-    def test_environment_config_path_groups_reject_relative_values(self):
-        for field in ("configPaths", "requirementsPaths"):
-            with self.subTest(field=field), self.assertRaisesRegex(
-                RpcPathMappingError, "host path must be absolute"):
+    def test_environment_config_relative_values_use_candidate_mount(self):
+        mapped = self.mapper.map_request({
+            "method": "environmentConfig/read",
+            "params": {
+                "configPaths": [["config.toml"]],
+                "requirementsPaths": [["requirements.toml", "nested/requirements.toml"]],
+            },
+        })
+        self.assertEqual(
+            mapped["params"]["configPaths"], [["/run/candidate/config.toml"]],
+        )
+        self.assertEqual(
+            mapped["params"]["requirementsPaths"],
+            [["/run/candidate/requirements.toml", "/run/candidate/nested/requirements.toml"]],
+        )
+
+    def test_environment_config_ambiguous_or_traversal_is_rejected(self):
+        for value, message in (("..\\secret.toml", "ambiguous"), ("../secret.toml", "unsafe")):
+            with self.subTest(value=value), self.assertRaisesRegex(
+                RpcPathMappingError, message):
                 self.mapper.map_request({
                     "method": "environmentConfig/read",
-                    "params": {field: [["config.toml"]]},
+                    "params": {"configPaths": [[value]]},
                 })
 
     def test_environment_config_path_groups_reject_non_string_items(self):

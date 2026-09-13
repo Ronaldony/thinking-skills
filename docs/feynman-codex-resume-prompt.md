@@ -1,15 +1,14 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 현재 최우선 재개 지점은
-> `docs/feynman-work-log/LOG-076-docker-recovered-startup-path-boundary-20260913.md`다.
-> Docker recovery 후 fixed image를 사용한 `-08` model-free startup은 정확히 1회
-> 실행됐고 Docker/initialize/child reap은 통과했다. 그러나 `thread/start`는
-> `-32603 remote-environment-error`로 차단됐으며 `environmentConfig/read.cwd:1`,
-> `fs/getMetadata.path:8`이 모두 `host-path-outside-declared-mount`였다. turn/model
-> generation은 0회다. startup App Server의 process cwd를 candidate로 제한하는 local
-> 보정을 적용했고 targeted 55 tests/compileall/diff check가 통과했다. 같은 startup
-> command는 자동 반복하지 말고, 다음 외부 검증은 별도 승인 후 수행하라. 아래 LOG-075
-> 블록은 역사 기록이다.
+> `docs/feynman-work-log/LOG-077-native-path-mapping-startup-revalidation-20260913.md`다.
+> 정확한 binding 경로로 수행한 유효한 `-24` model-free startup은 Docker/image/version
+> parity, initialize, child reap, native path mapping rejection 0을 통과했지만
+> `thread/start`가 `-32603 remote-environment-error`로 차단됐다. turn/model generation은
+> 0회다. binding은 `C:\DevWorks\feynman-full-runner-binding-20260913-01` 아래이며,
+> 이전 `C:\Users\wotmd\...` 경로는 잘못된 입력이었다. 추가 startup 반복과 실제 평가를
+> 자동 실행하지 말고, App Server↔remote exec-server environment lifecycle contract를
+> 먼저 해결하라. 아래 LOG-076 이하 블록은 역사 기록이다.
 
 > 현재 최우선 재개 지점은
 > `docs/feynman-work-log/LOG-072-startup-revalidation-paired-cause-20260913.md`다.

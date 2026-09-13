@@ -168,7 +168,7 @@ class RpcPathProxyTests(unittest.TestCase):
         self.assertEqual(reason, "invalid-path-array-shape")
         self.assertEqual(field, "configPaths")
 
-    def test_relative_config_path_has_specific_rejection_reason(self):
+    def test_relative_environment_config_path_is_bounded_to_candidate(self):
         mapper = RpcPathMapper.from_mounts([
             {"source": r"C:\DevWorks\candidate", "destination": "/run/candidate", "access": "rw"},
         ])
@@ -177,10 +177,11 @@ class RpcPathProxyTests(unittest.TestCase):
             "params": {"cwd": "/run/candidate", "configPaths": [["config.toml"]]},
         }).encode("utf-8")
         child, error, reason, field = _map_request_payload_with_reason(mapper, raw)
-        self.assertIsNone(child)
-        self.assertIsNotNone(error)
-        self.assertEqual(reason, "host-path-not-absolute")
-        self.assertEqual(field, "configPaths")
+        self.assertIsNotNone(child)
+        self.assertIsNone(error)
+        self.assertIsNone(reason)
+        self.assertIsNone(field)
+        self.assertEqual(json.loads(child)["params"]["configPaths"], [["/run/candidate/config.toml"]])
 
     def test_host_traversal_has_specific_rejection_reason(self):
         mapper = RpcPathMapper.from_mounts([

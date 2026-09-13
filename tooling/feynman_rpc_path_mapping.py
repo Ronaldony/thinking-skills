@@ -174,6 +174,27 @@ class RpcPathMapper:
             return self._declared_container_path(value).as_posix()
         return self._host_to_container_path(value).as_posix()
 
+    def remote_environment_path(self, value: str) -> str:
+        """Resolve one relative environment-config path inside candidate.
+
+        Codex 0.154.0 may emit relative entries in the executor-internal
+        ``environmentConfig/read`` path arrays.  Those fields are relative to
+        the selected remote environment, not a Windows host path.
+        Keep this compatibility rule narrow: only POSIX relative paths without
+        traversal or backslash ambiguity are accepted, and they are anchored
+        at the fixed candidate destination.
+        """
+        if not isinstance(value, str) or not value:
+            raise RpcPathMappingError("declared path field must be a string")
+        if value.startswith("/") or value.startswith("file:") or _is_windows_path(value):
+            return self.host_to_container(value)
+        if "\\" in value:
+            raise RpcPathMappingError("relative requirements path is ambiguous")
+        relative = PurePosixPath(value)
+        if relative.is_absolute() or not relative.parts or "." in relative.parts or ".." in relative.parts:
+            raise RpcPathMappingError("relative requirements path is unsafe")
+        return PurePosixPath(CONTAINER_DESTINATIONS["candidate_dir"], *relative.parts).as_posix()
+
     def container_to_host(self, value: str) -> str:
         if value.startswith("file:"):
             kind, path = _file_uri_path(value)
@@ -216,7 +237,12 @@ class RpcPathMapper:
                 for item in values:
                     if not isinstance(item, list) or not all(isinstance(x, str) for x in item):
                         raise RpcPathMappingError("config path groups must contain only paths")
-                    mapped_values.append([self.host_to_container(x) for x in item])
+                    mapper = (
+                        self.remote_environment_path
+                        if method == "environmentConfig/read"
+                        else self.host_to_container
+                    )
+                    mapped_values.append([mapper(x) for x in item])
                 mapped_params[field] = mapped_values
             except RpcPathMappingError as exc:
                 raise RpcPathMappingError(str(exc), path_field=field) from exc
