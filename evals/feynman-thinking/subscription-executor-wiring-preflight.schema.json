@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Feynman subscription executor wiring preflight v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "verdict": {"const": "subscription-executor-wiring-ready"},
+    "run_id": {"type": "string", "minLength": 1},
+    "case_id": {"const": "tools-10"},
+    "condition_id": {"enum": ["baseline", "feynman-v05"]},
+    "model": {"type": "string", "minLength": 1},
+    "lineage": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "runner_job_sha256": {"$ref": "#/$defs/sha256"},
+        "boundary_profile_sha256": {"$ref": "#/$defs/sha256"},
+        "full_runner_binding_sha256": {"$ref": "#/$defs/sha256"},
+        "candidate_prompt_sha256": {"$ref": "#/$defs/sha256"},
+        "runtime_sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+        "adapter_sha256": {"$ref": "#/$defs/sha256"},
+        "docker_image_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      },
+      "required": ["runner_job_sha256", "boundary_profile_sha256", "full_runner_binding_sha256", "candidate_prompt_sha256", "runtime_sha256", "adapter_sha256", "docker_image_id"]
+    },
+    "checks": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "runner_job_profile_valid": {"const": true},
+        "binding_valid": {"const": true},
+        "filesystem_candidate_skill_set_exact": {"const": true},
+        "explicit_skill_invocation_bound": {"const": true},
+        "skill_discovery_exact": {"const": true},
+        "transient_skill_isolation_bound": {"const": true},
+        "full_runner_mcp_bound": {"const": true},
+        "command_builder_bound": {"const": true},
+        "model_calls": {"const": 0},
+        "authentication_used": {"const": false}
+      },
+      "required": ["runner_job_profile_valid", "binding_valid", "filesystem_candidate_skill_set_exact", "explicit_skill_invocation_bound", "skill_discovery_exact", "transient_skill_isolation_bound", "full_runner_mcp_bound", "command_builder_bound", "model_calls", "authentication_used"]
+    },
+    "skill_exposure": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "expected_candidate_skills": {"$ref": "#/$defs/skillNames"},
+        "filesystem_observed_candidate_skills": {"$ref": "#/$defs/skillNames"},
+        "app_server": {"$ref": "#/$defs/appServerSkills"},
+        "task_invocation": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "prompt_sha256": {"$ref": "#/$defs/sha256"},
+            "explicit_marker": {"enum": ["$feynman-thinking", null]},
+            "explicit_invocation_expected": {"type": "boolean"},
+            "prompt_payload_preserved": {"const": false}
+          },
+          "required": ["prompt_sha256", "explicit_marker", "explicit_invocation_expected", "prompt_payload_preserved"]
+        }
+      },
+      "required": ["expected_candidate_skills", "filesystem_observed_candidate_skills", "app_server", "task_invocation"]
+    },
+    "tool_wiring": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "mcp": {"$ref": "#/$defs/mcp"},
+        "command_plan": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "builder": {"const": "feynman_subscription_smoke_exec.build_codex_exec_command"},
+            "base_config_override_count": {"const": 5},
+            "full_runner_override_count": {"const": 13},
+            "transient_skill_disable_override_count": {"type": "integer", "minimum": 0},
+            "full_runner_and_skill_override_count": {"type": "integer", "minimum": 13},
+            "argv_terminates_with_stdin_marker": {"const": true},
+            "model_arg_bound": {"const": true},
+            "candidate_cwd_bound": {"const": true},
+            "full_runner_mcp_bound": {"const": true},
+            "transient_skill_isolation_bound": {"const": true},
+            "command_payload_preserved": {"const": false}
+          },
+          "required": ["builder", "base_config_override_count", "full_runner_override_count", "transient_skill_disable_override_count", "full_runner_and_skill_override_count", "argv_terminates_with_stdin_marker", "model_arg_bound", "candidate_cwd_bound", "full_runner_mcp_bound", "transient_skill_isolation_bound", "command_payload_preserved"]
+        }
+      },
+      "required": ["mcp", "command_plan"]
+    },
+    "privacy": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "model_request_started": {"const": false},
+        "thread_started": {"const": false},
+        "turn_started": {"const": false},
+        "authentication_used": {"const": false},
+        "credential_files_read": {"const": false},
+        "control_codex_home_read": {"const": false},
+        "command_payload_preserved": {"const": false},
+        "candidate_prompt_payload_preserved": {"const": false},
+        "skill_discovery_paths_preserved": {"const": false}
+      },
+      "required": ["model_request_started", "thread_started", "turn_started", "authentication_used", "credential_files_read", "control_codex_home_read", "command_payload_preserved", "candidate_prompt_payload_preserved", "skill_discovery_paths_preserved"]
+    },
+    "scope": {"type": "string", "minLength": 1}
+  },
+  "required": ["schema_version", "verdict", "run_id", "case_id", "condition_id", "model", "lineage", "checks", "skill_exposure", "tool_wiring", "privacy", "scope"],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "skillNames": {"type": "array", "items": {"enum": ["feynman-thinking"]}, "uniqueItems": true, "maxItems": 1},
+    "appServerSkills": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "candidate_skill_names": {"$ref": "#/$defs/skillNames"},
+        "non_candidate_enabled_skill_count": {"const": 0},
+        "discovery_errors": {"const": 0},
+        "force_reload": {"const": true},
+        "skill_paths_preserved": {"const": false},
+        "descriptions_preserved": {"const": false},
+        "initial_non_candidate_enabled_skill_names": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "transiently_disabled_non_candidate_skill_count": {"type": "integer", "minimum": 0},
+        "disable_paths_preserved": {"const": false},
+        "second_pass_verified": {"const": true}
+      },
+      "required": ["candidate_skill_names", "non_candidate_enabled_skill_count", "discovery_errors", "force_reload", "skill_paths_preserved", "descriptions_preserved", "initial_non_candidate_enabled_skill_names", "transiently_disabled_non_candidate_skill_count", "disable_paths_preserved", "second_pass_verified"]
+    },
+    "mcp": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "server_name": {"const": "feynman_full_runner"},
+        "tool_names": {"type": "array", "prefixItems": [{"const": "feynman_read_candidate"}, {"const": "feynman_run_tests"}, {"const": "feynman_write_candidate"}], "items": false, "minItems": 3, "maxItems": 3},
+        "tools_error_present": {"const": false}
+      },
+      "required": ["server_name", "tool_names", "tools_error_present"]
+    }
+  }
+}

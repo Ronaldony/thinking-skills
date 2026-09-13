@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 from typing import Any, Mapping
 
 try:
@@ -453,6 +454,79 @@ def _validate_full_runner_binding(*, binding_path: Path, runner_job_path: Path,
     return override
 
 
+def prepare_full_runner_executor_wiring(*, codex_bin: str, binding_path: Path,
+                                        runner_job_path: Path,
+                                        boundary_profile_path: Path,
+                                        job: dict[str, Any],
+                                        candidate_dir: Path, node_bin: Path,
+                                        adapter: Path, docker_bin: Path,
+                                        docker_config: Path,
+                                        docker_image_id: str,
+                                        timeout_seconds: int) -> dict[str, Any]:
+    """Prepare the full-runner command and skill isolation without auth/model use."""
+    override = _validate_full_runner_binding(
+        binding_path=binding_path,
+        runner_job_path=runner_job_path,
+        boundary_profile_path=boundary_profile_path,
+        job=job,
+        node_bin=node_bin,
+        adapter=adapter,
+        docker_bin=docker_bin,
+        docker_config=docker_config,
+        docker_image_id=docker_image_id,
+        candidate_dir=candidate_dir,
+    )
+    # Imported lazily to keep this module's unit-test fixtures independent of
+    # the App Server probe module.  At runtime this module is fully loaded,
+    # so the probe's import of the command builder is not cyclic.
+    try:
+        from .feynman_skill_tool_wiring_preflight import _app_server_probe
+    except ImportError:
+        from feynman_skill_tool_wiring_preflight import _app_server_probe
+
+    wiring_root = Path(tempfile.mkdtemp(prefix="feynman-executor-wiring-"))
+    try:
+        isolated_codex_home = wiring_root / "codex-home"
+        candidate_home = wiring_root / "candidate-home"
+        temp_dir = wiring_root / "temp"
+        isolated_codex_home.mkdir()
+        candidate_home.mkdir()
+        temp_dir.mkdir()
+        resolved_codex = _resolve_executable(codex_bin)
+        app_server = _app_server_probe(
+            codex_bin=Path(resolved_codex),
+            codex_home=isolated_codex_home,
+            candidate_home=candidate_home,
+            temp_dir=temp_dir,
+            candidate=candidate_dir,
+            override=override,
+            expected_skills=job["skills"]["expected_candidate_skills"],
+            timeout_seconds=min(timeout_seconds, 30),
+        )
+    finally:
+        shutil.rmtree(wiring_root, ignore_errors=True)
+    all_overrides = tuple(app_server["transient_config_overrides"])
+    if all_overrides[:len(override.values)] != override.values:
+        raise ValueError("skill discovery changed the full-runner override prefix")
+    skill_overrides = all_overrides[len(override.values):]
+    model = job["versions"]["model"]
+    command = build_codex_exec_command(
+        executable=resolved_codex,
+        model=model,
+        candidate_dir=candidate_dir,
+        config_overrides=all_overrides,
+    )
+    if command[-1] != "-" or command.count("-c") != 5 + len(all_overrides):
+        raise ValueError("full-runner executor command has unexpected override count")
+    return {
+        "full_runner_override": override,
+        "skill_config_overrides": skill_overrides,
+        "all_config_overrides": all_overrides,
+        "command": command,
+        "app_server": app_server,
+    }
+
+
 def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, evaluator_case_path: Path,
                       runner_job_path: Path, boundary_profile_path: Path,
                       remote_environment_path: Path, output_dir: Path,
@@ -511,20 +585,24 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
     if model.lower().startswith("mock"):
         raise ValueError("subscription smoke executor refuses mock model IDs")
     candidate_dir = _directory(Path(paths["candidate_dir"]), "candidate directory")
+    full_runner_wiring = None
     full_runner_override = None
     if all(value is not None for value in full_runner_inputs):
-        full_runner_override = _validate_full_runner_binding(
+        full_runner_wiring = prepare_full_runner_executor_wiring(
+            codex_bin=codex_bin,
             binding_path=full_runner_binding_path,
             runner_job_path=runner_job_path,
             boundary_profile_path=boundary_profile_path,
             job=job,
+            candidate_dir=candidate_dir,
             node_bin=full_runner_node_bin,
             adapter=full_runner_adapter,
             docker_bin=full_runner_docker_bin,
             docker_config=full_runner_docker_config,
             docker_image_id=full_runner_image_id,
-            candidate_dir=candidate_dir,
+            timeout_seconds=timeout_seconds,
         )
+        full_runner_override = full_runner_wiring["full_runner_override"]
 
     control_home, remote_environment_path = _validate_control_files(job, remote_environment_path)
     auth = check_auth(control_home, codex_bin=codex_bin, timeout_seconds=min(timeout_seconds, 120))
@@ -551,11 +629,10 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
 
     executable = _resolve_executable(codex_bin)
     env = _safe_exec_env(control_home, control_temp)
-    command = build_codex_exec_command(
-        executable=executable,
-        model=model,
-        candidate_dir=candidate_dir,
-        config_overrides=full_runner_override.values if full_runner_override else (),
+    command = (
+        full_runner_wiring["command"] if full_runner_wiring is not None
+        else build_codex_exec_command(
+            executable=executable, model=model, candidate_dir=candidate_dir)
     )
 
     stderr_text = ""
@@ -610,6 +687,7 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
                 "strict_config": True,
                 "local_execution_disabled": True,
                 "full_runner_mcp_bound": full_runner_override is not None,
+                "transient_skill_isolation_bound": full_runner_wiring is not None,
             },
             "conversation": {
                 "thread_id": trace["thread_id"],
@@ -650,6 +728,7 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
                 "raw_auth_status_preserved": False,
                 "control_codex_home_contents_serialized": False,
                 "full_runner_binding_contents_serialized": False,
+                "skill_discovery_paths_serialized": False,
             },
             "limitations": [
                 "integration smoke only; result must not be used for Feynman skill-effect inference",

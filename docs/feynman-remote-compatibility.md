@@ -196,6 +196,36 @@ turn, subscription auth gate 성공, baseline/Feynman 비교가 아니다. 산�
 다음 단계는 binding에 연결된 candidate skill 노출·고정 command wiring을 모델 없이
 검증하는 것이며, 그 전에는 실제 smoke나 baseline을 시작하지 않는다.
 
+## LOG-056 결과 — executor wiring command-plan preflight
+
+`tooling/feynman_subscription_smoke_exec.py`에
+`prepare_full_runner_executor_wiring()`을 추가해 canonical executor가 실제 auth
+gate 전에 두 단계 App Server skill discovery를 수행하도록 연결했다. 첫 discovery의
+활성 non-candidate skill 경로는 disposable process 사이에서만 사용하고, 하나의
+통합 transient `skills.config` override로 전달한다. protected control home이나
+전역 config는 읽거나 수정하지 않는다.
+
+별도 `tooling/feynman_subscription_executor_wiring_preflight.py`는 같은 helper로
+command를 만들되 auth, thread/turn, model call을 시작하지 않는다. 실제 command
+payload와 경로·프롬프트 원문을 artifact에 저장하지 않고, builder 결속과 override
+개수만 기록한다. candidate boundary image와 full-runner adapter image는 서로 다른
+역할이므로 digest를 별도 lineage로 유지한다.
+
+세 모델 결과는
+`C:\DevWorks\feynman-subscription-executor-wiring-20260913-01`에 저장됐다.
+
+| 모델 | verdict | full-runner override | transient override | model/auth |
+|---|---|---:|---:|---|
+| gpt-5.6-luna | `subscription-executor-wiring-ready` | 13 | 1 | 0 / false |
+| gpt-5.6-terra | `subscription-executor-wiring-ready` | 13 | 1 | 0 / false |
+| gpt-5.6-sol | `subscription-executor-wiring-ready` | 13 | 1 | 0 / false |
+
+새 schema 검증은 `schema-valid=3`, exact command/argv/path payload key 검사는
+0건이었다. 이는 실행기 배선이 준비됐다는 뜻이지 ChatGPT subscription auth 성공,
+실제 model turn, candidate tool selection 또는 Feynman 성능 근거가 아니다.
+다음 사람 개입 지점은 보호된 평가 전용 로그인으로 auth gate를 별도 실행할지에
+대한 승인과, auth 성공 후 실제 smoke를 시작할지에 대한 승인이다.
+
 ## LOG-053 결과 — exact skill exposure와 fixed test wiring
 
 `tooling/feynman_skill_tool_wiring_preflight.py`가 LOG-052 binding을 실제

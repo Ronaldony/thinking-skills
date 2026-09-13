@@ -1,14 +1,14 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 2026-09-13 최신 재개 지점: 먼저
-> `docs/feynman-work-log/LOG-055-subscription-executor-fail-closed-inputs-20260913.md`를 읽어라.
-> canonical subscription smoke CLI에 full-runner binding, Node adapter, Docker
-> executable/config, immutable image ID 6개가 required로 추가됐다. structural
-> preflight 직후 auth/model 전에 binding lineage를 검증하고, 검증된 override만
-> 공용 command builder에 넣는다. 부분 입력은 auth 전에 거부된다. `355 tests OK,
-> 11 skipped`, model/auth 0회다. 다음은 이 required 입력과 transient
-> skill-disable override를 실제 smoke command plan artifact에 model-free로 결속하는
-> 것이다. 실제 model smoke, 자동 retry, baseline/frozen evaluation은 시작하지 마라.
+> `docs/feynman-work-log/LOG-056-subscription-executor-wiring-preflight-20260913.md`를 읽어라.
+> canonical executor가 full-runner required inputs와 two-pass skill discovery를
+> 검증하고 transient skill-disable override까지 실제 command builder에 자동
+> 연결했다. Luna/Terra/Sol 모두 `subscription-executor-wiring-ready`, full-runner
+> override 13개, transient override 1개, model/auth 0회를 기록했고 전체
+> `358 tests OK, 11 skipped`다. 실제 model smoke, 자동 retry, baseline/frozen
+> evaluation은 시작하지 마라. 다음은 별도 승인된 subscription auth gate와
+> 그 후의 model-turn smoke다.
 > `feynman_subscription_smoke_exec.py`의 공용 command builder에 LOG-053의
 > full-runner 13개 override와 transient skill-disable override를 연결했고,
 > Luna/Terra/Sol 모두 model-free preflight에서 `full-runner-skill-tool-wiring-ready`를

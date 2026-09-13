@@ -2,14 +2,13 @@
 
 작성일: 2026-09-09 (Asia/Seoul). 이 문서는 개발 담당 Codex의 인계 자료다. 평가 대상 candidate에게 전달하지 않는다.
 
-> 최신 상태(2026-09-13)는 [LOG-055](feynman-work-log/LOG-055-subscription-executor-fail-closed-inputs-20260913.md)을 우선한다.
-> canonical smoke executor CLI가 full-runner binding, Node adapter, Docker
-> executable/config, immutable image ID를 모두 required로 받게 되었고, structural
-> preflight 직후 auth/model 전에 binding identity와 digest를 검증한다. 검증된
-> full-runner override 13개가 공용 command builder에 들어가며 부분 입력은 auth
-> 전에 거부된다. `355 tests OK, 11 skipped`, model/auth 0회다. 다음은 이 입력과
-> transient skill-disable override를 Luna/Terra/Sol smoke command plan artifact에
-> model-free로 연결하는 것이다.
+> 최신 상태(2026-09-13)는 [LOG-056](feynman-work-log/LOG-056-subscription-executor-wiring-preflight-20260913.md)을 우선한다.
+> canonical executor가 required full-runner 입력을 검증한 뒤 two-pass App Server
+> skill discovery와 transient skill-disable override를 같은 command builder에
+> 자동 연결한다. Luna/Terra/Sol 모두 `subscription-executor-wiring-ready`를
+> 만들었고 full-runner 13개·transient 1개 override, MCP 3개, model/auth 0회를
+> 확인했다. `358 tests OK, 11 skipped`다. 실제 auth gate와 model turn은 아직
+> 별도 승인 지점이다.
 > `feynman_subscription_smoke_exec.py`의 실제 Codex command 조립을 공용 builder로
 > 연결하고, LOG-053의 two-pass skill isolation과 full-runner override가 세 모델의
 > model-free 실행에서 builder에 들어가는 것을 확인했다. full-runner override 13개,
@@ -57,11 +56,11 @@
 
 목표는 역사적 인물의 사고 방법을 문제 해결 스킬로 만드는 `Ronaldony/thinking-skills`에 리처드 파인만 스킬을 설계·구현·검증하는 것이다. 원본은 `Ronaldony/feynman-thinking` v0.4.0이다. 현재 v0.5.0-draft는 설치·평가 구조를 구현한 research preview이지, 행동 성능이 입증된 릴리스가 아니다.
 
-**full-runner MCP contract를 existing tools-10 runner-job/profile에 결속하고,
-candidate skill 노출과 fixed test wiring을 검증하는 model-free 목표는 LOG-053에서
-완료됐다.** 실제 모델 평가와 baseline은 아직 시작하지 않는다. 다음 목표는 같은
-transient skill 격리와 full-runner override를 실제 executor 명령 생성에 모델 없이
-결속하는 것이다.
+**full-runner MCP contract와 candidate skill 노출을 existing tools-10
+runner-job/profile에 결속하고, transient skill 격리까지 실제 executor command
+builder에 연결하는 model-free 목표는 LOG-056에서 완료됐다.** 실제 모델 평가와
+baseline은 아직 시작하지 않는다. 다음 사람 개입 지점은 보호된 ChatGPT
+subscription auth gate 확인과, 그 성공 후 별도 승인된 model-turn smoke다.
 
 ## 2. 확인한 저장소 기준점
 

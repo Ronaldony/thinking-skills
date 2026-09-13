@@ -465,3 +465,18 @@ profile/job digest, adapter/candidate/Docker 재생성 override를 대조한다.
 발견한 non-candidate skill을 실제 smoke command plan에 자동 전달하는 단계까지
 완료했다는 뜻은 아니다. transient skill-disable override의 command-plan 결속은
 별도 model-free 단계로 남아 있다.
+
+## 19. subscription executor wiring preflight
+
+`tooling/feynman_subscription_executor_wiring_preflight.py`는 LOG-055의 required
+입력과 LOG-053의 two-pass skill isolation을 실제 subscription executor와 같은
+`build_codex_exec_command()` 경로에 결속한다. 첫 App Server discovery에서 주변
+활성 skill을 식별하고, 두 번째 disposable App Server에서 candidate skill만 남긴다.
+그 결과의 transient override는 full-runner override 13개 뒤에 붙고 stdin marker
+앞에서 끝난다.
+
+이 preflight는 model-free다. 인증 파일, protected control `CODEX_HOME`, 실제
+프롬프트/명령 payload를 읽거나 보존하지 않으며 thread/turn/model call을 시작하지
+않는다. `subscription-executor-wiring-ready`는 command construction과 skill/tool
+노출 계약이 준비됐다는 뜻이고, auth gate나 model evaluation의 성공을 의미하지
+않는다.
