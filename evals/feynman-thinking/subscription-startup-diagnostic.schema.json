@@ -16,6 +16,26 @@
         "error_category": {
           "enum": ["remote-path-error", "remote-environment-error", "mcp-startup-error", "model-configuration-error", "authentication-error", "configuration-error", "internal-error", null]
         },
+        "error_signals": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mentions_environment": {"type": "boolean"},
+            "mentions_exec_server": {"type": "boolean"},
+            "mentions_connection": {"type": "boolean"},
+            "mentions_initialize": {"type": "boolean"},
+            "mentions_exit": {"type": "boolean"},
+            "mentions_closed": {"type": "boolean"},
+            "mentions_timeout": {"type": "boolean"},
+            "mentions_config": {"type": "boolean"},
+            "mentions_path": {"type": "boolean"},
+            "mentions_not_found": {"type": "boolean"}
+          },
+          "required": ["mentions_environment", "mentions_exec_server", "mentions_connection", "mentions_initialize", "mentions_exit", "mentions_closed", "mentions_timeout", "mentions_config", "mentions_path", "mentions_not_found"]
+        },
+        "error_data_kind": {
+          "enum": ["none", "boolean", "string", "number", "array", "object", "other"]
+        },
         "ephemeral_thread": {"type": "boolean"},
         "instruction_sources_present": {"type": "boolean"},
         "response_payload_preserved": {"const": false},

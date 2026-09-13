@@ -49,6 +49,31 @@ class StartupDiagnosticError(ValueError):
     """The model-free startup diagnostic failed before producing a report."""
 
 
+_SAFE_NOTIFICATION_METHODS = frozenset({
+    "configWarning",
+    "environment/connection",
+    "environment/connection/updated",
+    "error",
+    "thread/closed",
+    "thread/started",
+    "thread/status/changed",
+    "warning",
+})
+
+_ERROR_SIGNAL_TERMS = {
+    "mentions_environment": ("environment",),
+    "mentions_exec_server": ("exec-server", "exec server"),
+    "mentions_connection": ("connect", "connection"),
+    "mentions_initialize": ("initialize", "initialization"),
+    "mentions_exit": ("exit", "exited"),
+    "mentions_closed": ("closed", "closure"),
+    "mentions_timeout": ("timeout", "timed out"),
+    "mentions_config": ("config", "configuration"),
+    "mentions_path": ("path", "cwd", "linux"),
+    "mentions_not_found": ("not found", "missing"),
+}
+
+
 def _thread_start_params(*, model: str) -> dict[str, Any]:
     # TurnEnvironmentParams paths use the selected environment's native
     # syntax.  The canonical candidate destination is fixed by the validated
@@ -85,6 +110,31 @@ def _thread_error_category(message: Any) -> str:
     return "internal-error"
 
 
+def _thread_error_signals(message: Any) -> dict[str, bool]:
+    """Reduce an error message to fixed booleans without retaining its text."""
+    text = message.lower() if isinstance(message, str) else ""
+    return {
+        label: any(term in text for term in terms)
+        for label, terms in _ERROR_SIGNAL_TERMS.items()
+    }
+
+
+def _json_value_kind(value: Any) -> str:
+    if value is None:
+        return "none"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, (int, float)):
+        return "number"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, dict):
+        return "object"
+    return "other"
+
+
 def _thread_summary(response: dict[str, Any]) -> dict[str, Any]:
     error = response.get("error")
     if isinstance(error, dict):
@@ -93,6 +143,8 @@ def _thread_summary(response: dict[str, Any]) -> dict[str, Any]:
             "thread_started": False,
             "error_code": code if type(code) is int else None,
             "error_category": _thread_error_category(error.get("message")),
+            "error_signals": _thread_error_signals(error.get("message")),
+            "error_data_kind": _json_value_kind(error.get("data")),
             "ephemeral_thread": False,
             "instruction_sources_present": False,
             "response_payload_preserved": False,
@@ -112,6 +164,8 @@ def _thread_summary(response: dict[str, Any]) -> dict[str, Any]:
         "thread_started": True,
         "error_code": None,
         "error_category": None,
+        "error_signals": _thread_error_signals(None),
+        "error_data_kind": "none",
         "ephemeral_thread": True,
         "instruction_sources_present": bool(sources),
         "response_payload_preserved": False,
@@ -131,8 +185,10 @@ def _wait_for_thread_start(received: queue.Queue[dict[str, Any] | None],
             raise StartupDiagnosticError("app-server-protocol-error")
         method = value.get("method")
         if isinstance(method, str):
-            # Preserve fixed method names and counts only.
-            notifications[method] += 1
+            # Preserve only bounded method names and counts.  A peer-provided
+            # arbitrary method string must not become durable diagnostic data.
+            method_key = method if method in _SAFE_NOTIFICATION_METHODS else "unknown"
+            notifications[method_key] += 1
             if method.startswith("turn/") or method.startswith("item/"):
                 raise StartupDiagnosticError("unexpected-turn-or-item-event")
         if value.get("id") == identifier:
