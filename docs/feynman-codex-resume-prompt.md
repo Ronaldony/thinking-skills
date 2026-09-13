@@ -1,5 +1,12 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
+> 현재는 `docs/feynman-work-log/LOG-062-luna-config-metadata-rejections-20260913.md`를
+> 먼저 읽어라. 승인된 Luna 1회는 exit 1/0-byte trace로 종료됐고 config 1건,
+> metadata 8건의 mapping 거부를 확인했다. fs/walk mapping 거부는 없다.
+> 모델 호출 부재를 단정하지 마라. CI는 전체 SHA로 조회하고 Linux 경로 fixture
+> 보정 결과를 확인하라. 다음은 model-free 원인 분류이며 자동 모델 재호출은 없다.
+> 아래 재개 안내는 역사 기록이다.
+
 > 2026-09-13 최신 재개 지점: 먼저
 > `docs/feynman-work-log/LOG-061-request-mapping-method-diagnostics-20260913.md`를 읽어라.
 > model-free discovery diagnostic에서 ordinary `fs/walk` candidate path는

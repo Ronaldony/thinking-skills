@@ -1,5 +1,14 @@
 # feynman-thinking 작업 상태
 
+현재 재개 지점: [LOG-062](feynman-work-log/LOG-062-luna-config-metadata-rejections-20260913.md).
+승인된 Luna 1회는 gate 통과 후 exit 1/0-byte trace로 종료됐다. 거부 9건은
+`environmentConfig/read` 1건과 `fs/getMetadata` 8건이며 fs/walk 거부는 0이다.
+실제 모델 요청 전인지 단정할 수 없으며 기록된 모델/tool 증거가 없다.
+전체 SHA CI 조회로 5 success/2 failure를 확인했고 Linux에서 Windows 경로를
+사용하던 테스트 fixture를 보정했다. 다음은 config/metadata의 model-free 원인
+분류이며, 자동 model 재시도나 mount 범위 확대는 하지 않는다.
+아래 checkpoint들은 역사 기록이며 위 LOG-062를 우선한다.
+
 최신 실행 checkpoint: 2026-09-13, `feat/feynman-thinking-v0.5-draft` research preview.
 
 최신 checkpoint는 [LOG-061](feynman-work-log/LOG-061-request-mapping-method-diagnostics-20260913.md)다.

@@ -1,5 +1,12 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
+> 최신: [LOG-062](feynman-work-log/LOG-062-luna-config-metadata-rejections-20260913.md).
+> 승인된 Luna 1회는 gate 통과 후 exit 1, trace 0바이트다. request 거부는
+> config 1건/metadata 8건이고 fs/walk는 0건이다. 모델 서비스 요청 자체의
+> 부재까지 증명하지는 않는다. 전체 SHA 조회에서 확인한 Linux CI fixture
+> 실패도 보정했다. 다음은 model-free config/metadata 원인 분류다.
+> 아래의 '최신' 표현은 과거 checkpoint이며 이 안내가 우선한다.
+
 작성일: 2026-09-09 (Asia/Seoul). 이 문서는 개발 담당 Codex의 인계 자료다. 평가 대상 candidate에게 전달하지 않는다.
 
 > 최신 상태(2026-09-13)는 [LOG-061](feynman-work-log/LOG-061-request-mapping-method-diagnostics-20260913.md)을 우선한다.

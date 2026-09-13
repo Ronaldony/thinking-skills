@@ -1,4 +1,5 @@
 import unittest
+import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -36,9 +37,18 @@ class ControlPlanePreflightTests(unittest.TestCase):
         self.assertEqual(_failure_category("unrelated detail"), "unclassified")
 
     def test_telemetry_override_replaces_configured_destination_without_overwrite(self):
-        fresh = Path("C:/diagnostics/fresh.json")
-        with patch.dict("os.environ", {TELEMETRY_OVERRIDE_ENV: str(fresh)}, clear=False):
-            self.assertEqual(_effective_telemetry_path(Path("C:/configured/report.json")), fresh)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            fresh = root / "fresh.json"
+            configured = root / "configured.json"
+            configured.write_text("existing synthetic telemetry", encoding="utf-8")
+            with patch.dict("os.environ", {TELEMETRY_OVERRIDE_ENV: str(fresh)}, clear=False):
+                self.assertEqual(_effective_telemetry_path(configured), fresh)
+                fresh.touch()
+                with self.assertRaisesRegex(ValueError, "invalid telemetry override path"):
+                    _effective_telemetry_path(configured)
+            self.assertEqual(configured.read_text(encoding="utf-8"),
+                             "existing synthetic telemetry")
 
 
 if __name__ == "__main__":
