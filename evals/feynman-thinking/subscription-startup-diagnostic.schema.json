@@ -1,10 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Feynman subscription startup diagnostic v2",
+  "title": "Feynman subscription startup diagnostic v3",
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "schema_version": {"const": 2},
+    "schema_version": {"const": 3},
     "verdict": {"enum": ["subscription-startup-thread-ready", "subscription-startup-thread-blocked"]},
     "failure_stage": {"type": "string", "pattern": "^[a-z0-9-]+$"},
     "model": {"type": "string", "minLength": 1},
@@ -39,16 +39,18 @@
         },
         "ephemeral_thread": {"type": "boolean"},
         "instruction_sources_present": {"type": "boolean"},
+        "instruction_sources_allowed": {"type": "boolean"},
         "response_payload_preserved": {"const": false},
         "initialize_completed": {"type": "boolean"},
         "turn_requests_sent": {"const": 0},
         "model_generation_requests_sent": {"const": 0},
         "process_tree_reaped": {"type": "boolean"},
+        "cleanup_verified": {"type": "boolean"},
         "proxy_telemetry_complete": {"type": "boolean"},
         "proxy_request_response_correlated": {"type": "boolean"},
         "request_mapping_clean": {"type": "boolean"}
       },
-      "required": ["thread_started", "error_code", "error_category", "ephemeral_thread", "instruction_sources_present", "response_payload_preserved", "initialize_completed", "turn_requests_sent", "model_generation_requests_sent", "process_tree_reaped", "proxy_telemetry_complete", "proxy_request_response_correlated", "request_mapping_clean"]
+      "required": ["thread_started", "error_code", "error_category", "ephemeral_thread", "instruction_sources_present", "instruction_sources_allowed", "response_payload_preserved", "initialize_completed", "turn_requests_sent", "model_generation_requests_sent", "process_tree_reaped", "cleanup_verified", "proxy_telemetry_complete", "proxy_request_response_correlated", "request_mapping_clean"]
     },
     "notification_methods": {"$ref": "#/$defs/safe_notification_counters"},
     "proxy_telemetry_status": {"enum": ["available", "missing"]},
@@ -56,7 +58,7 @@
       "type": ["object", "null"],
       "additionalProperties": false,
       "properties": {
-        "schema_version": {"const": 2},
+        "schema_version": {"const": 3},
         "request_methods": {"$ref": "#/$defs/safe_method_counters"},
         "response_error_codes": {"$ref": "#/$defs/counters"},
         "requests_seen": {"$ref": "#/$defs/count"},

@@ -16,6 +16,7 @@ from tooling.feynman_subscription_startup_diagnostic import (
     _SAFE_NOTIFICATION_METHODS, _safe_proxy_telemetry, _thread_start_params,
     _thread_summary, _wait_for_thread_start, _proxy_telemetry_ready,
     _write_failure_artifact, _consume_private_stderr, _read_json_lines,
+    _instruction_sources_allowed,
 )
 from tooling.feynman_rpc_path_proxy import _ProxyTelemetry
 
@@ -25,6 +26,12 @@ LIFECYCLE_FIXTURE = ROOT / "tests" / "feynman_subscription_lifecycle_fixture.py"
 
 
 class SubscriptionStartupDiagnosticTests(unittest.TestCase):
+    def test_startup_error_retains_observed_initialize_state(self):
+        before = StartupDiagnosticError("thread-start-timeout")
+        after = StartupDiagnosticError("thread-start-timeout", initialize_completed=True)
+        self.assertFalse(before.initialize_completed)
+        self.assertTrue(after.initialize_completed)
+
     def _lifecycle_process(self, mode: str):
         process = subprocess.Popen(
             [sys.executable, "-B", str(LIFECYCLE_FIXTURE), mode],
@@ -155,7 +162,7 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
     def test_thread_summary_preserves_no_id_or_instruction_path(self):
         summary = _thread_summary({"result": {
             "thread": {"id": "SYNTHETIC_PRIVATE_THREAD", "ephemeral": True},
-            "instructionSources": ["C:/SYNTHETIC_PRIVATE/AGENTS.md"],
+            "instructionSources": ["/run/candidate/AGENTS.md"],
         }})
         self.assertEqual(summary, {
             "thread_started": True,
@@ -176,9 +183,27 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
             "error_data_kind": "none",
             "ephemeral_thread": True,
             "instruction_sources_present": True,
+            "instruction_sources_allowed": True,
             "response_payload_preserved": False,
         })
         self.assertNotIn("SYNTHETIC_PRIVATE", json.dumps(summary))
+
+    def test_instruction_sources_are_limited_to_declared_remote_mounts(self):
+        self.assertTrue(_instruction_sources_allowed([
+            "/run/candidate/AGENTS.md", "file:///run/codex/skills/feynman-thinking/SKILL.md",
+        ]))
+        for source in (
+                "C:/private/AGENTS.md", "/run/home/AGENTS.md",
+                "/run/candidate/../home/AGENTS.md", "relative/AGENTS.md"):
+            with self.subTest(source=source):
+                self.assertFalse(_instruction_sources_allowed([source]))
+
+    def test_thread_summary_rejects_instruction_source_outside_remote_mounts(self):
+        with self.assertRaisesRegex(StartupDiagnosticError, "^instruction-source-not-allowed$"):
+            _thread_summary({"result": {
+                "thread": {"id": "synthetic", "ephemeral": True},
+                "instructionSources": ["/run/home/AGENTS.md"],
+            }})
 
     def test_error_summary_preserves_only_numeric_code(self):
         summary = _thread_summary({"error": {
@@ -246,6 +271,18 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
         value["responses_unmatched"] = 1
         self.assertFalse(_proxy_telemetry_ready(value))
 
+    def test_proxy_telemetry_rejects_nonzero_child_exit(self):
+        value = {
+            "requests_seen": 1, "requests_forwarded": 1,
+            "responses_seen": 1, "responses_forwarded": 1,
+            "responses_matched": 1, "responses_unmatched": 0,
+            "notifications_seen": 0, "malformed_responses": 0,
+            "pending_request_ids": 0, "request_write_failures": 0,
+            "request_id_duplicates": 0, "request_mapping_rejections": 0,
+            "response_mapping_rejections": 0, "child_exit_code": 7,
+        }
+        self.assertFalse(_proxy_telemetry_ready(value))
+
     def test_proxy_telemetry_excludes_notifications_from_response_matching(self):
         value = {
             "requests_seen": 1, "requests_forwarded": 1,
@@ -311,7 +348,9 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
         schema = json.loads(Path(
             "evals/feynman-thinking/subscription-startup-diagnostic.schema.json"
         ).read_text(encoding="utf-8"))
-        self.assertEqual(schema["properties"]["schema_version"]["const"], 2)
+        self.assertEqual(schema["properties"]["schema_version"]["const"], 3)
+        self.assertIn("instruction_sources_allowed",
+                      schema["properties"]["checks"]["properties"])
         self.assertEqual(schema["properties"]["checks"]["properties"]
                          ["model_generation_requests_sent"]["const"], 0)
         self.assertIn("request_mapping_rejection_method_reasons",
@@ -319,6 +358,7 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
         self.assertIn("request_mapping_rejection_method_reason_fields",
                       schema["properties"]["proxy_telemetry"]["properties"])
         self.assertIn("proxy_telemetry_complete", schema["properties"]["checks"]["properties"])
+        self.assertIn("cleanup_verified", schema["properties"]["checks"]["properties"])
         self.assertIn("error_signals", schema["properties"]["checks"]["properties"])
         self.assertIn("error_data_kind", schema["properties"]["checks"]["properties"])
         self.assertEqual(

@@ -57,7 +57,7 @@ def _thread_start(identifier: Any, mode: str) -> None:
 
 
 def main() -> int:
-    modes = {"healthy", "initialize-timeout", "thread-start-error", "wrong-response-id", "proxy-child"}
+    modes = {"healthy", "initialize-timeout", "thread-start-error", "wrong-response-id", "proxy-child", "proxy-child-exit"}
     mode = sys.argv[1] if len(sys.argv) >= 2 else ""
     if mode not in modes:
         return 2
@@ -71,6 +71,8 @@ def main() -> int:
         method = message.get("method")
         identifier = message.get("id")
         if method == "initialize":
+            if mode == "proxy-child-exit":
+                return 7
             if mode == "initialize-timeout":
                 continue
             _initialize(identifier)

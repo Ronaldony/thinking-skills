@@ -11,6 +11,7 @@ from tooling.feynman_rpc_path_mapping import RpcPathMapper, RpcPathMappingError
 from tooling.feynman_rpc_path_proxy import _map_request_payload, _read_response_within_limit
 from tooling.feynman_rpc_version_gate import verify
 from tooling.feynman_subscription_models import SUBSCRIPTION_WORK_MODELS, model_selection_report
+from tooling.feynman_rpc_path_contract_probe import _shape, _requests
 
 
 class CompatibilityTests(unittest.TestCase):
@@ -82,6 +83,29 @@ class CompatibilityTests(unittest.TestCase):
         for result in ({'dataBase64': 'eA==', 'text': 'SYNTHETIC_PRIVATE'},
                        {'dataBase64': 'invalid!'}, {'dataBase64': None}, None):
             self.assertFalse(_read_response_within_limit({'result': result}, 1))
+
+    def test_path_contract_probe_uses_same_request_contracts(self):
+        candidate = Path(r"C:\fixture\candidate")
+        direct = _requests(candidate=candidate, direct=True)
+        proxy = _requests(candidate=candidate, direct=False)
+        self.assertEqual([item.get("method") for item in direct],
+                         [item.get("method") for item in proxy])
+        self.assertEqual(direct[2]["params"]["path"],
+                         "file:///run/candidate/sub/config.toml")
+        self.assertEqual(direct[4]["params"]["cwd"],
+                         "file:///run/candidate/sub")
+        self.assertNotIn("SYNTHETIC_PRIVATE", json.dumps(proxy))
+
+    def test_path_contract_probe_shape_redacts_values_and_normalizes_roles(self):
+        candidate = Path(r"C:\fixture\candidate")
+        shaped = _shape({
+            "cwd": "file:///C:/fixture/candidate/sub",
+            "path": "file:///C:/fixture/candidate/sub/config.toml",
+            "message": "SYNTHETIC_PRIVATE",
+        }, candidate=candidate)
+        self.assertEqual(shaped["cwd"], {"path_role": "candidate/sub"})
+        self.assertEqual(shaped["path"], {"path_role": "candidate/sub/config.toml"})
+        self.assertNotIn("SYNTHETIC_PRIVATE", json.dumps(shaped))
 
 
 class RuntimeVersionTests(unittest.TestCase):

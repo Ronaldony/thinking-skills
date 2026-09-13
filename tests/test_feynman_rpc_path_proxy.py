@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT))
 from tooling.feynman_rpc_path_mapping import RpcPathMapper
 from tooling.feynman_rpc_path_proxy import (
     _ProxyTelemetry, _docker_mounts, _fixed_error, _map_request_payload,
-    _map_request_payload_with_reason, _split_cli,
+    _map_request_payload_with_reason, _split_cli, _write_telemetry,
 )
 
 
@@ -57,6 +57,51 @@ class RpcPathProxyTests(unittest.TestCase):
             self.assertEqual(value["responses_unmatched"], 0)
             self.assertEqual(value["pending_request_ids"], 0)
             self.assertEqual(value["child_exit_code"], 0)
+
+    def test_proxy_exits_when_child_ends_while_parent_stdin_is_open(self):
+        fixture = ROOT / "tests" / "feynman_subscription_lifecycle_fixture.py"
+        proxy = ROOT / "tooling" / "feynman_rpc_path_proxy.py"
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            telemetry = root / "telemetry.json"
+            process = subprocess.Popen(
+                [sys.executable, "-B", str(proxy), "--docker", sys.executable,
+                 "--telemetry-file", str(telemetry), "--", "-B", str(fixture),
+                 "proxy-child-exit", "-v", f"{root}:/run/candidate:rw"],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, encoding="utf-8", env={
+                    key: os.environ[key]
+                    for key in ("PATH", "SystemRoot", "WINDIR", "ComSpec", "PATHEXT", "TEMP", "TMP")
+                    if key in os.environ
+                },
+            )
+            assert process.stdin is not None
+            process.stdin.write(json.dumps({
+                "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {},
+            }) + "\n")
+            process.stdin.flush()
+            # Production cleanup is bounded at 15 seconds when a child EOF
+            # cannot wake the platform pipe reader; it must still terminate.
+            try:
+                process.wait(timeout=20)
+                self.assertEqual(process.returncode, 7)
+                value = json.loads(telemetry.read_text(encoding="utf-8"))
+                self.assertEqual(value["child_exit_code"], 7)
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait(timeout=5)
+                for stream in (process.stdin, process.stdout, process.stderr):
+                    if stream is not None:
+                        stream.close()
+
+    def test_telemetry_write_replaces_atomically_without_temp_residue(self):
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "telemetry.json"
+            _write_telemetry(path, _ProxyTelemetry())
+            value = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(value["schema_version"], 3)
+            self.assertEqual(list(Path(raw).glob(".telemetry.json.*.tmp")), [])
 
     def test_windows_volume_spec_splits_from_the_right(self):
         mounts = _docker_mounts([

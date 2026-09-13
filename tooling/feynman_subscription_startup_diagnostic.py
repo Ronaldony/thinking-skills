@@ -13,6 +13,7 @@ import argparse
 from collections import Counter
 import json
 from pathlib import Path
+from pathlib import PurePosixPath
 import queue
 import subprocess
 import tempfile
@@ -55,6 +56,10 @@ except ImportError:
 class StartupDiagnosticError(ValueError):
     """The model-free startup diagnostic failed before producing a report."""
 
+    def __init__(self, stage: str, *, initialize_completed: bool = False) -> None:
+        super().__init__(stage)
+        self.initialize_completed = initialize_completed
+
 
 def _write_failure_artifact(path: Path, stage: str, *, initialize_completed: bool = False) -> None:
     """Persist a payload-free blocked record when the diagnostic itself fails."""
@@ -65,7 +70,7 @@ def _write_failure_artifact(path: Path, stage: str, *, initialize_completed: boo
     ):
         stage = "diagnostic-failure"
     result = {
-        "schema_version": 2,
+        "schema_version": 3,
         "verdict": "subscription-startup-thread-blocked",
         "failure_stage": stage,
         "model": "unknown",
@@ -77,11 +82,13 @@ def _write_failure_artifact(path: Path, stage: str, *, initialize_completed: boo
             "error_data_kind": "none",
             "ephemeral_thread": False,
             "instruction_sources_present": False,
+            "instruction_sources_allowed": False,
             "response_payload_preserved": False,
             "initialize_completed": initialize_completed,
             "turn_requests_sent": 0,
             "model_generation_requests_sent": 0,
             "process_tree_reaped": False,
+            "cleanup_verified": False,
             "proxy_telemetry_complete": False,
             "proxy_request_response_correlated": False,
             "request_mapping_clean": False,
@@ -131,6 +138,11 @@ _SAFE_NOTIFICATION_METHODS = frozenset({
     "thread/status/changed",
     "warning",
 })
+
+_ALLOWED_INSTRUCTION_SOURCE_ROOTS = (
+    PurePosixPath("/run/candidate"),
+    PurePosixPath("/run/codex"),
+)
 
 # The startup probe must exercise the configured remote environment, not the
 # repository that happens to launch the probe.  These are Codex config keys
@@ -212,6 +224,32 @@ def _json_value_kind(value: Any) -> str:
     return "other"
 
 
+def _instruction_source_path(source: str) -> PurePosixPath | None:
+    if source.startswith("file:///"):
+        value = source[7:]
+    elif source.startswith("/"):
+        value = source
+    else:
+        return None
+    if not value or "\\" in value or "?" in value or "#" in value:
+        return None
+    path = PurePosixPath(value)
+    if not path.is_absolute() or any(part in {".", ".."} for part in path.parts):
+        return None
+    return path
+
+
+def _instruction_sources_allowed(sources: list[str]) -> bool:
+    """Allow only absolute instruction paths under declared remote mounts."""
+    for source in sources:
+        path = _instruction_source_path(source)
+        if path is None or not any(
+                path == root or root in path.parents
+                for root in _ALLOWED_INSTRUCTION_SOURCE_ROOTS):
+            return False
+    return True
+
+
 def _thread_summary(response: dict[str, Any]) -> dict[str, Any]:
     error = response.get("error")
     if isinstance(error, dict):
@@ -224,6 +262,7 @@ def _thread_summary(response: dict[str, Any]) -> dict[str, Any]:
             "error_data_kind": _json_value_kind(error.get("data")),
             "ephemeral_thread": False,
             "instruction_sources_present": False,
+            "instruction_sources_allowed": False,
             "response_payload_preserved": False,
         }
     result = response.get("result")
@@ -237,6 +276,8 @@ def _thread_summary(response: dict[str, Any]) -> dict[str, Any]:
     sources = result.get("instructionSources")
     if not isinstance(sources, list) or any(not isinstance(source, str) for source in sources):
         raise StartupDiagnosticError("thread-start-response-shape")
+    if not _instruction_sources_allowed(sources):
+        raise StartupDiagnosticError("instruction-source-not-allowed")
     return {
         "thread_started": True,
         "error_code": None,
@@ -245,6 +286,7 @@ def _thread_summary(response: dict[str, Any]) -> dict[str, Any]:
         "error_data_kind": "none",
         "ephemeral_thread": True,
         "instruction_sources_present": bool(sources),
+        "instruction_sources_allowed": True,
         "response_payload_preserved": False,
     }
 
@@ -284,7 +326,7 @@ def _safe_proxy_telemetry(path: Path) -> dict[str, Any]:
         value = json.loads(_regular(path, "startup proxy telemetry").read_text(encoding="utf-8"))
     except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise StartupDiagnosticError("startup-proxy-telemetry-unreadable") from exc
-    if not isinstance(value, dict) or value.get("schema_version") != 2:
+    if not isinstance(value, dict) or value.get("schema_version") != 3:
         raise StartupDiagnosticError("startup-telemetry-shape")
     allowed = {
         "schema_version", "request_methods", "response_error_codes",
@@ -370,7 +412,7 @@ def _proxy_telemetry_ready(value: dict[str, Any]) -> bool:
         and value["request_id_duplicates"] == 0
         and value["request_mapping_rejections"] == 0
         and value["response_mapping_rejections"] == 0
-        and value["child_exit_code"] is not None
+        and value["child_exit_code"] == 0
     )
 
 
@@ -455,8 +497,8 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
         stderr_reader.start()
         forced_shutdown = False
         process_tree_reaped = True
+        initialize_completed = False
         startup_deadline = time.monotonic() + timeout_seconds
-        cleanup_deadline = time.monotonic() + 15
         try:
             try:
                 process.stdin.write(_request(1, "initialize", {
@@ -471,17 +513,26 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
                 timeout_stage="initialize-timeout")
             if "error" in initialized:
                 raise StartupDiagnosticError("app-server-initialize-error")
+            initialize_completed = True
             try:
                 process.stdin.write(_notification("initialized", {}))
                 process.stdin.write(_request(
                     2, "thread/start", _thread_start_params(model=model)))
                 process.stdin.flush()
             except (OSError, ValueError) as exc:
-                raise StartupDiagnosticError("startup-protocol-write-thread-start-invalid") from exc
-            response, notifications = _wait_for_thread_start(
-                received, 2, max(0.0, startup_deadline - time.monotonic()))
-            thread = _thread_summary(response)
+                raise StartupDiagnosticError(
+                    "startup-protocol-write-thread-start-invalid",
+                    initialize_completed=True,
+                ) from exc
+            try:
+                response, notifications = _wait_for_thread_start(
+                    received, 2, max(0.0, startup_deadline - time.monotonic()))
+                thread = _thread_summary(response)
+            except StartupDiagnosticError as exc:
+                raise StartupDiagnosticError(
+                    str(exc), initialize_completed=True) from exc
         finally:
+            cleanup_deadline = time.monotonic() + 15
             try:
                 process.stdin.close()
             except (OSError, ValueError):
@@ -504,7 +555,10 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
             except (OSError, ValueError):
                 pass
         if process.returncode not in {0, None} and not forced_shutdown:
-            raise StartupDiagnosticError("app-server-exit-" + _failure_category(stderr_text))
+            raise StartupDiagnosticError(
+                "app-server-exit-" + _failure_category(stderr_text),
+                initialize_completed=initialize_completed,
+            )
     try:
         telemetry = _safe_proxy_telemetry(telemetry_path)
         telemetry_status = "available"
@@ -517,11 +571,16 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
         telemetry = None
         telemetry_status = "missing"
     telemetry_complete = telemetry is not None and _proxy_telemetry_ready(telemetry)
+    cleanup_verified = bool(
+        process_tree_reaped and telemetry_complete
+        and telemetry is not None and telemetry["child_exit_code"] == 0
+    )
     result = {
-        "schema_version": 2,
+        "schema_version": 3,
         "verdict": (
             "subscription-startup-thread-ready"
-            if (thread["thread_started"] and telemetry_complete and process_tree_reaped)
+            if (thread["thread_started"] and thread["instruction_sources_allowed"]
+                    and telemetry_complete and cleanup_verified)
             else "subscription-startup-thread-blocked"
         ),
         "model": model,
@@ -531,10 +590,13 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
             "turn_requests_sent": 0,
             "model_generation_requests_sent": 0,
             "process_tree_reaped": process_tree_reaped,
+            "cleanup_verified": cleanup_verified,
             "proxy_telemetry_complete": telemetry_complete,
             "proxy_request_response_correlated": telemetry_complete,
             "request_mapping_clean": bool(
-                telemetry is not None and telemetry["request_mapping_rejections"] == 0
+                telemetry is not None
+                and telemetry["request_mapping_rejections"] == 0
+                and telemetry["response_mapping_rejections"] == 0
             ),
         },
         "notification_methods": notifications,
@@ -621,10 +683,7 @@ def main() -> int:
             try:
                 _write_failure_artifact(
                     Path(checkpoint["output"]), str(exc),
-                    initialize_completed=str(exc) not in {
-                        "initialize-timeout", "startup-protocol-write-initialize-invalid",
-                        "app-server-protocol-error",
-                    })
+                    initialize_completed=exc.initialize_completed)
             except OSError:
                 # A sandbox or operator ACL may deny the requested artifact
                 # directory.  Preserve the fixed failure label on stdout/stderr
@@ -634,6 +693,7 @@ def main() -> int:
             "initialize-timeout", "thread-start-timeout", "app-server-protocol-error",
             "app-server-initialize-error", "thread-start-response-shape",
             "thread-start-was-not-ephemeral", "startup-proxy-telemetry-missing",
+            "instruction-source-not-allowed",
         } or str(exc).startswith("app-server-exit-")
         parser.exit(1 if blocked else 2,
                     "error: startup diagnostic failed: " + str(exc) + "\n")

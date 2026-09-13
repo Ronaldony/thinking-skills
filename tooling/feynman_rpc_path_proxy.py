@@ -13,11 +13,14 @@ import argparse
 import base64
 import binascii
 from collections import Counter
+import ctypes
 import json
 import os
 from pathlib import Path
+import select
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from typing import Any
@@ -219,7 +222,7 @@ class _ProxyTelemetry:
         with self._lock:
             values = dict(self._values)
             return {
-                "schema_version": 2,
+                "schema_version": 3,
                 "request_methods": dict(sorted(self._request_methods.items())),
                 "response_error_codes": dict(sorted(self._response_error_codes.items())),
                 "requests_seen": values.get("requests_seen", 0),
@@ -267,13 +270,79 @@ def _json_object(raw: bytes) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
+def _parent_stdin_lines(stop: threading.Event):
+    """Yield complete parent lines without blocking shutdown on Windows pipes."""
+    fd = sys.stdin.fileno()
+    buffered = bytearray()
+    while not stop.is_set():
+        if os.name == "nt":
+            available = ctypes.c_ulong(0)
+            try:
+                ok = ctypes.windll.kernel32.PeekNamedPipe(
+                    ctypes.c_void_p(msvcrt.get_osfhandle(fd)),
+                    None, 0, None, ctypes.byref(available), None)
+            except (AttributeError, OSError, ValueError):
+                ok = False
+            if not ok:
+                break
+            if available.value == 0:
+                time.sleep(0.05)
+                continue
+            try:
+                chunk = os.read(fd, min(available.value, 65536))
+            except OSError:
+                break
+        else:
+            try:
+                ready, _, _ = select.select([fd], [], [], 0.25)
+            except (OSError, ValueError):
+                break
+            if not ready:
+                continue
+            try:
+                chunk = os.read(fd, 65536)
+            except OSError:
+                break
+        if not chunk:
+            break
+        buffered.extend(chunk)
+        while True:
+            try:
+                end = buffered.index(10)
+            except ValueError:
+                break
+            yield bytes(buffered[:end + 1])
+            del buffered[:end + 1]
+
+
+if os.name == "nt":
+    import msvcrt
+
+
 def _write_telemetry(path: Path | None, telemetry: _ProxyTelemetry) -> None:
     if path is None:
         return
     if path.is_symlink():
         raise OSError("refusing to write telemetry through symlink")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(telemetry.snapshot(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    payload = json.dumps(telemetry.snapshot(), ensure_ascii=False, indent=2) + "\n"
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=path.parent,
+                prefix=f".{path.name}.", suffix=".tmp", delete=False) as handle:
+            temporary = Path(handle.name)
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None:
+            try:
+                temporary.unlink()
+            except OSError:
+                pass
 
 
 def _effective_telemetry_path(configured: Path | None) -> Path | None:
@@ -530,9 +599,7 @@ def run_proxy(
 
     def forward_requests() -> None:
         try:
-            for raw in sys.stdin.buffer:
-                if stop.is_set():
-                    break
+            for raw in _parent_stdin_lines(stop):
                 request = _json_object(raw)
                 telemetry.request_seen(request.get("method") if request else None)
                 persist_telemetry()
@@ -560,6 +627,7 @@ def run_proxy(
                         if request["id"] in pending_methods:
                             telemetry.request_id_duplicate()
                         pending_methods[request["id"]] = request.get("method")
+                        telemetry.pending_request_ids(len(pending_methods))
                 try:
                     child.stdin.write(payload)
                     child.stdin.flush()
@@ -590,6 +658,7 @@ def run_proxy(
                 if response and type(response.get("id")) in {str, int}:
                     with pending_lock:
                         request_method = pending_methods.pop(response["id"], None)
+                        telemetry.pending_request_ids(len(pending_methods))
                 telemetry.response_seen(
                     error_code,
                     malformed=response is None,
@@ -621,8 +690,10 @@ def run_proxy(
         finally:
             stop.set()
 
-    request_thread = threading.Thread(target=forward_requests, name="rpc-proxy-stdin")
-    response_thread = threading.Thread(target=forward_responses, name="rpc-proxy-stdout")
+    request_thread = threading.Thread(
+        target=forward_requests, name="rpc-proxy-stdin", daemon=True)
+    response_thread = threading.Thread(
+        target=forward_responses, name="rpc-proxy-stdout", daemon=True)
     request_thread.start()
     response_thread.start()
     # Keep the proxy alive while its parent still owns stdin.  Once the parent
@@ -646,7 +717,7 @@ def run_proxy(
         _stop_proxy_child(child, cleanup_deadline)
     if response_thread.is_alive():
         response_thread.join(timeout=max(0.1, (cleanup_deadline or time.monotonic()) - time.monotonic()))
-    if request_thread.is_alive():
+    if request_thread.is_alive() and response_thread.is_alive():
         request_thread.join(timeout=max(0.1, (cleanup_deadline or time.monotonic()) - time.monotonic()))
     exit_code = child.poll()
     if exit_code is None:
@@ -673,4 +744,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # run_proxy has completed bounded child/thread cleanup before returning.
+    # os._exit prevents a daemon parent-stdin reader from keeping this
+    # standalone bridge alive on Windows after the child has already ended.
+    exit_code = main()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(exit_code)
