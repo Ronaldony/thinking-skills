@@ -1,5 +1,13 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
+> 최신: [LOG-063](feynman-work-log/LOG-063-model-free-startup-reason-diagnostic-20260913.md).
+> rejection reason telemetry와 ephemeral `thread/start` 진단기를 구현했다. 첫
+> model-free run은 `-32603`, thread/turn/model 0, mapping rejection 0이었다.
+> environment-native cwd를 `/run/candidate`로 보정한 두 번째 run은 자동 승인
+> 검토에서 실행 전에 거부됐다. 전체 371 tests/11 skipped는 통과했다. 다음은
+> 보정된 model-free diagnostic 정확히 1회에 대한 사용자 명시 승인이다.
+> 아래 최신 표기는 역사 기록이며 이 안내가 우선한다.
+
 > 최신: [LOG-062](feynman-work-log/LOG-062-luna-config-metadata-rejections-20260913.md).
 > 승인된 Luna 1회는 gate 통과 후 exit 1, trace 0바이트다. request 거부는
 > config 1건/metadata 8건이고 fs/walk는 0건이다. 모델 서비스 요청 자체의

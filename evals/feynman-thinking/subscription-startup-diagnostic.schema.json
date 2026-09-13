@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Feynman subscription startup diagnostic v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "verdict": {"enum": ["subscription-startup-thread-ready", "subscription-startup-thread-blocked"]},
+    "model": {"type": "string", "minLength": 1},
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "thread_started": {"type": "boolean"},
+        "error_code": {"type": ["integer", "null"]},
+        "error_category": {
+          "enum": ["remote-path-error", "remote-environment-error", "mcp-startup-error", "model-configuration-error", "authentication-error", "configuration-error", "internal-error", null]
+        },
+        "ephemeral_thread": {"type": "boolean"},
+        "instruction_sources_present": {"type": "boolean"},
+        "response_payload_preserved": {"const": false},
+        "initialize_completed": {"const": true},
+        "turn_requests_sent": {"const": 0},
+        "model_generation_requests_sent": {"const": 0},
+        "process_tree_reaped": {"type": "boolean"}
+      },
+      "required": ["thread_started", "error_code", "error_category", "ephemeral_thread", "instruction_sources_present", "response_payload_preserved", "initialize_completed", "turn_requests_sent", "model_generation_requests_sent", "process_tree_reaped"]
+    },
+    "notification_methods": {"$ref": "#/$defs/counters"},
+    "proxy_telemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {"const": 1},
+        "request_methods": {"$ref": "#/$defs/counters"},
+        "response_error_codes": {"$ref": "#/$defs/counters"},
+        "requests_seen": {"$ref": "#/$defs/count"},
+        "requests_forwarded": {"$ref": "#/$defs/count"},
+        "request_mapping_rejections": {"$ref": "#/$defs/count"},
+        "request_mapping_rejection_methods": {"$ref": "#/$defs/counters"},
+        "request_mapping_rejection_reasons": {"$ref": "#/$defs/counters"},
+        "malformed_requests": {"$ref": "#/$defs/count"},
+        "responses_seen": {"$ref": "#/$defs/count"},
+        "responses_forwarded": {"$ref": "#/$defs/count"},
+        "response_mapping_rejections": {"$ref": "#/$defs/count"},
+        "malformed_responses": {"$ref": "#/$defs/count"},
+        "probe_policy_rejections": {"$ref": "#/$defs/count"},
+        "probe_read_limit_applied": {"$ref": "#/$defs/count"},
+        "probe_response_rejections": {"$ref": "#/$defs/count"},
+        "probe_rejected_read_max_bytes": {"$ref": "#/$defs/count"},
+        "child_exit_code": {"type": ["integer", "null"]}
+      },
+      "required": ["schema_version", "request_methods", "response_error_codes", "requests_seen", "requests_forwarded", "request_mapping_rejections", "request_mapping_rejection_methods", "request_mapping_rejection_reasons", "malformed_requests", "responses_seen", "responses_forwarded", "response_mapping_rejections", "malformed_responses", "probe_policy_rejections", "probe_read_limit_applied", "probe_response_rejections", "probe_rejected_read_max_bytes", "child_exit_code"]
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "request_or_response_payload_preserved": {"const": false},
+        "thread_id_preserved": {"const": false},
+        "instruction_source_paths_preserved": {"const": false},
+        "raw_stderr_preserved": {"const": false},
+        "credential_files_directly_read_by_probe": {"const": false},
+        "control_home_contents_serialized": {"const": false}
+      },
+      "required": ["request_or_response_payload_preserved", "thread_id_preserved", "instruction_source_paths_preserved", "raw_stderr_preserved", "credential_files_directly_read_by_probe", "control_home_contents_serialized"]
+    },
+    "scope": {"type": "string", "minLength": 1}
+  },
+  "required": ["schema_version", "verdict", "model", "checks", "notification_methods", "proxy_telemetry", "privacy", "scope"],
+  "$defs": {
+    "count": {"type": "integer", "minimum": 0},
+    "counters": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/count"}
+    }
+  }
+}

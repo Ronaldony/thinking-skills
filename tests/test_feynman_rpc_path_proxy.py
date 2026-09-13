@@ -9,7 +9,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from tooling.feynman_rpc_path_mapping import RpcPathMapper
-from tooling.feynman_rpc_path_proxy import _ProxyTelemetry, _docker_mounts, _fixed_error, _map_request_payload, _split_cli
+from tooling.feynman_rpc_path_proxy import (
+    _ProxyTelemetry, _docker_mounts, _fixed_error, _map_request_payload,
+    _map_request_payload_with_reason, _split_cli,
+)
 
 
 class RpcPathProxyTests(unittest.TestCase):
@@ -34,17 +37,21 @@ class RpcPathProxyTests(unittest.TestCase):
     def test_telemetry_contains_only_fixed_safe_counters(self):
         telemetry = _ProxyTelemetry()
         telemetry.request_seen("fs/readFile")
-        telemetry.request_rejected(malformed=False, method="fs/walk")
+        telemetry.request_rejected(
+            malformed=False, method="fs/walk", reason="outside-declared-mount")
         telemetry.request_forwarded()
         telemetry.response_seen(-32001)
         telemetry.response_forwarded()
         snapshot = telemetry.snapshot()
         self.assertEqual(snapshot["request_methods"], {"fs/readFile": 1})
         self.assertEqual(snapshot["request_mapping_rejection_methods"], {"fs/walk": 1})
+        self.assertEqual(snapshot["request_mapping_rejection_reasons"],
+                         {"outside-declared-mount": 1})
         self.assertEqual(snapshot["response_error_codes"], {"-32001": 1})
         self.assertEqual(snapshot["requests_forwarded"], 1)
-        self.assertNotIn("path", json.dumps(snapshot))
-        self.assertNotIn("id", json.dumps(snapshot))
+        serialized = json.dumps(snapshot)
+        self.assertNotIn('"path"', serialized)
+        self.assertNotIn('"id"', serialized)
 
     def test_mapping_error_response_contains_no_rejected_value(self):
         payload = _fixed_error(7)
@@ -68,6 +75,33 @@ class RpcPathProxyTests(unittest.TestCase):
             "error": {"code": -32001, "message": "RPC path mapping rejected"},
             "id": 9,
         })
+
+    def test_mapping_rejection_reason_does_not_retain_path(self):
+        mapper = RpcPathMapper.from_mounts([
+            {"source": r"C:\DevWorks\candidate", "destination": "/run/candidate", "access": "rw"},
+        ])
+        raw = json.dumps({
+            "jsonrpc": "2.0", "id": 10, "method": "fs/getMetadata",
+            "params": {"path": "file:///C:/Users/wotmd/private.txt"},
+        }).encode("utf-8")
+        child, error, reason = _map_request_payload_with_reason(mapper, raw)
+        self.assertIsNone(child)
+        self.assertIsNotNone(error)
+        self.assertEqual(reason, "outside-declared-mount")
+        self.assertNotIn("Users", reason)
+
+    def test_config_path_shape_has_fixed_rejection_reason(self):
+        mapper = RpcPathMapper.from_mounts([
+            {"source": r"C:\DevWorks\candidate", "destination": "/run/candidate", "access": "rw"},
+        ])
+        raw = json.dumps({
+            "jsonrpc": "2.0", "id": 11, "method": "environmentConfig/read",
+            "params": {"cwd": r"C:\DevWorks\candidate", "configPaths": [r"C:\DevWorks\candidate\config.toml"]},
+        }).encode("utf-8")
+        child, error, reason = _map_request_payload_with_reason(mapper, raw)
+        self.assertIsNone(child)
+        self.assertIsNotNone(error)
+        self.assertEqual(reason, "invalid-path-array-shape")
 
     def test_probe_policy_forces_one_byte_candidate_read(self):
         mapper = RpcPathMapper.from_mounts([

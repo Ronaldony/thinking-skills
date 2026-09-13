@@ -1,5 +1,13 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
+> 현재는 `docs/feynman-work-log/LOG-063-model-free-startup-reason-diagnostic-20260913.md`를
+> 먼저 읽어라. payload-free reason telemetry와 ephemeral `thread/start` 진단기는
+> 구현됐다. 첫 model-free run은 host path를 remote-native cwd에 넣어 `-32603`으로
+> 끝났고, `/run/candidate` 보정 후 재실행은 automatic approval review에서 시작 전
+> 거부됐다. 전체 371 tests/11 skipped는 통과했다. 사용자가 보정된 model-free
+> startup diagnostic 정확히 1회를 명시 승인하기 전에는 실행하지 마라.
+> 아래 재개 안내는 역사 기록이다.
+
 > 현재는 `docs/feynman-work-log/LOG-062-luna-config-metadata-rejections-20260913.md`를
 > 먼저 읽어라. 승인된 Luna 1회는 exit 1/0-byte trace로 종료됐고 config 1건,
 > metadata 8건의 mapping 거부를 확인했다. fs/walk mapping 거부는 없다.

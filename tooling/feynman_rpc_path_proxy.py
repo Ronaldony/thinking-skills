@@ -34,6 +34,22 @@ PROBE_ALLOWED_PATH_ENV = "FEYNMAN_PROBE_RPC_ALLOWED_PATH"
 TELEMETRY_OVERRIDE_ENV = "FEYNMAN_RPC_TELEMETRY_OVERRIDE"
 PROBE_CONFIG_PATH = "file:///run/candidate/.feynman-diagnostic-absent.toml"
 
+# Mapping exceptions contain only fixed source-controlled messages.  Convert
+# them to bounded labels before telemetry so a rejected path is never retained.
+_MAPPING_REJECTION_REASONS = {
+    "only local file URIs are supported": "unsupported-file-uri",
+    "file URI query and fragment components are unsupported": "unsupported-file-uri-components",
+    "host path must be absolute and traversal-free": "invalid-host-path",
+    "host path is outside declared mounts": "outside-declared-mount",
+    "container path must be absolute and traversal-free": "invalid-container-path",
+    "container path is outside declared mounts": "outside-declared-mount",
+    "container file URI must use POSIX paths": "invalid-container-file-uri",
+    "declared path array must be a list": "invalid-path-array-shape",
+    "config path groups must contain only paths": "invalid-path-array-shape",
+    "RPC line is not valid JSON": "malformed-request",
+    "RPC message must be a JSON object": "malformed-request",
+}
+
 
 def _docker_mounts(docker_args: list[str]) -> list[dict[str, str]]:
     mounts: list[dict[str, str]] = []
@@ -81,6 +97,7 @@ class _ProxyTelemetry:
         self._lock = threading.Lock()
         self._request_methods: Counter[str] = Counter()
         self._request_mapping_rejection_methods: Counter[str] = Counter()
+        self._request_mapping_rejection_reasons: Counter[str] = Counter()
         self._response_error_codes: Counter[str] = Counter()
         self._values: Counter[str] = Counter()
         self._child_exit_code: int | None = None
@@ -94,10 +111,14 @@ class _ProxyTelemetry:
         with self._lock:
             self._values["requests_forwarded"] += 1
 
-    def request_rejected(self, *, malformed: bool, method: str | None = None) -> None:
+    def request_rejected(self, *, malformed: bool, method: str | None = None,
+                         reason: str | None = None) -> None:
         with self._lock:
             self._values["request_mapping_rejections"] += 1
             self._request_mapping_rejection_methods[method if isinstance(method, str) else "unknown"] += 1
+            self._request_mapping_rejection_reasons[
+                reason if reason in _SAFE_REJECTION_REASONS else "unclassified"
+            ] += 1
             if malformed:
                 self._values["malformed_requests"] += 1
 
@@ -147,6 +168,7 @@ class _ProxyTelemetry:
                 "requests_forwarded": values.get("requests_forwarded", 0),
                 "request_mapping_rejections": values.get("request_mapping_rejections", 0),
                 "request_mapping_rejection_methods": dict(sorted(self._request_mapping_rejection_methods.items())),
+                "request_mapping_rejection_reasons": dict(sorted(self._request_mapping_rejection_reasons.items())),
                 "malformed_requests": values.get("malformed_requests", 0),
                 "responses_seen": values.get("responses_seen", 0),
                 "responses_forwarded": values.get("responses_forwarded", 0),
@@ -258,20 +280,30 @@ def _write_stdout(lock: threading.Lock, payload: bytes) -> None:
         sys.stdout.buffer.flush()
 
 
-def _map_request_payload(
+_SAFE_REJECTION_REASONS = frozenset({
+    *_MAPPING_REJECTION_REASONS.values(),
+    "probe-method-not-allowed",
+    "probe-read-path-type",
+    "probe-config-policy",
+    "probe-filesystem-path-policy",
+    "invalid-request-structure",
+})
+
+
+def _map_request_payload_with_reason(
     mapper: RpcPathMapper,
     raw: bytes,
     *,
     read_limit: int | None = None,
     allowed_methods: frozenset[str] | None = None,
     allowed_path: str | None = None,
-) -> tuple[bytes | None, bytes | None]:
-    """Return either a child request or a fixed error for the control client."""
+) -> tuple[bytes | None, bytes | None, str | None]:
+    """Return a child request or a fixed error plus a payload-free reason."""
     try:
         message = _json_object(raw)
         if allowed_methods is not None:
             if message is None or message.get("method") not in allowed_methods:
-                return None, _fixed_error(message.get("id") if message else None)
+                return None, _fixed_error(message.get("id") if message else None), "probe-method-not-allowed"
         if message and message.get("method") == "fs/readFile":
             params = dict(message.get("params")) if isinstance(message.get("params"), dict) else {}
             if allowed_path is not None:
@@ -279,7 +311,7 @@ def _map_request_payload(
                 # This check occurs after path mapping below as well; the
                 # host-side value is never echoed in an error response.
                 if path is not None and not isinstance(path, str):
-                    return None, _fixed_error(message.get("id"))
+                    return None, _fixed_error(message.get("id")), "probe-read-path-type"
             if read_limit is not None:
                 params["offset"] = 0
                 params["len"] = read_limit
@@ -294,14 +326,14 @@ def _map_request_payload(
             # Only the diagnostic absent-file sentinel is allowed. Its absence
             # must also be checked before a guarded session is started.
             if params.get("cwd") not in {"/run/candidate", "file:///run/candidate"}:
-                return None, _fixed_error(message.get("id"))
+                return None, _fixed_error(message.get("id")), "probe-config-policy"
             for field in ("configPaths", "requirementsPaths"):
                 groups = params.get(field, [])
                 if not isinstance(groups, list) or any(
                     not isinstance(group, list) or any(path != PROBE_CONFIG_PATH for path in group)
                     for group in groups
                 ):
-                    return None, _fixed_error(message.get("id"))
+                    return None, _fixed_error(message.get("id")), "probe-config-policy"
         if allowed_path is not None and message and message.get("method") in {"fs/getMetadata", "fs/readFile"}:
             mapped_message = json.loads(mapped)
             mapped_path = mapped_message.get("params", {}).get("path") if isinstance(mapped_message, dict) else None
@@ -315,10 +347,31 @@ def _map_request_payload(
             is_read_path = mapped_path in {allowed_path, "file://" + allowed_path}
             if (message.get("method") == "fs/readFile" and not is_read_path) or (
                     message.get("method") == "fs/getMetadata" and not is_metadata_path):
-                return None, _fixed_error(message.get("id"))
-        return (mapped + "\n").encode("utf-8"), None
-    except (UnicodeDecodeError, RpcPathMappingError, ValueError):
-        return None, _fixed_error(_request_id(raw.decode("utf-8", errors="replace")))
+                return None, _fixed_error(message.get("id")), "probe-filesystem-path-policy"
+        return (mapped + "\n").encode("utf-8"), None, None
+    except RpcPathMappingError as exc:
+        reason = _MAPPING_REJECTION_REASONS.get(str(exc), "unclassified")
+        return None, _fixed_error(_request_id(raw.decode("utf-8", errors="replace"))), reason
+    except UnicodeDecodeError:
+        return None, _fixed_error(None), "malformed-request"
+    except ValueError:
+        return None, _fixed_error(_request_id(raw.decode("utf-8", errors="replace"))), "invalid-request-structure"
+
+
+def _map_request_payload(
+    mapper: RpcPathMapper,
+    raw: bytes,
+    *,
+    read_limit: int | None = None,
+    allowed_methods: frozenset[str] | None = None,
+    allowed_path: str | None = None,
+) -> tuple[bytes | None, bytes | None]:
+    """Compatibility wrapper returning only child payload or fixed error."""
+    payload, rejection, _ = _map_request_payload_with_reason(
+        mapper, raw, read_limit=read_limit,
+        allowed_methods=allowed_methods, allowed_path=allowed_path,
+    )
+    return payload, rejection
 
 
 def run_proxy(
@@ -358,7 +411,7 @@ def run_proxy(
                     telemetry.probe_read_limit_applied()
                 if allowed_methods is not None and (request is None or request.get("method") not in allowed_methods):
                     telemetry.probe_policy_rejected()
-                payload, rejection = _map_request_payload(
+                payload, rejection, rejection_reason = _map_request_payload_with_reason(
                     mapper, raw, read_limit=read_limit,
                     allowed_methods=allowed_methods, allowed_path=allowed_path,
                 )
@@ -366,6 +419,7 @@ def run_proxy(
                     telemetry.request_rejected(
                         malformed=request is None,
                         method=request.get("method") if request else None,
+                        reason=rejection_reason,
                     )
                     _write_stdout(output_lock, rejection)
                     continue
