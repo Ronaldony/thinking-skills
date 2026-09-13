@@ -1,13 +1,14 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 현재 최우선 재개 지점은
-> `docs/feynman-work-log/LOG-075-thread-start-schema-shape-and-docker-blocker-20260913.md`다.
-> Codex 0.154.0 schema 대조로 `thread/start`의 비공식 `environments`/
-> `runtimeWorkspaceRoots` 필드를 제거했고 전체 `386 tests / 11 skipped`가 통과했다.
-> 수정 후 `-08` model-free startup은 Docker `info`/image inspect가
-> `Docker Desktop is unable to start`, WSL status가 timeout이라 실행하지 않았다.
-> 따라서 request-shape 수정 효과와 Windows/Docker 호환성을 아직 확정하지 마라.
-> Docker Engine 정상화 후 새 승인으로 `-08`을 정확히 1회 실행하라. 아래 LOG-074
+> `docs/feynman-work-log/LOG-076-docker-recovered-startup-path-boundary-20260913.md`다.
+> Docker recovery 후 fixed image를 사용한 `-08` model-free startup은 정확히 1회
+> 실행됐고 Docker/initialize/child reap은 통과했다. 그러나 `thread/start`는
+> `-32603 remote-environment-error`로 차단됐으며 `environmentConfig/read.cwd:1`,
+> `fs/getMetadata.path:8`이 모두 `host-path-outside-declared-mount`였다. turn/model
+> generation은 0회다. startup App Server의 process cwd를 candidate로 제한하는 local
+> 보정을 적용했고 targeted 55 tests/compileall/diff check가 통과했다. 같은 startup
+> command는 자동 반복하지 말고, 다음 외부 검증은 별도 승인 후 수행하라. 아래 LOG-075
 > 블록은 역사 기록이다.
 
 > 현재 최우선 재개 지점은

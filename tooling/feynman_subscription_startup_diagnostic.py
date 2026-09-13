@@ -272,7 +272,7 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
         environment[TELEMETRY_OVERRIDE_ENV] = str(telemetry_path)
         process = subprocess.Popen(
             command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            env=environment, bufsize=0,
+            env=environment, cwd=candidate, bufsize=0,
         )
         assert process.stdin is not None and process.stdout is not None and process.stderr is not None
         received: queue.Queue[dict[str, Any] | None] = queue.Queue()

@@ -1,12 +1,14 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최우선: [LOG-075](feynman-work-log/LOG-075-thread-start-schema-shape-and-docker-blocker-20260913.md).
-> Codex 0.154.0 schema 대조로 `thread/start`의 비공식 `environments`/
-> `runtimeWorkspaceRoots` 필드 결함을 제거했고 대상 7개·전체 `386 tests / 11 skipped`가
-> 통과했다. 수정 후 `-08` model-free startup은 실행 직전 Docker `info`/image inspect가
-> `Docker Desktop is unable to start`, WSL status가 timeout이라 중단했다. 따라서
-> request-shape 수정 효과나 Windows/Docker 호환성을 성공으로 단정하지 않는다. 아래
-> LOG-074 안내는 역사 기록이다.
+> 최우선: [LOG-076](feynman-work-log/LOG-076-docker-recovered-startup-path-boundary-20260913.md).
+> Docker recovery 후 fixed runner image와 ChatGPT subscription control plane으로
+> `-08` model-free startup을 정확히 1회 실행했다. Docker/initialize/child reap은
+> 통과했지만 `thread/start`가 `-32603 remote-environment-error`로 차단됐고,
+> request mapping은 `environmentConfig/read.cwd:1` 및 `fs/getMetadata.path:8`의
+> `host-path-outside-declared-mount`였다. turn/model generation은 0회다. App Server가
+> repository root를 implicit discovery하지 않도록 startup `cwd=candidate` 보정을
+> 적용해 targeted 55 tests와 compile/diff 검증을 통과했다. 새 외부 startup 검증은
+> 자동 반복하지 않고 별도 승인 지점으로 남긴다. 아래 LOG-075 안내는 역사 기록이다.
 
 > 최우선: [LOG-072](feynman-work-log/LOG-072-startup-revalidation-paired-cause-20260913.md).
 > 사용자 승인 startup diagnostic 정확히 1회는 종료 코드 0으로 끝났지만
