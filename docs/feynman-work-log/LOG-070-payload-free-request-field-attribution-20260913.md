@@ -105,5 +105,10 @@ force push도 하지 않는다.
 
 ## 저장 상태
 
-이 로그와 구현 변경은 다음 checkpoint에서 함께 commit/push한다. 구현 commit,
-remote SHA, CI 상태는 저장 직후 별도 receipt로 기록한다.
+구현 변경과 이 로그는 `be18755 diagnose: attribute RPC rejections by method and
+field`로 commit했고 feature branch에 push했다. `git ls-remote`로 원격 branch가
+`be18755e53ea856494a63cd52ebe055e108b96fd`임을 확인했다. 이 exact SHA의 고유
+7개 GitHub Actions workflow는 모두 `completed / success`였다.
+
+이 저장 receipt를 반영하는 문서-only checkpoint는 별도로 commit/push한다. main
+merge와 force push는 하지 않는다.
