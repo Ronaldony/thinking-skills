@@ -1,14 +1,13 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최우선: [LOG-073](feynman-work-log/LOG-073-startup-path-rejections-not-reproduced-20260913.md).
-> 승인된 `-06` model-free startup 1회도 `thread/start`에서 `-32603`으로 차단됐지만,
-> 이번에는 remote child `initialize` 요청/응답 1건씩만 전달됐고 path mapping rejection은
-> 0건이다. LOG-072의 config/metadata rejection은 재현되지 않았으므로 해결됐다고도,
-> 현재 blocker라고도 단정하지 않는다. turn/model은 0회이며 정리·schema·privacy는
-> 통과했다. absolute/traversal reason 분리와 bounded notification/error telemetry를
-> 구현했고 전체 `385 tests / 11 skipped`가 통과했다. 다음 외부 행동은 새 telemetry를
-> 포함한 model-free startup 정확히 1회이며 별도 명시 승인 전에는 실행하지 않는다.
-> 아래 LOG-072 안내는 역사 기록이다.
+> 최우선: [LOG-074](feynman-work-log/LOG-074-startup-diagnostic-telemetry-missing-20260913.md).
+> 승인된 `-07` model-free startup 1회는 진단기 실행 후 proxy telemetry가 생성되지 않아
+> report/telemetry artifact를 만들지 못했다. 두 파일의 미존재를 확인했으며 자동 재시도는
+> 하지 않았다. 이 결과로 auth, Docker/Windows executor, `thread/start` 성공을 단정하지
+> 않으며 turn/model은 0회다. telemetry 부재를 `proxy_telemetry_status=missing`과 null로
+> 안전하게 표현하고 경로·stderr·payload를 누설하지 않는 보정을 구현했다. 대상 7개와
+> 전체 `386 tests / 11 skipped`가 통과했다. 다음 외부 startup/model 행동은 별도 명시
+> 승인 전에는 실행하지 않는다. 아래 LOG-073 안내는 역사 기록이다.
 
 > 최우선: [LOG-072](feynman-work-log/LOG-072-startup-revalidation-paired-cause-20260913.md).
 > 사용자 승인 startup diagnostic 정확히 1회는 종료 코드 0으로 끝났지만

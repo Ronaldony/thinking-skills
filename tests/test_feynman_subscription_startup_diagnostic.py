@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import queue
+import tempfile
 import unittest
 
 from tooling.feynman_subscription_startup_diagnostic import (
-    StartupDiagnosticError, _thread_start_params, _thread_summary,
-    _wait_for_thread_start,
+    StartupDiagnosticError, _safe_proxy_telemetry, _thread_start_params,
+    _thread_summary, _wait_for_thread_start,
 )
 
 
@@ -78,6 +79,15 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
         self.assertEqual(notifications, {"unknown": 1})
         self.assertNotIn("SYNTHETIC_PRIVATE", json.dumps(notifications))
 
+    def test_missing_proxy_telemetry_is_fixed_and_payload_free(self):
+        with tempfile.TemporaryDirectory() as root:
+            missing = Path(root) / "synthetic-private-telemetry.json"
+            with self.assertRaisesRegex(
+                StartupDiagnosticError, "^startup-proxy-telemetry-missing$"
+            ):
+                _safe_proxy_telemetry(missing)
+            self.assertNotIn(str(missing), "startup-proxy-telemetry-missing")
+
     def test_durable_thread_is_rejected(self):
         with self.assertRaisesRegex(StartupDiagnosticError, "not-ephemeral"):
             _thread_summary({"result": {"thread": {"id": "x", "ephemeral": False}}})
@@ -95,6 +105,14 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
                       schema["properties"]["proxy_telemetry"]["properties"])
         self.assertIn("error_signals", schema["properties"]["checks"]["properties"])
         self.assertIn("error_data_kind", schema["properties"]["checks"]["properties"])
+        self.assertEqual(
+            schema["properties"]["proxy_telemetry_status"]["enum"],
+            ["available", "missing"],
+        )
+        self.assertEqual(
+            schema["properties"]["proxy_telemetry"]["type"],
+            ["object", "null"],
+        )
 
 
 if __name__ == "__main__":

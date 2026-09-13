@@ -47,8 +47,9 @@
       "required": ["thread_started", "error_code", "error_category", "ephemeral_thread", "instruction_sources_present", "response_payload_preserved", "initialize_completed", "turn_requests_sent", "model_generation_requests_sent", "process_tree_reaped"]
     },
     "notification_methods": {"$ref": "#/$defs/counters"},
+    "proxy_telemetry_status": {"enum": ["available", "missing"]},
     "proxy_telemetry": {
-      "type": "object",
+      "type": ["object", "null"],
       "additionalProperties": false,
       "properties": {
         "schema_version": {"const": 1},

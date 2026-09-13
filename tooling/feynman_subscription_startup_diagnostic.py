@@ -196,7 +196,12 @@ def _wait_for_thread_start(received: queue.Queue[dict[str, Any] | None],
 
 
 def _safe_proxy_telemetry(path: Path) -> dict[str, Any]:
-    value = json.loads(_regular(path, "startup proxy telemetry").read_text(encoding="utf-8"))
+    if path.is_symlink() or not path.exists():
+        raise StartupDiagnosticError("startup-proxy-telemetry-missing")
+    try:
+        value = json.loads(_regular(path, "startup proxy telemetry").read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise StartupDiagnosticError("startup-proxy-telemetry-unreadable") from exc
     if not isinstance(value, dict) or value.get("schema_version") != 1:
         raise StartupDiagnosticError("startup-telemetry-shape")
     allowed = {
@@ -311,7 +316,17 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
             process.stderr.close()
         if process.returncode not in {0, None} and not forced_shutdown:
             raise StartupDiagnosticError("app-server-exit-" + _failure_category(stderr_text))
-    telemetry = _safe_proxy_telemetry(telemetry_path)
+    try:
+        telemetry = _safe_proxy_telemetry(telemetry_path)
+        telemetry_status = "available"
+    except StartupDiagnosticError as exc:
+        if str(exc) != "startup-proxy-telemetry-missing":
+            raise
+        # Missing proxy telemetry is an inconclusive diagnostic signal, not a
+        # green result and not a reason to discard the already observed
+        # thread/start outcome.  Keep the absence explicit and payload-free.
+        telemetry = None
+        telemetry_status = "missing"
     result = {
         "schema_version": 1,
         "verdict": (
@@ -327,6 +342,7 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
             "process_tree_reaped": process_tree_reaped,
         },
         "notification_methods": notifications,
+        "proxy_telemetry_status": telemetry_status,
         "proxy_telemetry": telemetry,
         "privacy": {
             "request_or_response_payload_preserved": False,
@@ -374,9 +390,13 @@ def main() -> int:
             telemetry_path=args.telemetry, output_path=args.output,
             timeout_seconds=args.timeout_seconds,
         )
+    except StartupDiagnosticError as exc:
+        parser.exit(2, "error: startup diagnostic failed: " + str(exc) + "\n")
     except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError,
             subprocess.SubprocessError, queue.Empty) as exc:
-        parser.exit(2, "error: startup diagnostic failed: " + str(exc) + "\n")
+        # Do not echo filesystem paths or peer-provided diagnostic text.
+        parser.exit(2, "error: startup diagnostic failed: startup-diagnostic-input-invalid\n")
+    telemetry = result.get("proxy_telemetry") or {}
     print(json.dumps({
         "verdict": result["verdict"],
         "thread_started": result["checks"]["thread_started"],
@@ -384,13 +404,14 @@ def main() -> int:
         "error_category": result["checks"]["error_category"],
         "turn_requests_sent": result["checks"]["turn_requests_sent"],
         "model_generation_requests_sent": result["checks"]["model_generation_requests_sent"],
-        "request_mapping_rejection_methods": result["proxy_telemetry"].get(
+        "proxy_telemetry_status": result["proxy_telemetry_status"],
+        "request_mapping_rejection_methods": telemetry.get(
             "request_mapping_rejection_methods", {}),
-        "request_mapping_rejection_reasons": result["proxy_telemetry"].get(
+        "request_mapping_rejection_reasons": telemetry.get(
             "request_mapping_rejection_reasons", {}),
-        "request_mapping_rejection_method_reasons": result["proxy_telemetry"].get(
+        "request_mapping_rejection_method_reasons": telemetry.get(
             "request_mapping_rejection_method_reasons", {}),
-        "request_mapping_rejection_method_reason_fields": result["proxy_telemetry"].get(
+        "request_mapping_rejection_method_reason_fields": telemetry.get(
             "request_mapping_rejection_method_reason_fields", {}),
     }, ensure_ascii=False, indent=2))
     return 0
