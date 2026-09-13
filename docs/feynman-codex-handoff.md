@@ -1,12 +1,14 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최우선: [LOG-066](feynman-work-log/LOG-066-approved-namespace-startup-result-20260913.md).
+> 최우선: [LOG-067](feynman-work-log/LOG-067-raw-posix-namespace-mapping-fix-20260913.md).
 > 승인된 추가 진단은 `-32603`, 모델 생성 0회다. 거부 이유 container 2 / host 4 /
 > invalid-host 1은 예외 분기별 집계다. raw POSIX도 host 분기로 떨어지는 로컬
 > 재현이 있어 실제 namespace 확정 증거가 아니다. method와 reason도 개별
 > 요청으로 연결되지 않는다. 새 -03 산출물의 schema 검증과 정리는 완료됐다.
 > 다음은 config 경로 생성 계약의 오프라인 분석이며 단순 재실행·mount 확대는
-> 하지 않는다. 아래 과거 안내보다 이 문단과 LOG-066을 우선한다.
+> 하지 않는다. raw POSIX 경로의 host fallback 재해석 결함을 고쳤고 전체
+> 373 tests/11 skipped가 통과했다. 수정 후 startup 재검증은 별도 승인 없이는
+> 실행하지 않는다. 아래 과거 안내보다 이 문단과 LOG-067을 우선한다.
 
 > 최신: [LOG-065](feynman-work-log/LOG-065-namespace-rejection-reason-split-20260913.md).
 > rejection reason telemetry와 ephemeral `thread/start` 진단기를 구현했다. 첫

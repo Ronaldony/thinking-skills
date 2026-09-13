@@ -155,10 +155,11 @@ class RpcPathMapper:
                 return _file_uri(self._host_to_container_path(path.as_posix()))
             return _file_uri(self._declared_container_path(path.as_posix()))
         if value.startswith("/"):
-            try:
-                return self._declared_container_path(value).as_posix()
-            except RpcPathMappingError:
-                pass
+            # A raw POSIX absolute path is already in the remote/container
+            # namespace.  Do not fall back to host-path parsing when it is
+            # outside the declared mounts; that both mislabels the failure
+            # and can reinterpret a remote path using host rules.
+            return self._declared_container_path(value).as_posix()
         return self._host_to_container_path(value).as_posix()
 
     def container_to_host(self, value: str) -> str:

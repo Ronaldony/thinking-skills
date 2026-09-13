@@ -103,6 +103,19 @@ class RpcPathProxyTests(unittest.TestCase):
         self.assertIsNotNone(error)
         self.assertEqual(reason, "container-path-outside-declared-mount")
 
+    def test_raw_posix_path_stays_in_container_namespace(self):
+        mapper = RpcPathMapper.from_mounts([
+            {"source": r"C:\DevWorks\candidate", "destination": "/run/candidate", "access": "rw"},
+        ])
+        raw = json.dumps({
+            "jsonrpc": "2.0", "id": 13, "method": "fs/getMetadata",
+            "params": {"path": "/var/private.txt"},
+        }).encode("utf-8")
+        child, error, reason = _map_request_payload_with_reason(mapper, raw)
+        self.assertIsNone(child)
+        self.assertIsNotNone(error)
+        self.assertEqual(reason, "container-path-outside-declared-mount")
+
     def test_config_path_shape_has_fixed_rejection_reason(self):
         mapper = RpcPathMapper.from_mounts([
             {"source": r"C:\DevWorks\candidate", "destination": "/run/candidate", "access": "rw"},
