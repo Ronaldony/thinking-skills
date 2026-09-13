@@ -1,6 +1,17 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 현재 최우선 재개 지점은
+> `docs/feynman-work-log/LOG-073-startup-path-rejections-not-reproduced-20260913.md`다.
+> 승인된 `-06` model-free startup 1회는 `thread/start`에서 `-32603`으로 차단됐지만,
+> remote child에서는 `initialize` 요청/응답 1건씩과 mapping rejection 0건만 관찰됐다.
+> LOG-072의 `configPaths`/metadata rejection은 재현되지 않았다. turn/model은 0회다.
+> invalid path reason을 absolute/traversal로 분리했고 arbitrary notification method와
+> App Server error 원문을 보존하지 않는 bounded telemetry를 추가했다. 전체
+> `385 tests / 11 skipped`가 통과했다. 새 telemetry를 실제로 확인하는 startup 1회는
+> 별도 명시 승인 전까지 실행하지 말고 model/baseline도 시작하지 마라. 아래 LOG-072
+> 블록은 역사 기록이다.
+
+> 현재 최우선 재개 지점은
 > `docs/feynman-work-log/LOG-072-startup-revalidation-paired-cause-20260913.md`다.
 > 사용자 승인 model-free startup diagnostic 정확히 1회는 종료 코드 0으로 끝났지만
 > `initialize` 뒤 `thread/start`가 `-32603 remote-environment-error`로 차단됐다.

@@ -1,5 +1,16 @@
 # feynman-thinking 작업 상태
 
+최우선 재개 지점: [LOG-073](feynman-work-log/LOG-073-startup-path-rejections-not-reproduced-20260913.md).
+승인된 `startup-diagnostic-20260913-06` 정확히 1회는 App Server `initialize` 뒤
+`thread/start`에서 다시 `-32603 remote-environment-error`로 차단됐다. 다만 이번에는
+remote child 요청/응답이 `initialize` 1건씩이고 request/response mapping rejection은
+모두 0건이라 LOG-072의 config/metadata path rejection이 재현되지 않았다. turn/model은
+0회, child reap·Docker 정리·schema·privacy 검증은 통과했다. invalid path reason을
+absolute/traversal로 세분화하고, arbitrary notification method를 `unknown`으로 축약하며,
+error 원문 대신 fixed boolean signals와 data kind만 기록하도록 보강했다. 전체
+`385 tests / 11 skipped`가 통과했다. 새 telemetry의 실제 값 확인은 별도 승인된
+model-free startup 1회가 필요하다. 아래 LOG-072 문단은 역사 기록이다.
+
 최우선 재개 지점: [LOG-072](feynman-work-log/LOG-072-startup-revalidation-paired-cause-20260913.md).
 사용자 승인 model-free startup 진단 정확히 1회가 완료됐고 종료 코드는 0이지만,
 App Server `initialize` 뒤 `thread/start`가 `-32603 remote-environment-error`로
