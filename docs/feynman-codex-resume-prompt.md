@@ -4,7 +4,8 @@
 > 먼저 읽어라. payload-free reason telemetry와 ephemeral `thread/start` 진단기는
 > 구현됐다. 첫 model-free run은 host path를 remote-native cwd에 넣어 `-32603`으로
 > 끝났고, `/run/candidate` 보정 후 재실행은 automatic approval review에서 시작 전
-> 거부됐다. 전체 371 tests/11 skipped는 통과했다. 사용자가 보정된 model-free
+> 거부됐다. 전체 371 tests/11 skipped와 구현 commit `f7ae713`의 정확한 SHA CI
+> 12/12가 통과했다. 사용자가 보정된 model-free
 > startup diagnostic 정확히 1회를 명시 승인하기 전에는 실행하지 마라.
 > 아래 재개 안내는 역사 기록이다.
 

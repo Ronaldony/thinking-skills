@@ -163,6 +163,16 @@ diagnostic 정확히 1회를 명시 승인받아 새 `-02` artifact로 실행하
 
 ## 저장 상태
 
-- 이 로그 작성 시점에는 구현과 문서가 commit 전이다.
+- 구현·테스트·schema·이 로그의 최초 상태는 commit
+  `f7ae713e01e79d9f5894ded70cf604920bb6a5a7`
+  (`feat: add model-free remote startup diagnostics`)로 저장하고
+  `origin/feat/feynman-thinking-v0.5-draft`에 일반 push했다.
+- 위 정확한 SHA로 조회한 GitHub Actions는 push/PR 중복을 포함한 12개 run이
+  모두 `success`였다. distinct workflow 7종은 `validate-feynman`,
+  `validate-feynman-unit-diagnostic`, `validate-feynman-subscription-readiness`,
+  `validate-feynman-codex-reference`, `validate-feynman-docker-reference`,
+  `validate-feynman-remote-exec-reference`,
+  `validate-feynman-remote-patch-reference`다.
+- 본 저장 상태 갱신은 별도 docs-only follow-up commit으로 남긴다.
 - 사용자 PNG 2개는 untracked로 보존하고 stage하지 않는다.
 - main merge와 force push는 하지 않는다.

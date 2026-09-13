@@ -6,7 +6,8 @@ payload-free rejection reason telemetry와 ephemeral App Server `thread/start`
 0, proxy mapping rejection 0으로 종료됐다. local 0.154.0 schema에 따라 remote
 cwd를 `/run/candidate`로 보정했지만, 두 번째 외부 진단은 automatic approval
 review에서 실행 전 거부됐다. 전체 `371 tests / 11 skipped`는 통과했다. 다음은
-보정된 model-free startup diagnostic 1회에 대한 명시 승인이다.
+보정된 model-free startup diagnostic 1회에 대한 명시 승인이다. 구현 commit
+`f7ae713`의 정확한 SHA CI는 중복 run을 포함해 12/12 success다.
 아래 checkpoint들은 역사 기록이며 위 LOG-063을 우선한다.
 
 현재 재개 지점: [LOG-062](feynman-work-log/LOG-062-luna-config-metadata-rejections-20260913.md).
