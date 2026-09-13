@@ -4,6 +4,7 @@ import base64
 import json
 from pathlib import Path
 from types import SimpleNamespace
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -11,7 +12,9 @@ from tooling.feynman_rpc_path_mapping import RpcPathMapper, RpcPathMappingError
 from tooling.feynman_rpc_path_proxy import _map_request_payload, _read_response_within_limit
 from tooling.feynman_rpc_version_gate import verify
 from tooling.feynman_subscription_models import SUBSCRIPTION_WORK_MODELS, model_selection_report
-from tooling.feynman_rpc_path_contract_probe import _probe_failure_stage, _shape, _requests
+from tooling.feynman_rpc_path_contract_probe import (
+    _namespace_shape, _path_namespace, _probe_failure_stage, _run_peer, _shape, _requests,
+)
 
 
 class CompatibilityTests(unittest.TestCase):
@@ -123,6 +126,42 @@ class CompatibilityTests(unittest.TestCase):
         }
         self.assertEqual(_probe_failure_stage(peer, peer),
                          "rpc-response-contract-not-equivalent")
+
+    def test_response_namespace_keeps_windows_and_container_forms_distinct(self):
+        candidate = Path(r"C:\fixture\candidate")
+        windows = _namespace_shape({
+            "result": {"path": "file:///C:/fixture/candidate/sub"},
+        }, candidate=candidate)
+        container = _namespace_shape({
+            "result": {"path": "file:///run/candidate/sub"},
+        }, candidate=candidate)
+        self.assertNotEqual(windows, container)
+        self.assertEqual(_path_namespace(
+            "file:///C:/fixture/candidate/sub", candidate), "host")
+        self.assertEqual(_path_namespace(
+            "file:///run/candidate/sub", candidate), "container")
+
+    def test_peer_fixture_drains_stderr_without_blocking_rpc(self):
+        fixture = Path(__file__).with_name("feynman_subscription_lifecycle_fixture.py")
+        result = _run_peer(
+            [sys.executable, "-B", str(fixture), "stderr-flood"],
+            [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}],
+            candidate=Path(r"C:\fixture\candidate"), timeout=3,
+        )
+        self.assertEqual(result["response_ids"], ["1"])
+        self.assertGreaterEqual(result["stderr_bytes"], 1048576)
+        self.assertTrue(result["stderr_drained"])
+        self.assertFalse(result["stderr_read_error"])
+
+    def test_peer_fixture_records_duplicate_response_ids(self):
+        fixture = Path(__file__).with_name("feynman_subscription_lifecycle_fixture.py")
+        result = _run_peer(
+            [sys.executable, "-B", str(fixture), "duplicate-response"],
+            [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}],
+            candidate=Path(r"C:\fixture\candidate"), timeout=3,
+        )
+        self.assertEqual(result["response_ids"], ["1"])
+        self.assertEqual(result["response_id_duplicates"], 1)
 
 
 class RuntimeVersionTests(unittest.TestCase):

@@ -19,6 +19,7 @@ import threading
 import tempfile
 import time
 from typing import Any
+from urllib.parse import unquote
 
 
 PROBE_IMAGE = "sha256:36b6f50b88a3e5054e1943ef8a40bc80e1629ad0821b4657ec8a33d468179db6"
@@ -95,16 +96,13 @@ def _requests(*, candidate: Path, direct: bool) -> list[dict[str, Any]]:
 
 
 def _path_role(value: str, candidate: Path) -> str:
-    host = candidate.as_posix().rstrip("/")
-    normalized = value.replace("\\", "/")
-    if normalized.startswith("file://"):
-        normalized = normalized[7:]
-    if len(normalized) >= 3 and normalized[0] == "/" and normalized[2] == ":":
-        normalized = normalized[1:]
+    host = candidate.as_posix().rstrip("/").casefold()
+    normalized = _normalize_path_value(value)
+    comparison = normalized.casefold()
     if normalized == "/run/candidate" or normalized.startswith("/run/candidate/"):
         return "candidate/" + normalized.removeprefix("/run/candidate/")
-    if normalized == host or normalized.startswith(host + "/"):
-        return "candidate/" + normalized.removeprefix(host + "/")
+    if comparison == host or comparison.startswith(host + "/"):
+        return "candidate/" + normalized[len(host):].lstrip("/")
     for root in ("/run/home", "/run/codex", "/run/temp"):
         if normalized == root or normalized.startswith(root + "/"):
             return root.removeprefix("/") + "/..."
@@ -112,15 +110,23 @@ def _path_role(value: str, candidate: Path) -> str:
 
 
 def _path_namespace(value: str, candidate: Path) -> str:
-    normalized = value.replace("\\", "/")
-    if normalized.startswith("file://"):
-        normalized = normalized[7:]
+    normalized = _normalize_path_value(value)
     if normalized.startswith("/run/"):
         return "container"
-    host = candidate.as_posix().rstrip("/")
-    if normalized == host or normalized.startswith(host + "/"):
+    host = candidate.as_posix().rstrip("/").casefold()
+    comparison = normalized.casefold()
+    if comparison == host or comparison.startswith(host + "/"):
         return "host"
     return "outside-declared-mount"
+
+
+def _normalize_path_value(value: str) -> str:
+    normalized = unquote(value.replace("\\", "/"))
+    if normalized.startswith("file://"):
+        normalized = normalized[7:]
+    if len(normalized) >= 3 and normalized[0] == "/" and normalized[2] == ":":
+        normalized = normalized[1:]
+    return normalized
 
 
 def _shape(value: Any, *, candidate: Path, key: str | None = None) -> Any:
@@ -193,7 +199,8 @@ def _parse_line(line: str, *, candidate: Path) -> dict[str, Any] | None:
     if type(identifier) in {int, str}:
         return {"kind": "response", "id": str(identifier),
                 "status": "error" if isinstance(value.get("error"), dict) else "result",
-                "shape": _shape(value, candidate=candidate)}
+                "shape": _shape(value, candidate=candidate),
+                "namespace_shape": _namespace_shape(value, candidate=candidate)}
     params = value.get("params")
     return {
         "kind": "notification", "method": value.get("method"),
@@ -227,19 +234,41 @@ def _run_peer(command: list[str], messages: list[dict[str, Any]], *, candidate: 
         command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, encoding="utf-8",
     )
-    assert process.stdin is not None and process.stdout is not None
+    assert process.stdin is not None and process.stdout is not None and process.stderr is not None
     received: queue.Queue[str | None] = queue.Queue()
+    stdout_read_error = False
+    stderr_read_error = False
+    stderr_bytes = 0
 
     def read_lines() -> None:
+        nonlocal stdout_read_error
         try:
             for line in process.stdout:
                 received.put(line)
+        except (OSError, UnicodeError):
+            stdout_read_error = True
         finally:
             received.put(None)
 
-    threading.Thread(target=read_lines, daemon=True).start()
+    stdout_reader = threading.Thread(target=read_lines, daemon=True)
+    stdout_reader.start()
+
+    def drain_stderr() -> None:
+        nonlocal stderr_bytes, stderr_read_error
+        try:
+            while True:
+                chunk = process.stderr.read(65536)
+                if not chunk:
+                    return
+                stderr_bytes += len(chunk.encode("utf-8", errors="replace"))
+        except (OSError, UnicodeError):
+            stderr_read_error = True
+
+    stderr_reader = threading.Thread(target=drain_stderr, daemon=True)
+    stderr_reader.start()
     deadline = started + timeout
     responses: dict[str, Any] = {}
+    response_namespaces: dict[str, Any] = {}
     notifications = 0
     malformed = 0
     response_statuses: dict[str, str] = {}
@@ -248,9 +277,10 @@ def _run_peer(command: list[str], messages: list[dict[str, Any]], *, candidate: 
     peer_closed_after_requests = False
     timed_out = False
     failure_stage: str | None = None
+    response_id_duplicates = 0
 
     def record(line: str) -> dict[str, Any] | None:
-        nonlocal notifications, malformed
+        nonlocal notifications, malformed, response_id_duplicates
         parsed = _parse_line(line, candidate=candidate)
         if parsed is None:
             malformed += 1
@@ -262,8 +292,13 @@ def _run_peer(command: list[str], messages: list[dict[str, Any]], *, candidate: 
                 if type(parsed.get("sandbox_denied")) is bool:
                     process_sandbox_denied.append(parsed["sandbox_denied"])
         else:
-            responses[parsed["id"]] = parsed["shape"]
-            response_statuses[parsed["id"]] = parsed["status"]
+            identifier = parsed["id"]
+            if identifier in responses:
+                response_id_duplicates += 1
+            else:
+                responses[identifier] = parsed["shape"]
+                response_namespaces[identifier] = parsed["namespace_shape"]
+                response_statuses[identifier] = parsed["status"]
         return parsed
 
     def wait_for(*, response_id: str | None = None,
@@ -320,6 +355,25 @@ def _run_peer(command: list[str], messages: list[dict[str, Any]], *, candidate: 
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=5)
+        stderr_reader.join(timeout=2)
+        try:
+            process.stderr.close()
+        except OSError:
+            pass
+        stdout_reader.join(timeout=2)
+        while True:
+            try:
+                line = received.get_nowait()
+            except queue.Empty:
+                break
+            if line is None:
+                peer_closed_after_requests = True
+            else:
+                record(line)
+        try:
+            process.stdout.close()
+        except OSError:
+            pass
     if failure_stage is None and process.returncode not in {0, None}:
         failure_stage = "peer-exit-nonzero"
     return {
@@ -328,11 +382,17 @@ def _run_peer(command: list[str], messages: list[dict[str, Any]], *, candidate: 
         "malformed_lines": malformed,
         "peer_closed_after_requests": peer_closed_after_requests,
         "responses": responses,
+        "response_namespaces": response_namespaces,
         "response_statuses": response_statuses,
         "process_exit_codes": process_exit_codes,
         "process_sandbox_denied": process_sandbox_denied,
         "timed_out": timed_out,
         "failure_stage": failure_stage,
+        "response_id_duplicates": response_id_duplicates,
+        "stdout_read_error": stdout_read_error,
+        "stderr_read_error": stderr_read_error,
+        "stderr_bytes": stderr_bytes,
+        "stderr_drained": not stderr_reader.is_alive(),
         "exit_code": process.returncode,
         "elapsed_ms": int((time.monotonic() - started) * 1000),
     }
@@ -387,14 +447,8 @@ def run(*, docker: Path, docker_config: Path, image: str,
                           candidate=candidate, timeout=timeout)
     direct_responses = direct.pop("responses")
     proxy_responses = proxy.pop("responses")
-    direct_namespaces = {
-        identifier: _namespace_shape(value, candidate=candidate)
-        for identifier, value in direct_responses.items()
-    }
-    proxy_namespaces = {
-        identifier: _namespace_shape(value, candidate=candidate)
-        for identifier, value in proxy_responses.items()
-    }
+    direct_namespaces = direct.pop("response_namespaces")
+    proxy_namespaces = proxy.pop("response_namespaces")
     response_shapes_match = direct_responses == proxy_responses
     request_shape_direct = [_shape(item, candidate=candidate)
                             for item in _requests(candidate=candidate, direct=True)]
@@ -402,7 +456,7 @@ def run(*, docker: Path, docker_config: Path, image: str,
                            for item in _requests(candidate=candidate, direct=False)]
     request_shapes_match = request_shape_direct == request_shape_proxy
     result = {
-        "schema_version": 1,
+        "schema_version": 2,
         "verdict": "rpc-path-contract-equivalent" if (
             direct["exit_code"] == 0 and proxy["exit_code"] == 0
             and direct["response_ids"] == proxy["response_ids"] == [str(x) for x in EXPECTED_IDS]
@@ -411,6 +465,10 @@ def run(*, docker: Path, docker_config: Path, image: str,
             and set(direct["response_statuses"].values()) == {"result"}
             and direct["process_exit_codes"] == proxy["process_exit_codes"] == [0]
             and direct["process_sandbox_denied"] == proxy["process_sandbox_denied"] == [False]
+            and direct["response_id_duplicates"] == proxy["response_id_duplicates"] == 0
+            and not direct["stdout_read_error"] and not proxy["stdout_read_error"]
+            and not direct["stderr_read_error"] and not proxy["stderr_read_error"]
+            and direct["stderr_drained"] and proxy["stderr_drained"]
             and request_shapes_match
             and response_shapes_match
         ) else "rpc-path-contract-blocked",
@@ -422,6 +480,10 @@ def run(*, docker: Path, docker_config: Path, image: str,
             and set(direct["response_statuses"].values()) == {"result"}
             and direct["process_exit_codes"] == proxy["process_exit_codes"] == [0]
             and direct["process_sandbox_denied"] == proxy["process_sandbox_denied"] == [False]
+            and direct["response_id_duplicates"] == proxy["response_id_duplicates"] == 0
+            and not direct["stdout_read_error"] and not proxy["stdout_read_error"]
+            and not direct["stderr_read_error"] and not proxy["stderr_read_error"]
+            and direct["stderr_drained"] and proxy["stderr_drained"]
             and request_shapes_match and response_shapes_match
         ) else _probe_failure_stage(direct, proxy),
         "image_id": image,

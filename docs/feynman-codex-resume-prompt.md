@@ -1,6 +1,14 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 최신 재개 지점은
+> `docs/feynman-work-log/LOG-086-probe-io-and-namespace-hardening-20260914.md`다.
+> path probe의 stderr/stdout drain, response 중복 집계, 원본 response namespace
+> 보존을 보강했다. fixture 회귀 `72 tests OK`, 전체 회귀 `426 tests OK, 11 skipped`다.
+> 수정된 Docker probe는 direct/proxy 모두 initialize 전에
+> `docker-peer-startup-timeout`으로 막혔다. Docker runtime 원인을 단계별로 좁히고,
+> 실제 구독 startup·인증·모델 평가를 재실행하지 마라.
+
+> 직전 재개 지점은
 > `docs/feynman-work-log/LOG-085-windows-docker-peer-startup-blocker-20260914.md`다.
 > expanded offline path probe의 direct/proxy가 모두 initialize 응답 전에
 > `docker-peer-startup-timeout`으로 막혀 path response semantics를 아직 비교하지

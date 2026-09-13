@@ -1,6 +1,14 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-085](feynman-work-log/LOG-085-windows-docker-peer-startup-blocker-20260914.md).
+> 최신: [LOG-086](feynman-work-log/LOG-086-probe-io-and-namespace-hardening-20260914.md).
+> path probe의 stderr/stdout drain, response 중복 집계, 원본 response namespace
+> 보존을 보강했다. fixture `72 tests OK`, 전체 `426 tests OK, 11 skipped`, schema
+> 17개 errors=0이다. 수정된 Docker probe는 direct/proxy 양쪽에서 initialize 전에
+> `docker-peer-startup-timeout`으로 막혔다. 다음은 CLI·container 종료 상태와 OOM을
+> 분리하는 제한된 Docker runtime probe다. 실제 구독 startup·인증·모델 실행은 하지
+> 않았다.
+
+> 직전: [LOG-085](feynman-work-log/LOG-085-windows-docker-peer-startup-blocker-20260914.md).
 > expanded offline path probe는 direct/proxy 모두 initialize 응답 전에
 > `docker-peer-startup-timeout`으로 막혔다. 이는 path mapping 실패가 아니라 Docker
 > peer 실행/stdio 단계의 blocker이며, 실제 response semantics는 아직 판정할 수 없다.

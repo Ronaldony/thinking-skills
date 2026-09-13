@@ -17,8 +17,8 @@ def _emit(message: dict[str, Any]) -> None:
     sys.stdout.flush()
 
 
-def _initialize(identifier: Any) -> None:
-    _emit({
+def _initialize(identifier: Any, *, duplicate: bool = False) -> None:
+    response = {
         "jsonrpc": "2.0",
         "id": identifier,
         "result": {
@@ -26,7 +26,10 @@ def _initialize(identifier: Any) -> None:
             "capabilities": {"experimentalApi": {}},
             "serverInfo": {"name": "offline-lifecycle-fixture", "version": "1.0"},
         },
-    })
+    }
+    _emit(response)
+    if duplicate:
+        _emit(response)
 
 
 def _thread_start(identifier: Any, mode: str) -> None:
@@ -57,7 +60,7 @@ def _thread_start(identifier: Any, mode: str) -> None:
 
 
 def main() -> int:
-    modes = {"healthy", "initialize-timeout", "thread-start-error", "wrong-response-id", "proxy-child", "proxy-child-exit"}
+    modes = {"healthy", "initialize-timeout", "thread-start-error", "wrong-response-id", "proxy-child", "proxy-child-exit", "stderr-flood", "duplicate-response"}
     mode = sys.argv[1] if len(sys.argv) >= 2 else ""
     if mode not in modes:
         return 2
@@ -75,7 +78,10 @@ def main() -> int:
                 return 7
             if mode == "initialize-timeout":
                 continue
-            _initialize(identifier)
+            if mode == "stderr-flood":
+                sys.stderr.write("x" * 1048576)
+                sys.stderr.flush()
+            _initialize(identifier, duplicate=mode == "duplicate-response")
         elif method == "initialized":
             continue
         elif method == "thread/start":

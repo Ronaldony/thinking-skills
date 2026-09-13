@@ -1,6 +1,13 @@
 # feynman-thinking 작업 상태
 
-최신 재개 지점: [LOG-085](feynman-work-log/LOG-085-windows-docker-peer-startup-blocker-20260914.md).
+최신 재개 지점: [LOG-086](feynman-work-log/LOG-086-probe-io-and-namespace-hardening-20260914.md).
+probe의 stderr/stdout drain, response 중복 집계, 원본 response namespace 보존을
+보강했다. fixture 회귀와 전체 회귀는 각각 `72 tests OK`, `426 tests OK, 11
+skipped`이며 ResourceWarning은 없다. 수정된 Docker probe도 direct/proxy 모두
+initialize 전에 `docker-peer-startup-timeout`으로 막혔다. 실제 path semantics·구독
+startup·모델 평가는 아직 실행 완료로 판정하지 않는다.
+
+직전 지점: [LOG-085](feynman-work-log/LOG-085-windows-docker-peer-startup-blocker-20260914.md).
 expanded offline path probe는 direct/proxy 양쪽에서 initialize 응답 전에
 `docker-peer-startup-timeout`으로 막혔다. 따라서 path mapping 의미 동등성은 아직
 판정하지 않는다. startup cleanup deadline과 probe failure-stage 보존을 보강했고,
