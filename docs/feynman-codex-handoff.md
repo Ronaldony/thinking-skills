@@ -1,6 +1,15 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-084](feynman-work-log/LOG-084-startup-cleanup-evidence-and-next-boundary-20260913.md).
+> 최신: [LOG-085](feynman-work-log/LOG-085-windows-docker-peer-startup-blocker-20260914.md).
+> expanded offline path probe는 direct/proxy 모두 initialize 응답 전에
+> `docker-peer-startup-timeout`으로 막혔다. 이는 path mapping 실패가 아니라 Docker
+> peer 실행/stdio 단계의 blocker이며, 실제 response semantics는 아직 판정할 수 없다.
+> startup cleanup deadline과 probe의 failure-stage/initialize 관찰을 보강했고 변경
+> 영역 회귀 `86 tests OK`, ResourceWarning 없음이다. 실제 구독 startup·인증·모델
+> 실행은 하지 않았다. 다음은 Docker peer의 단순 process completion을 model-free로
+> 좁히는 작업이다.
+
+> 직전: [LOG-084](feynman-work-log/LOG-084-startup-cleanup-evidence-and-next-boundary-20260913.md).
 > 최종 startup gate를 이용한 실제 ChatGPT 구독 startup diagnostic 1회는
 > `initialize` 완료 후 `thread/start -32603 remote-environment-error`로 blocked됐다.
 > proxy는 6/6 request forward, 5/5 response match, mapping/write/unmatched/pending

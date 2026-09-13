@@ -22,7 +22,7 @@ from typing import Any
 
 
 PROBE_IMAGE = "sha256:36b6f50b88a3e5054e1943ef8a40bc80e1629ad0821b4657ec8a33d468179db6"
-EXPECTED_IDS = (1, 2, 3, 4)
+EXPECTED_IDS = (1, 2, 3, 4, 5, 6, 7)
 
 
 def _docker_args(*, image: str, candidate: Path, home: Path,
@@ -62,11 +62,30 @@ def _requests(*, candidate: Path, direct: bool) -> list[dict[str, Any]]:
             "clientName": "feynman-path-contract-probe",
         }},
         {"jsonrpc": "2.0", "method": "initialized", "params": {}},
-        {"jsonrpc": "2.0", "id": 2, "method": "fs/getMetadata", "params": {"path": metadata}},
-        {"jsonrpc": "2.0", "id": 3, "method": "fs/readFile", "params": {
+        {"jsonrpc": "2.0", "id": 2, "method": "environmentConfig/read", "params": {
+            "cwd": cwd,
+            "configPaths": [["file:///run/candidate/sub/config.toml"]]
+            if direct else [[f"file:///{root}/sub/config.toml"]],
+            "requirementsPaths": [["file:///run/candidate/sub/requirements.txt"]]
+            if direct else [[f"file:///{root}/sub/requirements.txt"]],
+        }},
+        {"jsonrpc": "2.0", "id": 3, "method": "fs/canonicalize", "params": {
+            "path": canonical,
+        }},
+        {"jsonrpc": "2.0", "id": 4, "method": "fs/getMetadata", "params": {"path": metadata}},
+        {"jsonrpc": "2.0", "id": 5, "method": "fs/walk", "params": {
+            "path": f"file:///run/candidate/sub" if direct else f"file:///{root}/sub",
+            "options": {
+                "maxDepth": 2,
+                "maxDirectories": 16,
+                "maxEntries": 64,
+                "followDirectorySymlinks": False,
+            },
+        }},
+        {"jsonrpc": "2.0", "id": 6, "method": "fs/readFile", "params": {
             "path": metadata, "offset": 0, "len": 1,
         }},
-        {"jsonrpc": "2.0", "id": 4, "method": "process/start", "params": {
+        {"jsonrpc": "2.0", "id": 7, "method": "process/start", "params": {
             "processId": "feynman-path-contract-readable",
             "argv": ["sh", "-c", "test -r config.toml"],
             "cwd": cwd, "env": {"PATH": "/usr/local/bin:/usr/bin:/bin"},
@@ -92,6 +111,18 @@ def _path_role(value: str, candidate: Path) -> str:
     return "outside-declared-mount"
 
 
+def _path_namespace(value: str, candidate: Path) -> str:
+    normalized = value.replace("\\", "/")
+    if normalized.startswith("file://"):
+        normalized = normalized[7:]
+    if normalized.startswith("/run/"):
+        return "container"
+    host = candidate.as_posix().rstrip("/")
+    if normalized == host or normalized.startswith(host + "/"):
+        return "host"
+    return "outside-declared-mount"
+
+
 def _shape(value: Any, *, candidate: Path, key: str | None = None) -> Any:
     if isinstance(value, dict):
         return {name: _shape(item, candidate=candidate, key=name)
@@ -104,6 +135,22 @@ def _shape(value: Any, *, candidate: Path, key: str | None = None) -> Any:
         if key in {"text", "data", "contents", "content", "message"}:
             return {"redacted_string": len(value)}
         return {"string_kind": "empty" if not value else "nonempty"}
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return {"value_kind": type(value).__name__}
+
+
+def _namespace_shape(value: Any, *, candidate: Path,
+                     key: str | None = None) -> Any:
+    if isinstance(value, dict):
+        return {name: _namespace_shape(item, candidate=candidate, key=name)
+                for name, item in sorted(value.items())}
+    if isinstance(value, list):
+        return [_namespace_shape(item, candidate=candidate, key=key) for item in value]
+    if isinstance(value, str) and key in {"path", "cwd", "uri", "file", "root"}:
+        return {"namespace": _path_namespace(value, candidate)}
+    if isinstance(value, str):
+        return {"string": "present" if value else "empty"}
     if value is None or isinstance(value, (bool, int, float)):
         return value
     return {"value_kind": type(value).__name__}
@@ -157,6 +204,22 @@ def _parse_line(line: str, *, candidate: Path) -> dict[str, Any] | None:
     }
 
 
+def _stop_peer_process(process: subprocess.Popen[str]) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        if sys.platform == "win32":
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                check=False, timeout=5,
+            )
+        else:
+            process.terminate()
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def _run_peer(command: list[str], messages: list[dict[str, Any]], *, candidate: Path,
               timeout: int) -> dict[str, Any]:
     started = time.monotonic()
@@ -183,6 +246,8 @@ def _run_peer(command: list[str], messages: list[dict[str, Any]], *, candidate: 
     process_exit_codes: list[int] = []
     process_sandbox_denied: list[bool] = []
     peer_closed_after_requests = False
+    timed_out = False
+    failure_stage: str | None = None
 
     def record(line: str) -> dict[str, Any] | None:
         nonlocal notifications, malformed
@@ -203,14 +268,18 @@ def _run_peer(command: list[str], messages: list[dict[str, Any]], *, candidate: 
 
     def wait_for(*, response_id: str | None = None,
                  notification_method: str | None = None) -> bool:
-        nonlocal peer_closed_after_requests
+        nonlocal peer_closed_after_requests, timed_out, failure_stage
+        wait_label = response_id or notification_method or "peer-event"
         while time.monotonic() < deadline:
             try:
                 line = received.get(timeout=max(0.1, deadline - time.monotonic()))
             except queue.Empty:
+                timed_out = True
+                failure_stage = f"{wait_label}-timeout"
                 return False
             if line is None:
                 peer_closed_after_requests = True
+                failure_stage = f"{wait_label}-peer-closed"
                 return False
             parsed = record(line)
             if parsed is None:
@@ -227,11 +296,14 @@ def _run_peer(command: list[str], messages: list[dict[str, Any]], *, candidate: 
             process.stdin.write(json.dumps(message, separators=(",", ":")) + "\n")
             process.stdin.flush()
             if index == 0:
-                wait_for(response_id="1")
+                if not wait_for(response_id="1"):
+                    break
             elif message.get("id") is not None:
-                wait_for(response_id=str(message["id"]))
+                if not wait_for(response_id=str(message["id"])):
+                    break
             if message.get("method") == "process/start":
-                wait_for(notification_method="process/exited")
+                if not wait_for(notification_method="process/exited"):
+                    break
     finally:
         try:
             process.stdin.close()
@@ -240,8 +312,16 @@ def _run_peer(command: list[str], messages: list[dict[str, Any]], *, candidate: 
         try:
             process.wait(timeout=max(1, min(10, timeout)))
         except subprocess.TimeoutExpired:
-            process.terminate()
-            process.wait(timeout=max(1, min(10, timeout)))
+            timed_out = True
+            failure_stage = failure_stage or "peer-shutdown-timeout"
+            _stop_peer_process(process)
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+    if failure_stage is None and process.returncode not in {0, None}:
+        failure_stage = "peer-exit-nonzero"
     return {
         "response_ids": sorted(responses),
         "notifications": notifications,
@@ -251,6 +331,8 @@ def _run_peer(command: list[str], messages: list[dict[str, Any]], *, candidate: 
         "response_statuses": response_statuses,
         "process_exit_codes": process_exit_codes,
         "process_sandbox_denied": process_sandbox_denied,
+        "timed_out": timed_out,
+        "failure_stage": failure_stage,
         "exit_code": process.returncode,
         "elapsed_ms": int((time.monotonic() - started) * 1000),
     }
@@ -259,6 +341,17 @@ def _run_peer(command: list[str], messages: list[dict[str, Any]], *, candidate: 
 def _digest(value: Any) -> str:
     serialized = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(serialized).hexdigest()
+
+
+def _probe_failure_stage(direct: dict[str, Any], proxy: dict[str, Any]) -> str:
+    """Classify a blocked probe before interpreting any path response."""
+    if not direct["response_ids"] and not proxy["response_ids"]:
+        if direct["timed_out"] or proxy["timed_out"]:
+            return "docker-peer-startup-timeout"
+        if direct["peer_closed_after_requests"] or proxy["peer_closed_after_requests"]:
+            return "docker-peer-closed-before-initialize"
+        return "docker-peer-no-initialize-response"
+    return "rpc-response-contract-not-equivalent"
 
 
 def run(*, docker: Path, docker_config: Path, image: str,
@@ -294,6 +387,14 @@ def run(*, docker: Path, docker_config: Path, image: str,
                           candidate=candidate, timeout=timeout)
     direct_responses = direct.pop("responses")
     proxy_responses = proxy.pop("responses")
+    direct_namespaces = {
+        identifier: _namespace_shape(value, candidate=candidate)
+        for identifier, value in direct_responses.items()
+    }
+    proxy_namespaces = {
+        identifier: _namespace_shape(value, candidate=candidate)
+        for identifier, value in proxy_responses.items()
+    }
     response_shapes_match = direct_responses == proxy_responses
     request_shape_direct = [_shape(item, candidate=candidate)
                             for item in _requests(candidate=candidate, direct=True)]
@@ -313,6 +414,16 @@ def run(*, docker: Path, docker_config: Path, image: str,
             and request_shapes_match
             and response_shapes_match
         ) else "rpc-path-contract-blocked",
+        "failure_stage": None if (
+            direct["exit_code"] == 0 and proxy["exit_code"] == 0
+            and direct["response_ids"] == proxy["response_ids"] == [str(x) for x in EXPECTED_IDS]
+            and direct["malformed_lines"] == proxy["malformed_lines"] == 0
+            and direct["response_statuses"] == proxy["response_statuses"]
+            and set(direct["response_statuses"].values()) == {"result"}
+            and direct["process_exit_codes"] == proxy["process_exit_codes"] == [0]
+            and direct["process_sandbox_denied"] == proxy["process_sandbox_denied"] == [False]
+            and request_shapes_match and response_shapes_match
+        ) else _probe_failure_stage(direct, proxy),
         "image_id": image,
         "direct": direct,
         "proxy": proxy,
@@ -322,6 +433,10 @@ def run(*, docker: Path, docker_config: Path, image: str,
         "response_shapes_match": response_shapes_match,
         "direct_response_shape_digest": _digest(direct_responses),
         "proxy_response_shape_digest": _digest(proxy_responses),
+        "direct_response_namespace_digest": _digest(direct_namespaces),
+        "proxy_response_namespace_digest": _digest(proxy_namespaces),
+        "initialize_response_observed": bool(
+            "1" in direct["response_ids"] and "1" in proxy["response_ids"]),
         "scope": "offline Docker exec-server path semantics; no auth, model, or evaluation",
     }
     output.parent.mkdir(parents=True, exist_ok=True)

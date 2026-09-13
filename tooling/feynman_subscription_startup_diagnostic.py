@@ -554,13 +554,16 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
                     str(exc), initialize_completed=True) from exc
         finally:
             cleanup_deadline = time.monotonic() + 15
+            graceful_cleanup_deadline = min(
+                cleanup_deadline, time.monotonic() + 10)
             try:
                 process.stdin.close()
             except (OSError, ValueError):
                 pass
             process_wait_timed_out = False
             try:
-                process.wait(timeout=max(0.1, min(10, cleanup_deadline - time.monotonic())))
+                process.wait(timeout=max(
+                    0.1, graceful_cleanup_deadline - time.monotonic()))
             except subprocess.TimeoutExpired:
                 forced_shutdown = True
                 process_wait_timed_out = True
@@ -568,13 +571,22 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
             # taskkill can reap the App Server process tree.  This turns the
             # previous null exit-code artifact into either complete evidence
             # or an explicit cleanup-timeout result.
-            _wait_for_proxy_telemetry_exit(telemetry_path, deadline=cleanup_deadline)
+            telemetry_exit_observed = _wait_for_proxy_telemetry_exit(
+                telemetry_path, deadline=graceful_cleanup_deadline)
             if process_wait_timed_out and process.poll() is None:
                 process_tree_reaped = _stop_diagnostic_process(
                     process, deadline=cleanup_deadline)
-            stderr_reader.join(timeout=2)
+            if not telemetry_exit_observed:
+                # A child that did not publish its exit during the graceful
+                # window may still finish after the parent is stopped.  Allow
+                # only the remaining cleanup budget for one final snapshot.
+                _wait_for_proxy_telemetry_exit(
+                    telemetry_path, deadline=cleanup_deadline)
+            cleanup_remaining = max(0.1, cleanup_deadline - time.monotonic())
+            stderr_reader.join(timeout=min(2, cleanup_remaining))
             stderr_text = b"".join(stderr_chunks).decode("utf-8", errors="replace")
-            reader.join(timeout=2)
+            cleanup_remaining = max(0.1, cleanup_deadline - time.monotonic())
+            reader.join(timeout=min(2, cleanup_remaining))
             try:
                 process.stdout.close()
             except (OSError, ValueError):

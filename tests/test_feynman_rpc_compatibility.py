@@ -11,7 +11,7 @@ from tooling.feynman_rpc_path_mapping import RpcPathMapper, RpcPathMappingError
 from tooling.feynman_rpc_path_proxy import _map_request_payload, _read_response_within_limit
 from tooling.feynman_rpc_version_gate import verify
 from tooling.feynman_subscription_models import SUBSCRIPTION_WORK_MODELS, model_selection_report
-from tooling.feynman_rpc_path_contract_probe import _shape, _requests
+from tooling.feynman_rpc_path_contract_probe import _probe_failure_stage, _shape, _requests
 
 
 class CompatibilityTests(unittest.TestCase):
@@ -90,9 +90,10 @@ class CompatibilityTests(unittest.TestCase):
         proxy = _requests(candidate=candidate, direct=False)
         self.assertEqual([item.get("method") for item in direct],
                          [item.get("method") for item in proxy])
-        self.assertEqual(direct[2]["params"]["path"],
-                         "file:///run/candidate/sub/config.toml")
-        self.assertEqual(direct[4]["params"]["cwd"],
+        self.assertEqual(direct[2]["params"]["configPaths"],
+                         [["file:///run/candidate/sub/config.toml"]])
+        self.assertEqual(direct[5]["params"]["options"]["maxEntries"], 64)
+        self.assertEqual(direct[7]["params"]["cwd"],
                          "file:///run/candidate/sub")
         self.assertNotIn("SYNTHETIC_PRIVATE", json.dumps(proxy))
 
@@ -106,6 +107,22 @@ class CompatibilityTests(unittest.TestCase):
         self.assertEqual(shaped["cwd"], {"path_role": "candidate/sub"})
         self.assertEqual(shaped["path"], {"path_role": "candidate/sub/config.toml"})
         self.assertNotIn("SYNTHETIC_PRIVATE", json.dumps(shaped))
+
+    def test_path_probe_classifies_no_initialize_as_peer_startup_failure(self):
+        empty = {
+            "response_ids": [], "timed_out": True,
+            "peer_closed_after_requests": False,
+        }
+        self.assertEqual(_probe_failure_stage(empty, empty),
+                         "docker-peer-startup-timeout")
+
+    def test_path_probe_does_not_call_response_shape_a_path_failure(self):
+        peer = {
+            "response_ids": ["1"], "timed_out": False,
+            "peer_closed_after_requests": False,
+        }
+        self.assertEqual(_probe_failure_stage(peer, peer),
+                         "rpc-response-contract-not-equivalent")
 
 
 class RuntimeVersionTests(unittest.TestCase):

@@ -1,6 +1,14 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 최신 재개 지점은
+> `docs/feynman-work-log/LOG-085-windows-docker-peer-startup-blocker-20260914.md`다.
+> expanded offline path probe의 direct/proxy가 모두 initialize 응답 전에
+> `docker-peer-startup-timeout`으로 막혀 path response semantics를 아직 비교하지
+> 못했다. startup cleanup deadline과 probe failure-stage 보존을 보강했고 변경 영역
+> 회귀는 `86 tests OK`, ResourceWarning 없음이다. 실제 구독 startup·인증·모델 평가는
+> 실행하지 않았다. Docker peer process completion 원인을 먼저 좁혀라.
+
+> 직전 재개 지점은
 > `docs/feynman-work-log/LOG-084-startup-cleanup-evidence-and-next-boundary-20260913.md`다.
 > 실제 최종 gate startup diagnostic 1회를 실행했으며 `initialize`는 완료됐지만
 > `thread/start`가 `-32603 remote-environment-error`로 blocked됐다. request 6/6

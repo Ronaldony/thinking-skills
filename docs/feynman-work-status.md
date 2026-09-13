@@ -1,6 +1,13 @@
 # feynman-thinking 작업 상태
 
-최신 재개 지점: [LOG-084](feynman-work-log/LOG-084-startup-cleanup-evidence-and-next-boundary-20260913.md).
+최신 재개 지점: [LOG-085](feynman-work-log/LOG-085-windows-docker-peer-startup-blocker-20260914.md).
+expanded offline path probe는 direct/proxy 양쪽에서 initialize 응답 전에
+`docker-peer-startup-timeout`으로 막혔다. 따라서 path mapping 의미 동등성은 아직
+판정하지 않는다. startup cleanup deadline과 probe failure-stage 보존을 보강했고,
+변경 영역 회귀 `86 tests OK`, ResourceWarning 없음이다. 실제 구독 startup·인증·모델
+평가는 실행하지 않았다.
+
+직전 지점: [LOG-084](feynman-work-log/LOG-084-startup-cleanup-evidence-and-next-boundary-20260913.md).
 최종 startup gate의 실제 구독 진단 1회는 `initialize`까지 통과했지만
 `thread/start` `-32603 remote-environment-error`로 blocked됐다. 6/6 request forward,
 5/5 response match, mapping/write/unmatched/pending 0이며 turn/model generation은
