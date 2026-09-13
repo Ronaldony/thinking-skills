@@ -67,6 +67,9 @@ git diff --check
 
 ## 커밋·push
 
-- 이번 변경은 runtime probe, 회귀 테스트, LOG-088, 최신 인계 문서만 stage한다.
-- `.tmp/`와 사용자 PNG 2개는 stage하지 않는다.
-- commit·push SHA는 완료 후 이 로그에 기록한다.
+- runtime probe, 회귀 테스트, LOG-088, 최신 인계 문서만 stage했다.
+- `.tmp/`와 사용자 PNG 2개는 stage하지 않고 보존했다.
+- 커밋: `419d6ab46e9d520fbed6afcbd9480c2d81c92387` (`fix: verify Docker create lifecycle`)
+- `git push origin feat/feynman-thinking-v0.5-draft` 성공.
+- push 후 local HEAD와 `refs/remotes/origin/feat/feynman-thinking-v0.5-draft`가 모두 `419d6ab46e9d520fbed6afcbd9480c2d81c92387`로 일치했다.
+- main merge와 force push는 하지 않았다.
