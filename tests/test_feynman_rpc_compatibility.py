@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -13,7 +14,7 @@ from tooling.feynman_rpc_path_proxy import _map_request_payload, _read_response_
 from tooling.feynman_rpc_version_gate import verify
 from tooling.feynman_subscription_models import SUBSCRIPTION_WORK_MODELS, model_selection_report
 from tooling.feynman_rpc_path_contract_probe import (
-    _namespace_shape, _path_namespace, _probe_failure_stage, _run_peer, _shape, _requests,
+    PROBE_IMAGE, _docker_args, _namespace_shape, _path_namespace, _probe_failure_stage, _run_peer, _shape, _requests,
 )
 
 
@@ -100,6 +101,29 @@ class CompatibilityTests(unittest.TestCase):
                          "file:///run/candidate/sub")
         self.assertNotIn("SYNTHETIC_PRIVATE", json.dumps(proxy))
 
+    def test_path_contract_probe_can_pin_a_local_docker_endpoint(self):
+        args = _docker_args(image="sha256:" + "a" * 64,
+                            candidate=Path(r"C:\fixture\candidate"),
+                            home=Path(r"C:\fixture\home"),
+                            codex_home=Path(r"C:\fixture\codex"),
+                            temp=Path(r"C:\fixture\temp"),
+                            docker_host="npipe:////./pipe/docker_engine")
+        self.assertEqual(args[0:3], ["--host", "npipe:////./pipe/docker_engine", "run"])
+
+    def test_path_contract_probe_rejects_nonlocal_transport(self):
+        from tooling.feynman_rpc_path_contract_probe import run
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            docker = root / "docker.exe"
+            proxy = root / "proxy.py"
+            docker.write_text("fixture", encoding="utf-8")
+            proxy.write_text("fixture", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "local npipe"):
+                run(docker=docker, docker_config=root, proxy=proxy,
+                    image=PROBE_IMAGE,
+                    output=root / "new-report.json",
+                    docker_host="tcp://127.0.0.1:2375")
+
     def test_path_contract_probe_shape_redacts_values_and_normalizes_roles(self):
         candidate = Path(r"C:\fixture\candidate")
         shaped = _shape({
@@ -110,6 +134,14 @@ class CompatibilityTests(unittest.TestCase):
         self.assertEqual(shaped["cwd"], {"path_role": "candidate/sub"})
         self.assertEqual(shaped["path"], {"path_role": "candidate/sub/config.toml"})
         self.assertNotIn("SYNTHETIC_PRIVATE", json.dumps(shaped))
+
+    def test_path_contract_probe_shape_detects_different_fixture_values(self):
+        candidate = Path(r"C:\fixture\candidate")
+        first = _shape({"result": {"marker": "ROOT_CONFIG", "dataBase64": "QQ=="}}, candidate=candidate)
+        second = _shape({"result": {"marker": "SUB_CONFIG", "dataBase64": "Qg=="}}, candidate=candidate)
+        self.assertNotEqual(first, second)
+        self.assertNotIn("ROOT_CONFIG", json.dumps(first))
+        self.assertNotIn("SUB_CONFIG", json.dumps(second))
 
     def test_path_probe_classifies_no_initialize_as_peer_startup_failure(self):
         empty = {

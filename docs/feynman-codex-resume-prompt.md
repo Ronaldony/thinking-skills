@@ -1,11 +1,12 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 최신 재개 지점은
-> `docs/feynman-work-log/LOG-089-docker-runtime-external-state-recheck-20260914.md`다.
-> Docker metadata 조회와 backend 응답은 정상이나, pinned image의 `docker create`는
-> 직전 1회 30초 timeout·stdout/stderr 0/0·inspect 불가였다. 같은 create를 반복하지
-> 말고, Docker 환경 정상화라는 새 증거가 있을 때만 runtime probe v2를 1회 실행하라.
-> initialize 전에는 path contract·구독 startup·인증·모델 평가를 실행하지 마라.
+> `docs/feynman-work-log/LOG-090-runtime-and-path-verdict-hardening-20260914.md`다.
+> marker·container 정리·initialize ID·path shape 판정을 보강한 뒤 명시 local named
+> pipe로 runtime probe를 1회 실행했지만 `container-create` 30초 timeout이 재현됐다.
+> 같은 create를 반복하지 말고, Docker create가 완료됐다는 새 증거가 있을 때만
+> runtime probe를 1회 실행하라. initialize 전에는 path contract·구독 startup·인증·
+> 모델 평가를 실행하지 마라.
 
 > 직전 재개 지점은
 > `docs/feynman-work-log/LOG-087-docker-runtime-stage-blocker-20260914.md`다.

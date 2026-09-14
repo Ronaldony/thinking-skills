@@ -1,11 +1,11 @@
 # feynman-thinking 작업 상태
 
-최신 재개 지점: [LOG-089](feynman-work-log/LOG-089-docker-runtime-external-state-recheck-20260914.md).
-Docker client/server `29.7.2`, Linux/aarch64, backend 응답 정상, Engine info
-`0 running / 0 paused / 0 stopped / 14 images`를 확인했다. 따라서 직전 실제 probe의
-`docker create` 30초 timeout은 Docker 전체 중단이 아니라 create 요청 단계 blocker로
-한정한다. drain·비정상 종료 회귀를 추가했고 전체 `434 tests OK, 11 skipped`, schema
-17개 errors=0이다. path contract·구독 startup·모델 평가는 아직 실행하지 않는다.
+최신 재개 지점: [LOG-090](feynman-work-log/LOG-090-runtime-and-path-verdict-hardening-20260914.md).
+runtime marker·container presence/cleanup·initialize ID·path response shape 판정을
+보강했다. 명시 local named pipe로 수정 후 runtime probe를 1회 실행했지만
+`container-create`에서 30초 timeout이 재현됐다. 전체 `441 tests OK, 11 skipped`,
+schema 17개 errors=0이며 path contract 실제 비교·구독 startup·모델 평가는 아직
+실행하지 않는다.
 
 직전 지점: [LOG-087](feynman-work-log/LOG-087-docker-runtime-stage-blocker-20260914.md).
 단계별 Docker runtime probe를 추가했다. 고정 image의 `entrypoint-echo`부터

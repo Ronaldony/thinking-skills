@@ -24,21 +24,26 @@ from urllib.parse import unquote
 
 PROBE_IMAGE = "sha256:36b6f50b88a3e5054e1943ef8a40bc80e1629ad0821b4657ec8a33d468179db6"
 EXPECTED_IDS = (1, 2, 3, 4, 5, 6, 7)
+PATH_CONTRACT_REPORT_SCHEMA_VERSION = 3
 
 
 def _docker_args(*, image: str, candidate: Path, home: Path,
-                 codex_home: Path, temp: Path) -> list[str]:
+                 codex_home: Path, temp: Path,
+                 docker_host: str | None = None) -> list[str]:
     mounts = (
         (candidate, "/run/candidate"),
         (home, "/run/home"),
         (codex_home, "/run/codex"),
         (temp, "/run/temp"),
     )
-    args = [
-        "run", "--rm", "-i", "--network", "none", "--cap-drop", "ALL",
+    args = ["run"]
+    if docker_host:
+        args[0:0] = ["--host", docker_host]
+    args.extend([
+        "--rm", "-i", "--network", "none", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges", "--read-only", "--user", "1000:1000",
         "--tmpfs", "/tmp:rw,nosuid,nodev",
-    ]
+    ])
     for source, destination in mounts:
         args.extend(("-v", f"{source}:{destination}:rw"))
     args.extend((image, "env", "-i", "HOME=/run/home", "CODEX_HOME=/run/codex",
@@ -138,9 +143,10 @@ def _shape(value: Any, *, candidate: Path, key: str | None = None) -> Any:
     if isinstance(value, str):
         if key in {"path", "cwd", "uri", "file", "root"}:
             return {"path_role": _path_role(value, candidate)}
-        if key in {"text", "data", "contents", "content", "message"}:
-            return {"redacted_string": len(value)}
-        return {"string_kind": "empty" if not value else "nonempty"}
+        return {
+            "string_sha256": hashlib.sha256(value.encode("utf-8")).hexdigest(),
+            "length": len(value),
+        }
     if value is None or isinstance(value, (bool, int, float)):
         return value
     return {"value_kind": type(value).__name__}
@@ -415,11 +421,16 @@ def _probe_failure_stage(direct: dict[str, Any], proxy: dict[str, Any]) -> str:
 
 
 def run(*, docker: Path, docker_config: Path, image: str,
-        proxy: Path, output: Path, timeout: int = 45) -> dict[str, Any]:
+        proxy: Path, output: Path, timeout: int = 45,
+        docker_host: str | None = None) -> dict[str, Any]:
     if not docker.is_file() or not proxy.is_file() or not docker_config.is_dir():
         raise ValueError("path contract probe executable/config input is unavailable")
     if image != PROBE_IMAGE or not image.startswith("sha256:") or len(image) != 71:
         raise ValueError("path contract probe requires the pinned remote boundary image")
+    if docker_host and not docker_host.startswith(("npipe://", "unix://")):
+        raise ValueError("path contract probe requires a local npipe or unix endpoint")
+    if timeout < 1:
+        raise ValueError("path contract probe timeout must be positive")
     if not output.is_absolute() or output.exists() or output.is_symlink():
         raise ValueError("path contract probe output must be a new absolute path")
     with tempfile.TemporaryDirectory(prefix="feynman-path-contract-") as raw:
@@ -435,7 +446,8 @@ def run(*, docker: Path, docker_config: Path, image: str,
         (sub / "requirements.txt").write_text("fixture-requirement\n", encoding="utf-8")
         (sub / "child.txt").write_text("CHILD_FIXTURE\n", encoding="utf-8")
         docker_args = _docker_args(image=image, candidate=candidate, home=home,
-                                   codex_home=codex_home, temp=temp)
+                                   codex_home=codex_home, temp=temp,
+                                   docker_host=docker_host)
         direct_command = [str(docker), "--config", str(docker_config), *docker_args]
         proxy_command = [
             sys.executable, "-B", str(proxy), "--docker", str(docker),
@@ -450,13 +462,14 @@ def run(*, docker: Path, docker_config: Path, image: str,
     direct_namespaces = direct.pop("response_namespaces")
     proxy_namespaces = proxy.pop("response_namespaces")
     response_shapes_match = direct_responses == proxy_responses
+    response_namespace_shapes_match = direct_namespaces == proxy_namespaces
     request_shape_direct = [_shape(item, candidate=candidate)
                             for item in _requests(candidate=candidate, direct=True)]
     request_shape_proxy = [_shape(item, candidate=candidate)
                            for item in _requests(candidate=candidate, direct=False)]
     request_shapes_match = request_shape_direct == request_shape_proxy
     result = {
-        "schema_version": 2,
+        "schema_version": PATH_CONTRACT_REPORT_SCHEMA_VERSION,
         "verdict": "rpc-path-contract-equivalent" if (
             direct["exit_code"] == 0 and proxy["exit_code"] == 0
             and direct["response_ids"] == proxy["response_ids"] == [str(x) for x in EXPECTED_IDS]
@@ -471,6 +484,7 @@ def run(*, docker: Path, docker_config: Path, image: str,
             and direct["stderr_drained"] and proxy["stderr_drained"]
             and request_shapes_match
             and response_shapes_match
+            and response_namespace_shapes_match
         ) else "rpc-path-contract-blocked",
         "failure_stage": None if (
             direct["exit_code"] == 0 and proxy["exit_code"] == 0
@@ -485,6 +499,7 @@ def run(*, docker: Path, docker_config: Path, image: str,
             and not direct["stderr_read_error"] and not proxy["stderr_read_error"]
             and direct["stderr_drained"] and proxy["stderr_drained"]
             and request_shapes_match and response_shapes_match
+            and response_namespace_shapes_match
         ) else _probe_failure_stage(direct, proxy),
         "image_id": image,
         "direct": direct,
@@ -493,6 +508,7 @@ def run(*, docker: Path, docker_config: Path, image: str,
         "direct_request_shape_digest": _digest(request_shape_direct),
         "proxy_request_shape_digest": _digest(request_shape_proxy),
         "response_shapes_match": response_shapes_match,
+        "response_namespace_shapes_match": response_namespace_shapes_match,
         "direct_response_shape_digest": _digest(direct_responses),
         "proxy_response_shape_digest": _digest(proxy_responses),
         "direct_response_namespace_digest": _digest(direct_namespaces),
@@ -514,11 +530,12 @@ def main() -> int:
     parser.add_argument("--proxy", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--timeout", type=int, default=45)
+    parser.add_argument("--docker-host")
     args = parser.parse_args()
     try:
         result = run(docker=args.docker, docker_config=args.docker_config,
                      image=args.image, proxy=args.proxy, output=args.output,
-                     timeout=args.timeout)
+                     timeout=args.timeout, docker_host=args.docker_host)
     except (OSError, ValueError, subprocess.SubprocessError, json.JSONDecodeError):
         parser.exit(2, "error: RPC path contract probe failed\n")
     print(json.dumps({
