@@ -1,15 +1,14 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 최신 재개 지점은
-> `docs/feynman-work-log/LOG-100-autonomous-gate-and-telemetry-hardening-20260914.md`다.
-> startup 직접 API·개별 CLI·tools-10 smoke의 gate 우회를 닫고 checkpoint/output 경계,
-> shared deadline, 빈 telemetry 차단, 단일 telemetry writer, path suffix 비교,
-> startup evidence 필수 검사를 보강했다. 변경 영역 및 전체 `461 tests OK, 11 skipped`,
-> schema `17 errors=0`, ResourceWarning 없음이다. 실제 auth/startup/model smoke는
-> 실행하지 않았고 `thread/start -32603` 원인은 미확정이다. 다음 자동 작업은 Git
-> commit/push와 원격 CI 확인이며, 그 뒤 새 증거가 있을 때만 추가 startup diagnostic
-> 1회를 사람 경계로 검토한다. 아래는 역사 기록이다. 현재 판단·실행 계획은 LOG-100만
-> 따른다.
+> `docs/feynman-work-log/LOG-101-commit-push-ci-receipt-20260914.md`다.
+> LOG-100의 A~D gate·telemetry·경로 보강은 commit
+> `8ddde9128ab1be6de62a67bc744589be931da08c`로 feature branch에 push됐고 CI 7개가
+> 모두 success다. 로컬 전체 `461 tests OK, 11 skipped`, schema `17 errors=0`,
+> ResourceWarning 없음이다. 실제 auth/startup/model smoke는 실행하지 않았고
+> `thread/start -32603` 원인은 미확정이다. 다음 작업은 최신 입력을 재확인한 뒤
+> 사람 경계인 추가 startup diagnostic 1회 준비이며, 통과 전 모델 명령을 실행하지
+> 않는다. 아래는 역사 기록이다. 현재 판단·실행 계획은 LOG-101만 따른다.
 >
 > 직전 재개 지점은
 > `docs/feynman-work-log/LOG-093-windows-unit-ci-coverage-20260914.md`다.

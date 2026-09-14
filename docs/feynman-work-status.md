@@ -1,15 +1,14 @@
 # feynman-thinking 작업 상태
 
-최신 재개 지점: [LOG-100](feynman-work-log/LOG-100-autonomous-gate-and-telemetry-hardening-20260914.md).
-startup 직접 API·개별 CLI·tools-10 smoke의 gate 우회를 닫고, checkpoint digest/output
-경계, startup/control-plane shared deadline, 빈 telemetry 차단, 단일 telemetry
-writer, non-candidate path suffix 비교, startup evidence 필수 검사를 보강했다.
-변경 영역 및 전체 `461 tests OK, 11 skipped`, schema `17 errors=0`,
-ResourceWarning 없음이다. 실제 구독 auth/startup/model smoke는 실행하지 않았고,
-실제 `thread/start -32603` 원인은 여전히 미확정이다. 다음 사람 경계는 새 증거를
-확인한 뒤의 추가 구독 startup diagnostic 1회다.
+최신 재개 지점: [LOG-101](feynman-work-log/LOG-101-commit-push-ci-receipt-20260914.md).
+LOG-100의 A~D gate·telemetry·경로 보강을 commit `8ddde9128ab1be6de62a67bc744589be931da08c`로
+현재 feature branch에 일반 push했고 관련 CI 7개가 모두 success다. 로컬 전체
+`461 tests OK, 11 skipped`, schema `17 errors=0`, ResourceWarning 없음이다. 실제
+구독 auth/startup/model smoke는 실행하지 않았고 `thread/start -32603` 원인은
+여전히 미확정이다. 다음 사람 경계는 최신 입력으로 추가 구독 startup diagnostic
+1회이며, 통과 전 모델 명령을 실행하지 않는다.
 
-아래 재개 지점은 역사 기록이다. 현재 판단과 실행 계획은 LOG-100을 따른다.
+아래 재개 지점은 역사 기록이다. 현재 판단과 실행 계획은 LOG-101을 따른다.
 
 직전 재개 지점: [LOG-093](feynman-work-log/LOG-093-windows-unit-ci-coverage-20260914.md).
 Docker와 인증을 호출하지 않는 Windows 순수 회귀 CI job을 추가했고 로컬에서
