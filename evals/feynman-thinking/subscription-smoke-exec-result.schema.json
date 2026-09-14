@@ -1,10 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Feynman ChatGPT-subscription integration smoke execution result v2",
+  "title": "Feynman ChatGPT-subscription integration smoke execution result v3",
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "schema_version": {"const": 2},
+    "schema_version": {"const": 3},
     "verdict": {"const": "subscription-codex-smoke-exec-completed"},
     "run_id": {"type": "string", "minLength": 1},
     "job": {
@@ -65,9 +65,21 @@
       "additionalProperties": false,
       "properties": {
         "verdict": {"const": "subscription-startup-thread-ready"},
-        "model_generation_requests_sent": {"const": 0}
+        "model_generation_requests_sent": {"const": 0},
+        "preparation_fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "artifacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "report": {"const": "startup-gate/startup-report.json"},
+            "telemetry": {"const": "startup-gate/startup-rpc-telemetry.json"},
+            "report_sha256": {"$ref": "#/$defs/sha256"},
+            "telemetry_sha256": {"$ref": "#/$defs/sha256"}
+          },
+          "required": ["report", "telemetry", "report_sha256", "telemetry_sha256"]
+        }
       },
-      "required": ["verdict", "model_generation_requests_sent"]
+      "required": ["verdict", "model_generation_requests_sent", "preparation_fingerprint", "artifacts"]
     },
     "conversation": {
       "type": "object",

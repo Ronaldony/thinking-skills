@@ -23,6 +23,7 @@ from tooling.feynman_subscription_startup_diagnostic import (
     run as run_startup_diagnostic,
 )
 from tooling.feynman_rpc_path_proxy import _ProxyTelemetry
+from tooling.feynman_subscription_smoke_exec import build_codex_exec_command
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -155,6 +156,7 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
             fake_job = {"paths": paths, "versions": {"model": "gpt-5.6-luna"}}
             telemetry = _ProxyTelemetry().snapshot()
             telemetry.update({
+                "request_methods": {"initialize": 2},
                 "requests_seen": 2,
                 "requests_forwarded": 2,
                 "responses_seen": 2,
@@ -183,7 +185,7 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
                 return_value=(base / "control", base / "environment.toml"),
             ), patch(
                 "tooling.feynman_subscription_startup_diagnostic.prepare_full_runner_executor_wiring",
-                return_value={"all_config_overrides": []},
+                return_value={"all_config_overrides": [], "preparation_fingerprint": "a" * 64},
             ), patch(
                 "tooling.feynman_subscription_startup_diagnostic._resolve_executable",
                 return_value="codex",
@@ -219,6 +221,201 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
             self.assertTrue(result["checks"]["process_tree_reaped"])
             self.assertTrue(result["checks"]["cleanup_verified"])
             self.assertEqual(result["verdict"], "subscription-startup-thread-ready")
+
+    def test_expired_post_spawn_deadline_still_runs_cleanup(self):
+        class FakeProcess:
+            def __init__(self):
+                self.stdin = io.BytesIO()
+                self.stdout = io.BytesIO()
+                self.stderr = io.BytesIO()
+                self.returncode = None
+                self.wait_calls = 0
+
+            def wait(self, timeout=None):
+                self.wait_calls += 1
+                self.returncode = 0
+                return 0
+
+            def poll(self):
+                return self.returncode
+
+        class ExpiredClock:
+            def __init__(self):
+                self.calls = 0
+
+            def __call__(self):
+                self.calls += 1
+                # The first call creates the ten-second startup deadline and
+                # the second is used by wiring preparation.  The next call
+                # represents the post-spawn check after the budget expired.
+                return 0.0 if self.calls <= 2 else 11.0
+
+        with tempfile.TemporaryDirectory() as root:
+            base = Path(root)
+            fake_job = {
+                "paths": {"candidate_dir": str(base / "candidate")},
+                "versions": {"model": "gpt-5.6-luna"},
+            }
+            process = FakeProcess()
+            clock = ExpiredClock()
+            with patch(
+                "tooling.feynman_subscription_startup_diagnostic._regular",
+                side_effect=lambda path, label: path,
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic._directory",
+                return_value=base / "candidate",
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic._load",
+                return_value=fake_job,
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic.validate_checkpoint",
+                return_value={},
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic.validate_files",
+                return_value={"verdict": "remote-exec-environment-valid"},
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic._validate_control_files",
+                return_value=(base / "control", base / "environment.toml"),
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic.prepare_full_runner_executor_wiring",
+                return_value={"all_config_overrides": [], "preparation_fingerprint": "a" * 64},
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic._resolve_executable",
+                return_value="codex",
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic._safe_exec_env",
+                return_value={},
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic.subprocess.Popen",
+                return_value=process,
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic._wait_for_proxy_telemetry_exit",
+                return_value=True,
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic.time.monotonic",
+                side_effect=clock,
+            ):
+                with self.assertRaisesRegex(StartupDiagnosticError, "^startup-timeout$"):
+                    run_startup_diagnostic(
+                        runner_job_path=base / "runner.json",
+                        boundary_profile_path=base / "profile.json",
+                        remote_environment_path=base / "environment.toml",
+                        binding_path=base / "binding.json",
+                        codex_bin=base / "codex.cmd",
+                        node_bin=base / "node.exe",
+                        adapter=base / "adapter.mjs",
+                        docker_bin=base / "docker.exe",
+                        docker_config=base / "docker-config",
+                        docker_image_id="sha256:" + "a" * 64,
+                        telemetry_path=base / "telemetry.json",
+                        output_path=base / "startup.json",
+                        timeout_seconds=10,
+                    )
+            self.assertEqual(process.wait_calls, 1)
+            self.assertEqual(process.returncode, 0)
+
+    def test_prepared_wiring_is_consumed_without_a_second_probe(self):
+        class FakeProcess:
+            def __init__(self):
+                self.stdin = io.BytesIO()
+                self.stdout = io.BytesIO(
+                    b'{"id":1,"result":{}}\n'
+                    b'{"id":2,"result":{"thread":{"id":"private",'
+                    b'"ephemeral":true},"instructionSources":[]}}\n'
+                )
+                self.stderr = io.BytesIO()
+                self.returncode = None
+
+            def wait(self, timeout=None):
+                self.returncode = 0
+                return 0
+
+            def poll(self):
+                return self.returncode
+
+        with tempfile.TemporaryDirectory() as root:
+            base = Path(root)
+            fake_job = {
+                "paths": {"candidate_dir": str(base / "candidate")},
+                "versions": {"model": "gpt-5.6-luna"},
+            }
+            command = build_codex_exec_command(
+                executable="codex", model="gpt-5.6-luna",
+                candidate_dir=base / "candidate", config_overrides=(),
+            )
+            prepared = {
+                "all_config_overrides": (),
+                "command": command,
+                "preparation_fingerprint": "a" * 64,
+            }
+            process = FakeProcess()
+            telemetry = _ProxyTelemetry().snapshot()
+            telemetry.update({
+                "request_methods": {"initialize": 1, "thread/start": 1},
+                "requests_seen": 2,
+                "requests_forwarded": 2,
+                "responses_seen": 2,
+                "responses_forwarded": 2,
+                "responses_matched": 2,
+                "child_exit_code": 0,
+            })
+            with patch(
+                "tooling.feynman_subscription_startup_diagnostic._regular",
+                side_effect=lambda path, label: path,
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic._directory",
+                return_value=base / "candidate",
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic._load",
+                return_value=fake_job,
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic.validate_checkpoint",
+                return_value={},
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic.validate_files",
+                return_value={"verdict": "remote-exec-environment-valid"},
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic._validate_control_files",
+                return_value=(base / "control", base / "environment.toml"),
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic.prepare_full_runner_executor_wiring",
+            ) as prepare, patch(
+                "tooling.feynman_subscription_startup_diagnostic._wiring_fingerprint",
+                return_value="a" * 64,
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic._resolve_executable",
+                return_value="codex",
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic._safe_exec_env",
+                return_value={},
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic.subprocess.Popen",
+                return_value=process,
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic._wait_for_proxy_telemetry_exit",
+                return_value=True,
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic._safe_proxy_telemetry",
+                return_value=telemetry,
+            ):
+                result = run_startup_diagnostic(
+                    runner_job_path=base / "runner.json",
+                    boundary_profile_path=base / "profile.json",
+                    remote_environment_path=base / "environment.toml",
+                    binding_path=base / "binding.json",
+                    codex_bin=base / "codex.cmd",
+                    node_bin=base / "node.exe",
+                    adapter=base / "adapter.mjs",
+                    docker_bin=base / "docker.exe",
+                    docker_config=base / "docker-config",
+                    docker_image_id="sha256:" + "a" * 64,
+                    telemetry_path=base / "telemetry.json",
+                    output_path=base / "startup.json",
+                    timeout_seconds=10,
+                    prepared_wiring=prepared,
+                )
+            prepare.assert_not_called()
+            self.assertEqual(result["preparation_fingerprint"], "a" * 64)
 
     def test_direct_run_validation_blocks_before_app_server(self):
         process = unittest.mock.Mock()
@@ -434,6 +631,8 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
 
     def test_proxy_telemetry_requires_complete_correlation(self):
         value = {
+            **_ProxyTelemetry().snapshot(),
+            "request_methods": {"initialize": 2},
             "requests_seen": 2, "requests_forwarded": 2,
             "responses_seen": 1, "responses_forwarded": 1,
             "responses_matched": 1, "responses_unmatched": 0,
@@ -448,6 +647,7 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
 
     def test_empty_proxy_telemetry_is_not_ready(self):
         value = {
+            **_ProxyTelemetry().snapshot(),
             "requests_seen": 0, "requests_forwarded": 0,
             "responses_seen": 0, "responses_forwarded": 0,
             "responses_matched": 0, "responses_unmatched": 0,
@@ -471,6 +671,8 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
 
     def test_proxy_telemetry_rejects_nonzero_child_exit(self):
         value = {
+            **_ProxyTelemetry().snapshot(),
+            "request_methods": {"initialize": 1},
             "requests_seen": 1, "requests_forwarded": 1,
             "responses_seen": 1, "responses_forwarded": 1,
             "responses_matched": 1, "responses_unmatched": 0,
@@ -483,6 +685,8 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
 
     def test_proxy_telemetry_excludes_notifications_from_response_matching(self):
         value = {
+            **_ProxyTelemetry().snapshot(),
+            "request_methods": {"initialize": 1},
             "requests_seen": 1, "requests_forwarded": 1,
             "responses_seen": 2, "responses_forwarded": 2,
             "responses_matched": 1, "responses_unmatched": 0,
@@ -495,6 +699,8 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
 
     def test_proxy_telemetry_without_child_exit_is_incomplete(self):
         value = {
+            **_ProxyTelemetry().snapshot(),
+            "request_methods": {"initialize": 1},
             "requests_seen": 1, "requests_forwarded": 1,
             "responses_seen": 1, "responses_forwarded": 1,
             "responses_matched": 1, "responses_unmatched": 0,
@@ -502,6 +708,19 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
             "pending_request_ids": 0, "request_write_failures": 0,
             "request_id_duplicates": 0, "request_mapping_rejections": 0,
             "response_mapping_rejections": 0, "child_exit_code": None,
+        }
+        self.assertFalse(_proxy_telemetry_ready(value))
+
+    def test_proxy_telemetry_rejects_inconsistent_request_accounting(self):
+        value = {
+            **_ProxyTelemetry().snapshot(),
+            "request_methods": {"initialize": 2},
+            "requests_seen": 1,
+            "requests_forwarded": 1,
+            "responses_seen": 1,
+            "responses_forwarded": 1,
+            "responses_matched": 1,
+            "child_exit_code": 0,
         }
         self.assertFalse(_proxy_telemetry_ready(value))
 
@@ -563,6 +782,15 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
             "evals/feynman-thinking/subscription-startup-diagnostic.schema.json"
         ).read_text(encoding="utf-8"))
         self.assertEqual(schema["properties"]["schema_version"]["const"], 3)
+        self.assertNotIn("preparation_fingerprint", schema["required"])
+        self.assertEqual(
+            schema["allOf"][0]["then"]["required"],
+            ["preparation_fingerprint"],
+        )
+        self.assertEqual(
+            schema["properties"]["preparation_fingerprint"]["pattern"],
+            "^[0-9a-f]{64}$",
+        )
         self.assertIn("instruction_sources_allowed",
                       schema["properties"]["checks"]["properties"])
         self.assertEqual(schema["properties"]["checks"]["properties"]

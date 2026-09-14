@@ -131,19 +131,30 @@ def _stop_diagnostic_process(process: subprocess.Popen[bytes], *, deadline: floa
     this known child tree after the bounded grace period; it cannot target an
     unrelated PID because the PID comes directly from ``Popen`` above.
     """
+    # A non-null parent return code does not prove that a launcher-created
+    # descendant tree was reaped.  Only report tree cleanup after this helper
+    # has issued the bounded tree termination and then observed the parent
+    # reap.  The caller's normal graceful ``wait`` path remains the stronger
+    # non-forced cleanup evidence.
     if process.poll() is not None:
-        return True
+        return False
     deadline = time.monotonic() + 15 if deadline is None else deadline
     remaining = max(0.1, deadline - time.monotonic())
+    termination_requested = False
     try:
         if os.name == "nt":
-            subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                           check=False, timeout=remaining)
+            result = subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                check=False, timeout=remaining)
+            termination_requested = result.returncode == 0
         else:
             process.terminate()
+            termination_requested = True
     except (OSError, subprocess.SubprocessError):
         pass
+    if not termination_requested:
+        return False
     try:
         process.wait(timeout=max(0.1, deadline - time.monotonic()))
     except subprocess.TimeoutExpired:
@@ -159,7 +170,8 @@ def _stop_diagnostic_process(process: subprocess.Popen[bytes], *, deadline: floa
 
 
 def run(*, codex_bin: str, control_home: Path, temp_dir: Path,
-        proxy_telemetry: Path, config_overrides: Sequence[str], timeout_seconds: int = 30) -> dict[str, Any]:
+        proxy_telemetry: Path, config_overrides: Sequence[str], timeout_seconds: int = 30,
+        cwd: Path | None = None) -> dict[str, Any]:
     """Connect App Server to the selected remote environment without a turn."""
     if type(timeout_seconds) is not int or not 5 <= timeout_seconds <= 120:
         raise ValueError("timeout_seconds must be an integer in 5..120")
@@ -167,6 +179,8 @@ def run(*, codex_bin: str, control_home: Path, temp_dir: Path,
         raise ValueError("control CODEX_HOME must be an existing non-symlink directory")
     if temp_dir.is_symlink() or not temp_dir.is_dir():
         raise ValueError("control-plane temp directory must be an existing non-symlink directory")
+    if cwd is not None and (cwd.is_symlink() or not cwd.is_dir()):
+        raise ValueError("control-plane cwd must be an existing non-symlink directory")
     if (not proxy_telemetry.is_absolute() or proxy_telemetry.is_symlink()
             or proxy_telemetry.exists()):
         raise ValueError("control-plane proxy telemetry must be a new absolute non-symlink path")
@@ -179,9 +193,12 @@ def run(*, codex_bin: str, control_home: Path, temp_dir: Path,
     command.append("--stdio")
     environment = _safe_exec_env(control_home.resolve(), temp_dir.resolve())
     environment[TELEMETRY_OVERRIDE_ENV] = str(proxy_telemetry)
+    # Start the single control-plane budget before spawning the process and
+    # its reader threads.  Startup cost must not create a fresh RPC budget.
+    control_deadline = time.monotonic() + min(timeout_seconds, 60)
     process = subprocess.Popen(
         command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        env=environment, bufsize=0,
+        env=environment, cwd=str(cwd.resolve()) if cwd is not None else None, bufsize=0,
     )
     assert process.stdin is not None and process.stdout is not None and process.stderr is not None
     received: queue.Queue[dict[str, Any] | None] = queue.Queue()
@@ -194,7 +211,6 @@ def run(*, codex_bin: str, control_home: Path, temp_dir: Path,
     stderr_reader.start()
     forced_shutdown = False
     process_tree_reaped = False
-    control_deadline = time.monotonic() + min(timeout_seconds, 60)
     try:
         process.stdin.write(_request(1, "initialize", {
             "clientInfo": {"name": "feynman-control-plane-preflight", "version": "0.1.0"},
@@ -231,9 +247,15 @@ def run(*, codex_bin: str, control_home: Path, temp_dir: Path,
         reader.join(timeout=2)
         stderr_reader.join(timeout=2)
         stderr_text = b"".join(stderr_chunks).decode("utf-8", errors="replace")
-        if process_tree_reaped:
-            process.stdout.close()
-            process.stderr.close()
+        # These streams belong to this probe even when the launcher tree did
+        # not fully reap.  Close the parent handles after the bounded reader
+        # joins; the separate process_tree_reaped flag remains false and is
+        # never promoted by closing the handles.
+        for stream in (process.stdout, process.stderr):
+            try:
+                stream.close()
+            except (OSError, ValueError):
+                pass
     if process.returncode != 0 and not forced_shutdown:
         raise ControlPlaneError("app-server-exit-" + _failure_category(stderr_text))
     if not proxy_telemetry.is_file() or proxy_telemetry.is_symlink():
@@ -251,6 +273,7 @@ def run(*, codex_bin: str, control_home: Path, temp_dir: Path,
             "turns_started": 0,
             "mcp_tools_invoked": 0,
             "diagnostic_proxy_telemetry_written": proxy_telemetry.is_file(),
+            "process_cwd_bound": cwd is not None,
         },
         "privacy": {
             "raw_stderr_preserved": False,

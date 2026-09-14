@@ -7,11 +7,13 @@ import sys
 import tempfile
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from tooling.feynman_rpc_path_mapping import RpcPathMapper
+from tooling import feynman_rpc_path_proxy as proxy_module
 from tooling.feynman_rpc_path_proxy import (
     _ProxyTelemetry, _docker_mounts, _fixed_error, _map_request_payload,
     _map_request_payload_with_reason, _split_cli, _write_telemetry,
@@ -94,6 +96,46 @@ class RpcPathProxyTests(unittest.TestCase):
                 for stream in (process.stdin, process.stdout, process.stderr):
                     if stream is not None:
                         stream.close()
+
+    def test_telemetry_writer_failure_forces_nonzero_proxy_exit(self):
+        fixture = ROOT / "tests" / "feynman_subscription_lifecycle_fixture.py"
+        requests = [
+            json.dumps({"jsonrpc": "2.0", "id": 1,
+                        "method": "initialize", "params": {}}).encode() + b"\n",
+            json.dumps({"jsonrpc": "2.0", "method": "initialized",
+                        "params": {}}).encode() + b"\n",
+            json.dumps({"jsonrpc": "2.0", "id": 2,
+                        "method": "thread/start", "params": {}}).encode() + b"\n",
+        ]
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            telemetry = root / "telemetry.json"
+            original_write = proxy_module._write_telemetry
+            write_calls: list[int] = []
+            output: list[bytes] = []
+
+            def fail_after_initial(path, value):
+                write_calls.append(1)
+                if len(write_calls) >= 2:
+                    raise OSError("synthetic telemetry storage failure")
+                original_write(path, value)
+
+            def parent_lines(_stop):
+                yield from requests
+
+            with patch.object(proxy_module, "_parent_stdin_lines", side_effect=parent_lines), \
+                    patch.object(proxy_module, "_write_telemetry", side_effect=fail_after_initial), \
+                    patch.object(proxy_module, "_write_stdout",
+                                 side_effect=lambda _lock, payload: output.append(payload)):
+                exit_code = proxy_module.run_proxy(
+                    sys.executable,
+                    ["-B", str(fixture), "proxy-child", "-v",
+                     f"{root}:/run/candidate:rw"],
+                    telemetry,
+                )
+
+            self.assertGreaterEqual(len(write_calls), 2)
+            self.assertNotEqual(exit_code, 0)
 
     def test_telemetry_write_replaces_atomically_without_temp_residue(self):
         with tempfile.TemporaryDirectory() as raw:

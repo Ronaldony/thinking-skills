@@ -7,12 +7,43 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from tooling.feynman_full_runner_contract import TOOL_NAMES
 from tooling.feynman_full_runner_preflight import run
 
 
-@unittest.skipUnless(os.name == "nt", "native Codex catalog integration test is Windows-only")
+INTEGRATION_OPT_IN = "FEYNMAN_RUN_DOCKER_INTEGRATION"
+
+
+def _integration_enabled() -> bool:
+    """Keep Docker/Codex integration out of the default unit suite."""
+    return os.environ.get(INTEGRATION_OPT_IN, "").strip().lower() in {
+        "1", "true", "yes",
+    }
+
+
+class FullRunnerIntegrationGateTests(unittest.TestCase):
+    def test_docker_catalog_is_disabled_without_explicit_opt_in(self):
+        with patch.dict(os.environ, {INTEGRATION_OPT_IN: "0"}):
+            self.assertFalse(_integration_enabled())
+
+    def test_docker_catalog_accepts_only_explicit_true_values(self):
+        for value in ("1", "true", "YES"):
+            with self.subTest(value=value), patch.dict(
+                    os.environ, {INTEGRATION_OPT_IN: value}):
+                self.assertTrue(_integration_enabled())
+        for value in ("", "0", "no", "enabled"):
+            with self.subTest(value=value), patch.dict(
+                    os.environ, {INTEGRATION_OPT_IN: value}):
+                self.assertFalse(_integration_enabled())
+
+
+@unittest.skipUnless(
+    os.name == "nt" and _integration_enabled(),
+    "native Docker/Codex catalog integration requires explicit "
+    "FEYNMAN_RUN_DOCKER_INTEGRATION=1 opt-in",
+)
 class FullRunnerCatalogPreflightTests(unittest.TestCase):
     def test_codex_app_server_exposes_exact_fixed_contract_without_model(self):
         app_data = os.environ.get("APPDATA") or r"C:\Users\wotmd\AppData\Roaming"
@@ -28,7 +59,7 @@ class FullRunnerCatalogPreflightTests(unittest.TestCase):
             self.skipTest("local Codex, Node, Docker, or empty Docker config is unavailable")
         inspected = subprocess.run(
             [str(docker), "--config", str(docker_config), "image", "inspect", image, "--format", "{{.Id}}"],
-            capture_output=True, text=True, check=False,
+            capture_output=True, text=True, check=False, timeout=10,
         )
         if inspected.returncode != 0 or not inspected.stdout.strip().startswith("sha256:"):
             self.skipTest("full-runner local Docker image is unavailable")

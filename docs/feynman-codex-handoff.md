@@ -1,6 +1,16 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-102](feynman-work-log/LOG-102-checkpoint-refresh-and-docker-lifecycle-blocker-20260914.md).
+> 최신: [LOG-103](feynman-work-log/LOG-103-required-fix-report-implementation-20260914.md).
+> 필수 FIX-01~07을 현재 코드와 대조해 수정했다. evaluator-owned startup artifact,
+> 공통 deadline/cleanup, telemetry/evidence completeness, path comparator의 false
+> equality, 준비/진단/본실행 fingerprint 결속, 기본 Docker/Codex integration opt-in을
+> 보강했으며 변경 영역 `130 tests OK, 1 skipped`, 전체 `479 tests OK, 11 skipped`,
+> schema 17개 errors=0, ResourceWarning 없음이다. skip은 호환성 성공이 아니다.
+> 실제 Docker lifecycle·구독 auth/startup·Luna model smoke는 0회다. Docker create/run
+> blocker와 과거 `thread/start -32603`은 별도 외부 차단으로 유지한다. 최신 승인과
+> 선행 조건 없이는 실제 startup/model을 실행하지 않는다.
+>
+> 이전 최신: [LOG-102](feynman-work-log/LOG-102-checkpoint-refresh-and-docker-lifecycle-blocker-20260914.md).
 > 새 v4 checkpoint는 evaluator 경계 안의 새 출력 경로로 `subscription-checkpoint-valid`를
 > 통과했다. model-free Docker path contract는 direct/proxy 모두 initialize 전에
 > `docker-peer-startup-timeout`으로 막혔다. `docker info`·image inspect·`ps`는 응답하지만

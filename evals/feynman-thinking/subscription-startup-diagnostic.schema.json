@@ -5,6 +5,7 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {"const": 3},
+    "preparation_fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "verdict": {"enum": ["subscription-startup-thread-ready", "subscription-startup-thread-blocked"]},
     "failure_stage": {"type": "string", "pattern": "^[a-z0-9-]+$"},
     "model": {"type": "string", "minLength": 1},
@@ -97,7 +98,7 @@
         "probe_rejected_read_max_bytes": {"$ref": "#/$defs/count"},
         "child_exit_code": {"type": ["integer", "null"]}
       },
-      "required": ["schema_version", "request_methods", "response_error_codes", "requests_seen", "requests_forwarded", "request_write_failures", "request_id_duplicates", "request_mapping_rejections", "request_mapping_rejection_methods", "request_mapping_rejection_reasons", "malformed_requests", "responses_seen", "responses_forwarded", "responses_matched", "responses_unmatched", "notifications_seen", "pending_request_ids", "response_mapping_rejections", "malformed_responses", "probe_policy_rejections", "probe_read_limit_applied", "probe_response_rejections", "probe_rejected_read_max_bytes", "child_exit_code"]
+      "required": ["schema_version", "request_methods", "response_error_codes", "requests_seen", "requests_forwarded", "request_write_failures", "request_id_duplicates", "request_mapping_rejections", "request_mapping_rejection_methods", "request_mapping_rejection_reasons", "request_mapping_rejection_method_reasons", "request_mapping_rejection_method_reason_fields", "malformed_requests", "responses_seen", "responses_forwarded", "responses_matched", "responses_unmatched", "notifications_seen", "pending_request_ids", "response_mapping_rejections", "malformed_responses", "probe_policy_rejections", "probe_read_limit_applied", "probe_response_rejections", "probe_rejected_read_max_bytes", "child_exit_code"]
     },
     "privacy": {
       "type": "object",
@@ -115,6 +116,13 @@
     "scope": {"type": "string", "minLength": 1}
   },
   "required": ["schema_version", "verdict", "model", "checks", "notification_methods", "proxy_telemetry_status", "proxy_telemetry", "privacy", "scope"],
+  "allOf": [{
+    "if": {
+      "required": ["verdict"],
+      "properties": {"verdict": {"const": "subscription-startup-thread-ready"}}
+    },
+    "then": {"required": ["preparation_fingerprint"]}
+  }],
   "$defs": {
     "count": {"type": "integer", "minimum": 0},
     "counters": {

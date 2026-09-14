@@ -55,6 +55,169 @@ CANDIDATE_TOOL_ITEM_TYPES = frozenset({
     "tool_call",
 })
 
+_STARTUP_NOTIFICATION_METHODS = frozenset({
+    "unknown", "configWarning", "environment/connection",
+    "environment/connection/updated", "error", "thread/closed",
+    "thread/environment/connected", "thread/environment/disconnected",
+    "thread/started", "thread/status/changed", "warning",
+})
+_STARTUP_CHECK_BOOLEAN_FIELDS = frozenset({
+    "thread_started", "ephemeral_thread", "instruction_sources_present",
+    "instruction_sources_allowed", "response_payload_preserved",
+    "initialize_completed", "process_tree_reaped", "cleanup_verified",
+    "proxy_telemetry_complete", "proxy_request_response_correlated",
+    "request_mapping_clean",
+})
+_STARTUP_CHECK_FIELDS = frozenset({
+    *_STARTUP_CHECK_BOOLEAN_FIELDS,
+    "error_code", "error_category", "error_signals", "error_data_kind",
+    "turn_requests_sent", "model_generation_requests_sent",
+})
+_STARTUP_TELEMETRY_FIELDS = frozenset({
+    "schema_version", "request_methods", "response_error_codes",
+    "requests_seen", "requests_forwarded", "request_mapping_rejections",
+    "request_mapping_rejection_methods", "request_mapping_rejection_reasons",
+    "request_mapping_rejection_method_reasons",
+    "request_mapping_rejection_method_reason_fields", "malformed_requests",
+    "responses_seen", "responses_forwarded", "response_mapping_rejections",
+    "malformed_responses", "probe_policy_rejections", "probe_read_limit_applied",
+    "probe_response_rejections", "probe_rejected_read_max_bytes",
+    "child_exit_code", "request_write_failures", "request_id_duplicates",
+    "responses_matched", "responses_unmatched", "notifications_seen",
+    "pending_request_ids",
+})
+_STARTUP_TELEMETRY_COUNTER_FIELDS = frozenset({
+    "request_methods", "response_error_codes",
+    "request_mapping_rejection_methods", "request_mapping_rejection_reasons",
+})
+_STARTUP_TELEMETRY_COUNT_FIELDS = _STARTUP_TELEMETRY_FIELDS - {
+    "schema_version", *_STARTUP_TELEMETRY_COUNTER_FIELDS,
+    "request_mapping_rejection_method_reasons",
+    "request_mapping_rejection_method_reason_fields", "child_exit_code",
+}
+_STARTUP_PRIVACY_FIELDS = frozenset({
+    "request_or_response_payload_preserved", "thread_id_preserved",
+    "instruction_source_paths_preserved", "raw_stderr_preserved",
+    "credential_files_directly_read_by_probe", "control_home_contents_serialized",
+})
+
+
+def _validate_startup_telemetry_snapshot(value: Any) -> dict[str, Any]:
+    """Validate sanitized telemetry as evidence, not just as a mapping.
+
+    This is deliberately independent of the report booleans: a producer may
+    claim that telemetry is complete, but the consumer recomputes the
+    accounting invariants from the payload-free snapshot before allowing a
+    model command to start.
+    """
+    if not isinstance(value, dict) or set(value) != _STARTUP_TELEMETRY_FIELDS:
+        raise ValueError("subscription startup telemetry schema is invalid")
+    if value.get("schema_version") != 3:
+        raise ValueError("subscription startup telemetry schema version is unsupported")
+
+    def counter_map(name: str, allowed: frozenset[str] | None = None) -> dict[str, int]:
+        counter = value.get(name)
+        if not isinstance(counter, dict) or any(
+            not isinstance(key, str) or type(count) is not int or count < 0
+            for key, count in counter.items()
+        ):
+            raise ValueError(f"subscription startup telemetry counter is invalid: {name}")
+        if allowed is not None and not set(counter).issubset(allowed):
+            raise ValueError(f"subscription startup telemetry label is invalid: {name}")
+        return counter
+
+    request_methods = counter_map("request_methods")
+    response_errors = counter_map("response_error_codes")
+    rejection_methods = counter_map("request_mapping_rejection_methods")
+    rejection_reasons = counter_map("request_mapping_rejection_reasons")
+    allowed_rejection_methods = {
+        "unknown", "command/exec", "process/exec", "process/start",
+        "environmentConfig/read", "fs/canonicalize", "fs/getMetadata", "fs/walk",
+        "fs/readFile", "fs/writeFile", "resources/read",
+    }
+    method_reasons = value["request_mapping_rejection_method_reasons"]
+    if not isinstance(method_reasons, dict):
+        raise ValueError("subscription startup telemetry method-reason map is invalid")
+    safe_reasons = {
+        "unsupported-file-uri", "unsupported-file-uri-components", "host-path-not-absolute",
+        "host-path-traversal", "invalid-host-path", "host-path-outside-declared-mount",
+        "container-path-not-absolute", "container-path-traversal", "invalid-container-path",
+        "container-path-outside-declared-mount", "invalid-container-file-uri",
+        "invalid-path-field-type", "invalid-path-array-shape", "ambiguous-relative-environment-path",
+        "unsafe-relative-environment-path", "candidate-mount-not-declared", "malformed-request",
+        "probe-method-not-allowed", "probe-read-path-type", "probe-config-policy",
+        "probe-filesystem-path-policy", "invalid-request-structure", "unclassified",
+    }
+    if any(
+        method not in allowed_rejection_methods
+        or not isinstance(reasons, dict)
+        or any(not isinstance(reason, str) or type(count) is not int or count < 0
+               for reason, count in reasons.items())
+        for method, reasons in method_reasons.items()
+    ):
+        raise ValueError("subscription startup telemetry method-reason map is invalid")
+    method_reason_fields = value["request_mapping_rejection_method_reason_fields"]
+    if not isinstance(method_reason_fields, dict):
+        raise ValueError("subscription startup telemetry field map is invalid")
+    allowed_rejection_fields = {
+        "unknown", "cwd", "path", "uri", "configPaths", "requirementsPaths",
+    }
+    if any(
+        not isinstance(method, str) or not isinstance(reasons, dict)
+        or method not in allowed_rejection_methods
+        or any(not isinstance(reason, str) or not isinstance(fields, dict)
+               or reason not in safe_reasons
+               or any(not isinstance(field, str) or type(count) is not int or count < 0
+                      or field not in allowed_rejection_fields
+                      for field, count in fields.items())
+               for reason, fields in reasons.items())
+        for method, reasons in method_reason_fields.items()
+    ):
+        raise ValueError("subscription startup telemetry field map is invalid")
+    if not request_methods.keys() <= {
+        "unknown", "initialize", "initialized", "thread/start", "environment/info",
+        "command/exec", "process/exec", "process/start", "environmentConfig/read",
+        "fs/canonicalize", "fs/getMetadata", "fs/walk", "fs/readFile",
+        "fs/writeFile", "resources/read",
+    }:
+        raise ValueError("subscription startup telemetry request method is invalid")
+    if not rejection_methods.keys() <= {
+        "unknown", "command/exec", "process/exec", "process/start",
+        "environmentConfig/read", "fs/canonicalize", "fs/getMetadata", "fs/walk",
+        "fs/readFile", "fs/writeFile", "resources/read",
+    }:
+        raise ValueError("subscription startup telemetry rejection method is invalid")
+    if not rejection_reasons.keys() <= safe_reasons:
+        raise ValueError("subscription startup telemetry rejection reason is invalid")
+    if any(
+        reason not in safe_reasons
+        for reasons in method_reasons.values()
+        for reason in reasons
+    ):
+        raise ValueError("subscription startup telemetry method reason is invalid")
+    if any(not isinstance(value.get(field), int) or value[field] < 0
+           for field in _STARTUP_TELEMETRY_COUNT_FIELDS):
+        raise ValueError("subscription startup telemetry count is invalid")
+    if value["child_exit_code"] is not None and type(value["child_exit_code"]) is not int:
+        raise ValueError("subscription startup telemetry child exit code is invalid")
+
+    if sum(request_methods.values()) != value["requests_seen"]:
+        raise ValueError("subscription startup telemetry request total is inconsistent")
+    if value["requests_forwarded"] + value["request_mapping_rejections"] + value["request_write_failures"] != value["requests_seen"]:
+        raise ValueError("subscription startup telemetry request accounting is inconsistent")
+    if sum(response_errors.values()) > value["responses_seen"]:
+        raise ValueError("subscription startup telemetry response errors are inconsistent")
+    if value["responses_forwarded"] > value["responses_seen"]:
+        raise ValueError("subscription startup telemetry response total is inconsistent")
+    if value["notifications_seen"] > value["responses_seen"]:
+        raise ValueError("subscription startup telemetry notification total is inconsistent")
+    response_records = (
+        value["responses_seen"] - value["notifications_seen"] - value["malformed_responses"]
+    )
+    if response_records < 0 or value["responses_matched"] + value["responses_unmatched"] > response_records:
+        raise ValueError("subscription startup telemetry response correlation is inconsistent")
+    return value
+
 
 def _startup_model_generation_requests(startup_gate: Mapping[str, Any]) -> int:
     """Read the startup result whether it is a full report or a sentinel."""
@@ -69,11 +232,69 @@ def _startup_model_generation_requests(startup_gate: Mapping[str, Any]) -> int:
 
 def _validate_startup_gate(startup_gate: Mapping[str, Any]) -> None:
     """Require complete model-free startup evidence before model execution."""
+    try:
+        from .feynman_subscription_startup_diagnostic import _proxy_telemetry_ready
+    except ImportError:
+        from feynman_subscription_startup_diagnostic import _proxy_telemetry_ready
+    if not isinstance(startup_gate, dict) or startup_gate.get("schema_version") != 3:
+        raise ValueError("subscription startup gate schema version is unsupported")
     if startup_gate.get("verdict") != "subscription-startup-thread-ready":
         raise ValueError("subscription startup gate did not pass")
+    allowed_top_level = {
+        "schema_version", "preparation_fingerprint", "verdict", "failure_stage", "model", "checks",
+        "notification_methods", "proxy_telemetry_status", "proxy_telemetry",
+        "privacy", "scope",
+    }
+    required_top_level = allowed_top_level - {"failure_stage"}
+    if not required_top_level.issubset(startup_gate) or not set(startup_gate).issubset(allowed_top_level):
+        raise ValueError("subscription startup gate has unexpected fields")
+    if "failure_stage" in startup_gate and (
+        not isinstance(startup_gate["failure_stage"], str)
+        or not startup_gate["failure_stage"]
+        or any(not ("a" <= char <= "z" or "0" <= char <= "9" or char == "-")
+               for char in startup_gate["failure_stage"])
+    ):
+        raise ValueError("subscription startup gate failure stage is invalid")
+    fingerprint = startup_gate.get("preparation_fingerprint")
+    if (not isinstance(fingerprint, str) or len(fingerprint) != 64
+            or any(char not in "0123456789abcdef" for char in fingerprint)):
+        raise ValueError("subscription startup gate preparation fingerprint is invalid")
+    if not isinstance(startup_gate.get("model"), str) or not startup_gate["model"]:
+        raise ValueError("subscription startup gate model is invalid")
     checks = startup_gate.get("checks")
-    if not isinstance(checks, Mapping):
+    if not isinstance(checks, dict) or set(checks) != _STARTUP_CHECK_FIELDS:
         raise ValueError("subscription startup gate has no checks object")
+    if any(type(checks.get(name)) is not bool for name in _STARTUP_CHECK_BOOLEAN_FIELDS):
+        raise ValueError("subscription startup gate boolean evidence is invalid")
+    if checks.get("error_code") is not None and type(checks.get("error_code")) is not int:
+        raise ValueError("subscription startup gate error code is invalid")
+    if checks.get("error_category") is not None and not isinstance(checks.get("error_category"), str):
+        raise ValueError("subscription startup gate error category is invalid")
+    if checks.get("error_category") not in {
+        None, "remote-path-error", "remote-environment-error", "mcp-startup-error",
+        "model-configuration-error", "authentication-error", "configuration-error",
+        "internal-error",
+    }:
+        raise ValueError("subscription startup gate error category is unsupported")
+    if not isinstance(checks.get("error_signals"), dict) or any(
+        type(value) is not bool for value in checks["error_signals"].values()
+    ):
+        raise ValueError("subscription startup gate error signals are invalid")
+    if set(checks["error_signals"]) != {
+        "mentions_environment", "mentions_exec_server", "mentions_connection",
+        "mentions_initialize", "mentions_exit", "mentions_closed", "mentions_timeout",
+        "mentions_config", "mentions_path", "mentions_not_found",
+    }:
+        raise ValueError("subscription startup gate error signals are incomplete")
+    if checks.get("error_data_kind") not in {
+        "none", "boolean", "string", "number", "array", "object", "other",
+    }:
+        raise ValueError("subscription startup gate error data kind is invalid")
+    for name in ("turn_requests_sent", "model_generation_requests_sent"):
+        if type(checks.get(name)) is not int or checks[name] != 0:
+            raise ValueError("subscription startup gate reported a model request")
+    if checks["response_payload_preserved"] is not False:
+        raise ValueError("subscription startup gate preserves response payload")
     required_true = (
         "initialize_completed", "thread_started", "ephemeral_thread",
         "instruction_sources_allowed", "process_tree_reaped",
@@ -84,13 +305,51 @@ def _validate_startup_gate(startup_gate: Mapping[str, Any]) -> None:
         raise ValueError("subscription startup gate evidence is incomplete")
     if checks.get("error_code") is not None or checks.get("error_category") is not None:
         raise ValueError("subscription startup gate contains an RPC error")
-    if checks.get("turn_requests_sent") != 0:
-        raise ValueError("subscription startup gate reported a turn request")
-    _startup_model_generation_requests(startup_gate)
+    if checks.get("instruction_sources_allowed") and not checks.get("instruction_sources_present"):
+        raise ValueError("subscription startup gate instruction source evidence is inconsistent")
     if startup_gate.get("proxy_telemetry_status") != "available":
         raise ValueError("subscription startup gate telemetry is unavailable")
-    if not isinstance(startup_gate.get("proxy_telemetry"), Mapping):
+    notifications = startup_gate.get("notification_methods")
+    if not isinstance(notifications, dict) or any(
+        not isinstance(name, str) or name not in _STARTUP_NOTIFICATION_METHODS
+        or type(count) is not int or count < 0
+        for name, count in notifications.items()
+    ):
+        raise ValueError("subscription startup gate notification evidence is invalid")
+    privacy = startup_gate.get("privacy")
+    if not isinstance(privacy, dict) or set(privacy) != _STARTUP_PRIVACY_FIELDS or any(
+        value is not False for value in privacy.values()
+    ):
+        raise ValueError("subscription startup gate privacy evidence is invalid")
+    if not isinstance(startup_gate.get("scope"), str) or not startup_gate["scope"]:
+        raise ValueError("subscription startup gate scope is invalid")
+    telemetry = startup_gate.get("proxy_telemetry")
+    if not isinstance(telemetry, dict):
         raise ValueError("subscription startup gate telemetry is missing")
+    _validate_startup_telemetry_snapshot(telemetry)
+    if not _proxy_telemetry_ready(telemetry):
+        raise ValueError("subscription startup gate telemetry is incomplete")
+    if checks["proxy_telemetry_complete"] is not True:
+        raise ValueError("subscription startup gate telemetry completeness is inconsistent")
+    expected_mapping_clean = (
+        telemetry["request_mapping_rejections"] == 0
+        and telemetry["response_mapping_rejections"] == 0
+    )
+    if checks["request_mapping_clean"] is not expected_mapping_clean:
+        raise ValueError("subscription startup gate mapping evidence is inconsistent")
+    if checks["proxy_request_response_correlated"] is not (
+        telemetry["responses_unmatched"] == 0
+        and telemetry["pending_request_ids"] == 0
+    ):
+        raise ValueError("subscription startup gate correlation evidence is inconsistent")
+    expected_cleanup = (
+        checks["process_tree_reaped"]
+        and _proxy_telemetry_ready(telemetry)
+        and telemetry["child_exit_code"] == 0
+    )
+    if checks["cleanup_verified"] is not expected_cleanup:
+        raise ValueError("subscription startup gate cleanup evidence is inconsistent")
+    _startup_model_generation_requests(startup_gate)
 
 
 def _no_symlink_components(path: Path, label: str, *, must_exist: bool) -> Path:
@@ -491,6 +750,52 @@ def _validate_full_runner_binding(*, binding_path: Path, runner_job_path: Path,
     return override
 
 
+def _wiring_fingerprint(*, resolved_codex: str, model: str, candidate_dir: Path,
+                        runner_job_path: Path, boundary_profile_path: Path,
+                        binding_path: Path, node_bin: Path, adapter: Path,
+                        docker_bin: Path, docker_config: Path, docker_image_id: str,
+                        all_config_overrides: tuple[str, ...], command: list[str]) -> str:
+    """Return an opaque digest for one immutable executor preparation.
+
+    The descriptor is held only in memory.  Its digest is safe to place in a
+    gate because it does not expose paths, config values, or command payloads,
+    while still binding the exact files, image, overrides, and model command.
+    """
+    def path_digest(path: Path) -> str:
+        return _sha(path) if path.is_file() else hashlib.sha256(
+            str(path.resolve()).encode("utf-8")
+        ).hexdigest()
+
+    descriptor = {
+        "schema_version": 1,
+        "model": model,
+        "candidate_path_sha256": hashlib.sha256(
+            str(candidate_dir.resolve()).casefold().encode("utf-8")
+        ).hexdigest(),
+        "resolved_codex_sha256": path_digest(Path(resolved_codex)),
+        "runner_job_sha256": _sha(runner_job_path),
+        "boundary_profile_sha256": _sha(boundary_profile_path),
+        "binding_sha256": _sha(binding_path),
+        "node_sha256": path_digest(node_bin),
+        "adapter_sha256": path_digest(adapter),
+        "docker_sha256": path_digest(docker_bin),
+        "docker_config_path_sha256": hashlib.sha256(
+            str(docker_config.resolve()).casefold().encode("utf-8")
+        ).hexdigest(),
+        "docker_image_id": docker_image_id,
+        "config_override_count": len(all_config_overrides),
+        "config_overrides_sha256": hashlib.sha256(
+            json.dumps(list(all_config_overrides), separators=(",", ":")).encode("utf-8")
+        ).hexdigest(),
+        "command_sha256": hashlib.sha256(
+            json.dumps(command, separators=(",", ":")).encode("utf-8")
+        ).hexdigest(),
+    }
+    return hashlib.sha256(
+        json.dumps(descriptor, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
 def prepare_full_runner_executor_wiring(*, codex_bin: str, binding_path: Path,
                                         runner_job_path: Path,
                                         boundary_profile_path: Path,
@@ -499,7 +804,8 @@ def prepare_full_runner_executor_wiring(*, codex_bin: str, binding_path: Path,
                                         adapter: Path, docker_bin: Path,
                                         docker_config: Path,
                                         docker_image_id: str,
-                                        timeout_seconds: int) -> dict[str, Any]:
+                                        timeout_seconds: int,
+                                        deadline: float | None = None) -> dict[str, Any]:
     """Prepare the full-runner command and skill isolation without auth/model use."""
     override = _validate_full_runner_binding(
         binding_path=binding_path,
@@ -539,6 +845,7 @@ def prepare_full_runner_executor_wiring(*, codex_bin: str, binding_path: Path,
             override=override,
             expected_skills=job["skills"]["expected_candidate_skills"],
             timeout_seconds=min(timeout_seconds, 30),
+            deadline=deadline,
         )
     finally:
         shutil.rmtree(wiring_root, ignore_errors=True)
@@ -555,12 +862,31 @@ def prepare_full_runner_executor_wiring(*, codex_bin: str, binding_path: Path,
     )
     if command[-1] != "-" or command.count("-c") != 5 + len(all_overrides):
         raise ValueError("full-runner executor command has unexpected override count")
+    preparation_fingerprint = _wiring_fingerprint(
+        resolved_codex=resolved_codex,
+        model=model,
+        candidate_dir=candidate_dir,
+        runner_job_path=runner_job_path,
+        boundary_profile_path=boundary_profile_path,
+        binding_path=binding_path,
+        node_bin=node_bin,
+        adapter=adapter,
+        docker_bin=docker_bin,
+        docker_config=docker_config,
+        docker_image_id=docker_image_id,
+        all_config_overrides=all_overrides,
+        command=command,
+    )
     return {
         "full_runner_override": override,
         "skill_config_overrides": skill_overrides,
         "all_config_overrides": all_overrides,
         "command": command,
         "app_server": app_server,
+        # This opaque digest binds the validated preparation inputs, exact
+        # override tuple, and exact model command.  Consumers use the digest
+        # to detect drift without persisting paths or command payloads.
+        "preparation_fingerprint": preparation_fingerprint,
     }
 
 
@@ -629,6 +955,23 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
     if model.lower().startswith("mock"):
         raise ValueError("subscription smoke executor refuses mock model IDs")
     candidate_dir = _directory(Path(paths["candidate_dir"]), "candidate directory")
+    evaluator_dir = _directory(Path(paths["evaluator_dir"]), "evaluator directory")
+    control_home, remote_environment_path = _validate_control_files(job, remote_environment_path)
+    if _inside(control_home, evaluator_dir) or _inside(evaluator_dir, control_home):
+        raise ValueError("evaluator directory and control CODEX_HOME must be disjoint")
+    if (candidate_dir / ".codex").exists():
+        raise ValueError("candidate workspace must not contain project-local .codex configuration")
+    task_path = _regular(candidate_dir / "task.txt", "candidate task")
+    prompt = task_path.read_text(encoding="utf-8")
+    # Allocate the complete evaluator-owned execution directory before any
+    # control-plane, startup, auth, or model process can run.  Startup
+    # evidence must not be placed in system TEMP: the startup checkpoint
+    # validator deliberately rejects paths outside the evaluator boundary.
+    output = _prepare_output_dir(output_dir, evaluator_dir)
+    startup_dir = output / "startup-gate"
+    startup_dir.mkdir(mode=0o700)
+    startup_telemetry_path = startup_dir / "startup-rpc-telemetry.json"
+    startup_report_path = startup_dir / "startup-report.json"
     full_runner_wiring = prepare_full_runner_executor_wiring(
         codex_bin=codex_bin,
         binding_path=full_runner_binding_path,
@@ -645,7 +988,6 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
     )
     full_runner_override = full_runner_wiring["full_runner_override"]
 
-    control_home, remote_environment_path = _validate_control_files(job, remote_environment_path)
     # This must run before the auth gate and any model-facing command.  It
     # verifies that the actual protected control home can hand off to its
     # selected remote environment with the exact transient full-runner and
@@ -664,6 +1006,7 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
             proxy_telemetry=control_plane_dir / "rpc-proxy-telemetry.json",
             config_overrides=full_runner_wiring["all_config_overrides"],
             timeout_seconds=min(timeout_seconds, 30),
+            cwd=candidate_dir,
         )
     if control_plane.get("verdict") != "subscription-control-plane-ready":
         raise ValueError("subscription control-plane preflight did not pass")
@@ -674,24 +1017,30 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
         from .feynman_subscription_startup_diagnostic import run as startup_diagnostic
     except ImportError:
         from feynman_subscription_startup_diagnostic import run as startup_diagnostic
-    with tempfile.TemporaryDirectory(prefix="feynman-startup-gate-") as startup_root:
-        startup_dir = Path(startup_root)
-        startup_gate = startup_diagnostic(
-            runner_job_path=runner_job_path,
-            boundary_profile_path=boundary_profile_path,
-            remote_environment_path=remote_environment_path,
-            binding_path=full_runner_binding_path,
-            codex_bin=Path(_resolve_executable(codex_bin)),
-            node_bin=full_runner_node_bin,
-            adapter=full_runner_adapter,
-            docker_bin=full_runner_docker_bin,
-            docker_config=full_runner_docker_config,
-            docker_image_id=full_runner_image_id,
-            telemetry_path=startup_dir / "startup-rpc-telemetry.json",
-            output_path=startup_dir / "startup-report.json",
-            timeout_seconds=min(timeout_seconds, 60),
-        )
+    startup_gate = startup_diagnostic(
+        runner_job_path=runner_job_path,
+        boundary_profile_path=boundary_profile_path,
+        remote_environment_path=remote_environment_path,
+        binding_path=full_runner_binding_path,
+        codex_bin=Path(_resolve_executable(codex_bin)),
+        node_bin=full_runner_node_bin,
+        adapter=full_runner_adapter,
+        docker_bin=full_runner_docker_bin,
+        docker_config=full_runner_docker_config,
+        docker_image_id=full_runner_image_id,
+        telemetry_path=startup_telemetry_path,
+        output_path=startup_report_path,
+        timeout_seconds=min(timeout_seconds, 60),
+        prepared_wiring=full_runner_wiring,
+    )
+    if startup_gate.get("preparation_fingerprint") != full_runner_wiring.get("preparation_fingerprint"):
+        raise ValueError("startup gate preparation fingerprint differs from model command")
     _validate_startup_gate(startup_gate)
+    persisted_startup_gate = _load(startup_report_path, "startup gate report")
+    if persisted_startup_gate != startup_gate:
+        raise ValueError("startup gate report does not match returned startup evidence")
+    startup_telemetry = _regular(startup_telemetry_path, "startup gate telemetry")
+    startup_report = _regular(startup_report_path, "startup gate report")
     auth = check_auth(control_home, codex_bin=codex_bin, timeout_seconds=min(timeout_seconds, 120))
     if auth.get("verdict") != "chatgpt-subscription-authenticated":
         raise ValueError("ChatGPT subscription auth gate did not pass")
@@ -699,15 +1048,6 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
     if versions.get("codex_cli") != auth.get("codex_cli"):
         raise ValueError("runner-job Codex version differs from authenticated control Codex")
 
-    evaluator_dir = _directory(Path(paths["evaluator_dir"]), "evaluator directory")
-    if _inside(control_home, evaluator_dir) or _inside(evaluator_dir, control_home):
-        raise ValueError("evaluator directory and control CODEX_HOME must be disjoint")
-    if (candidate_dir / ".codex").exists():
-        raise ValueError("candidate workspace must not contain project-local .codex configuration")
-    task_path = _regular(candidate_dir / "task.txt", "candidate task")
-    prompt = task_path.read_text(encoding="utf-8")
-
-    output = _prepare_output_dir(output_dir, evaluator_dir)
     trace_path = output / "codex-trace.jsonl"
     final_path = output / "candidate-final.txt"
     result_path = output / "subscription-exec-result.json"
@@ -746,7 +1086,7 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
         final_path.write_text(trace["final_message"], encoding="utf-8")
         tool_use_observed = trace["completed_tool_item_count"] > 0
         result = {
-            "schema_version": 2,
+            "schema_version": 3,
             "verdict": "subscription-codex-smoke-exec-completed",
             "run_id": job["run_id"],
             "job": dict(job["job"]),
@@ -779,6 +1119,13 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
             "startup_gate": {
                 "verdict": startup_gate["verdict"],
                 "model_generation_requests_sent": _startup_model_generation_requests(startup_gate),
+                "preparation_fingerprint": startup_gate["preparation_fingerprint"],
+                "artifacts": {
+                    "report": startup_report.relative_to(output).as_posix(),
+                    "telemetry": startup_telemetry.relative_to(output).as_posix(),
+                    "report_sha256": _sha(startup_report),
+                    "telemetry_sha256": _sha(startup_telemetry),
+                },
             },
             "conversation": {
                 "thread_id": trace["thread_id"],

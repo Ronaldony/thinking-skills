@@ -137,11 +137,14 @@ def _reader(stream: Any, received: queue.Queue[dict[str, Any] | None]) -> None:
 
 
 def _rpc(process: subprocess.Popen[bytes], received: queue.Queue[dict[str, Any] | None],
-         identifier: int, method: str, params: dict[str, Any], timeout_seconds: int) -> dict[str, Any]:
+         identifier: int, method: str, params: dict[str, Any], timeout_seconds: int | float,
+         *, deadline: float | None = None) -> dict[str, Any]:
     assert process.stdin is not None
+    deadline = (time.monotonic() + timeout_seconds) if deadline is None else deadline
+    if deadline - time.monotonic() <= 0:
+        raise ValueError("App Server RPC request timed out")
     process.stdin.write(_request(identifier, method, params))
     process.stdin.flush()
-    deadline = time.monotonic() + timeout_seconds
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -174,6 +177,12 @@ def _close(process: subprocess.Popen[bytes], reader: threading.Thread) -> None:
             process.kill()
             process.wait(timeout=5)
     reader.join(timeout=2)
+    for stream in (process.stdout, process.stderr):
+        if stream is not None:
+            try:
+                stream.close()
+            except (OSError, ValueError):
+                pass
 
 
 def _binding_lineage(binding: dict[str, Any], job: dict[str, Any],
@@ -290,7 +299,8 @@ def _skill_disable_override(entries: Sequence[tuple[str, Path]]) -> str:
 def _app_server_session(*, codex_bin: Path, codex_home: Path, candidate_home: Path,
                         temp_dir: Path, candidate: Path,
                         config_overrides: Sequence[str], timeout_seconds: int,
-                        include_mcp: bool) -> tuple[dict[str, Any], dict[str, Any] | None]:
+                        include_mcp: bool,
+                        deadline: float | None = None) -> tuple[dict[str, Any], dict[str, Any] | None]:
     command = [str(codex_bin), "app-server"]
     for value in config_overrides:
         command.extend(("-c", value))
@@ -307,7 +317,7 @@ def _app_server_session(*, codex_bin: Path, codex_home: Path, candidate_home: Pa
     try:
         initialized = _rpc(process, received, 1, "initialize", {
             "clientInfo": {"name": "feynman-skill-tool-wiring-preflight", "version": "0.1.0"},
-        }, timeout_seconds)
+        }, timeout_seconds, deadline=deadline)
         if "error" in initialized:
             raise ValueError("App Server initialize failed")
         assert process.stdin is not None
@@ -315,14 +325,14 @@ def _app_server_session(*, codex_bin: Path, codex_home: Path, candidate_home: Pa
         process.stdin.flush()
         skill_response = _rpc(process, received, 2, "skills/list", {
             "cwds": [str(candidate)], "forceReload": True,
-        }, timeout_seconds)
+        }, timeout_seconds, deadline=deadline)
         if "error" in skill_response:
             raise ValueError("App Server skills/list failed")
         catalog = None
         if include_mcp:
             status = _rpc(process, received, 3, "mcpServerStatus/list", {
                 "detail": "toolsAndAuthOnly", "limit": 10,
-            }, timeout_seconds)
+            }, timeout_seconds, deadline=deadline)
             if "error" in status:
                 raise ValueError("App Server MCP status failed")
             catalog = summarize_status(
@@ -336,12 +346,18 @@ def _app_server_session(*, codex_bin: Path, codex_home: Path, candidate_home: Pa
 
 def _app_server_probe(*, codex_bin: Path, codex_home: Path, candidate_home: Path,
                       temp_dir: Path, candidate: Path, override: Any,
-                      expected_skills: Sequence[str], timeout_seconds: int) -> dict[str, Any]:
+                      expected_skills: Sequence[str], timeout_seconds: int,
+                      deadline: float | None = None) -> dict[str, Any]:
+    # Both discovery sessions are one preparation operation.  They must share
+    # one absolute handshake deadline instead of receiving a fresh timeout
+    # after the first App Server process has already consumed the budget.
+    deadline = time.monotonic() + timeout_seconds if deadline is None else deadline
     initial_skills, _ = _app_server_session(
         codex_bin=codex_bin, codex_home=codex_home,
         candidate_home=candidate_home, temp_dir=temp_dir,
         candidate=candidate, config_overrides=override.values,
         timeout_seconds=timeout_seconds, include_mcp=False,
+        deadline=deadline,
     )
     initial_candidate_names, non_candidate_entries = _classify_skills(
         initial_skills, candidate=candidate)
@@ -356,6 +372,7 @@ def _app_server_probe(*, codex_bin: Path, codex_home: Path, candidate_home: Path
         candidate_home=candidate_home, temp_dir=temp_dir,
         candidate=candidate, config_overrides=final_overrides,
         timeout_seconds=timeout_seconds, include_mcp=True,
+        deadline=deadline,
     )
     skill_summary = _summarize_skills(
         final_skills, candidate=candidate, expected_names=expected_skills)

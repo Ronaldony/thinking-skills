@@ -107,7 +107,9 @@ def _path_role(value: str, candidate: Path) -> str:
     host = _normalize_path_value(str(candidate)).rstrip("/").casefold()
     normalized = _normalize_path_value(value)
     comparison = normalized.casefold()
-    if normalized == "/run/candidate" or normalized.startswith("/run/candidate/"):
+    if normalized == "/run/candidate":
+        return "candidate/"
+    if normalized.startswith("/run/candidate/"):
         return "candidate/" + normalized.removeprefix("/run/candidate/")
     if comparison == host or comparison.startswith(host + "/"):
         return "candidate/" + normalized[len(host):].lstrip("/")
@@ -122,6 +124,22 @@ def _path_role(value: str, candidate: Path) -> str:
             suffix_digest = hashlib.sha256(suffix.encode("utf-8")).hexdigest()
             return root.removeprefix("/") + "/suffix-sha256:" + suffix_digest
     return "outside-declared-mount"
+
+
+def _shape_is_comparable(value: Any) -> bool:
+    """Reject path comparisons that contain an undeclared mount role.
+
+    The fixed role is intentionally payload-free, but it is not a valid
+    equivalence class.  Treating two identical rejection markers as equal
+    would allow a direct and proxy run to agree on the same wrong path.
+    """
+    if isinstance(value, dict):
+        if value.get("path_role") == "outside-declared-mount":
+            return False
+        return all(_shape_is_comparable(item) for item in value.values())
+    if isinstance(value, list):
+        return all(_shape_is_comparable(item) for item in value)
+    return True
 
 
 def _path_namespace(value: str, candidate: Path) -> str:
@@ -194,6 +212,8 @@ def _namespace_contract_matches(direct: Any, proxy: Any) -> bool:
     """Accept only equal namespaces or the expected container-to-host projection."""
     if isinstance(direct, dict) and isinstance(proxy, dict):
         if set(direct) == set(proxy) == {"namespace"}:
+            if "outside-declared-mount" in {direct["namespace"], proxy["namespace"]}:
+                return False
             return direct["namespace"] == proxy["namespace"] or (
                 direct["namespace"] == "container" and proxy["namespace"] == "host"
             )
@@ -452,7 +472,11 @@ def _digest(value: Any) -> str:
 def _response_shape_matches_by_id(
         direct: dict[str, Any], proxy: dict[str, Any]) -> dict[str, bool]:
     return {
-        str(identifier): direct.get(str(identifier)) == proxy.get(str(identifier))
+        str(identifier): (
+            _shape_is_comparable(direct.get(str(identifier)))
+            and _shape_is_comparable(proxy.get(str(identifier)))
+            and direct.get(str(identifier)) == proxy.get(str(identifier))
+        )
         for identifier in EXPECTED_IDS
     }
 
@@ -509,7 +533,11 @@ def run(*, docker: Path, docker_config: Path, image: str,
     proxy_responses = proxy.pop("responses")
     direct_namespaces = direct.pop("response_namespaces")
     proxy_namespaces = proxy.pop("response_namespaces")
-    response_shapes_match = direct_responses == proxy_responses
+    response_shapes_match = (
+        _shape_is_comparable(direct_responses)
+        and _shape_is_comparable(proxy_responses)
+        and direct_responses == proxy_responses
+    )
     response_shape_matches_by_id = _response_shape_matches_by_id(
         direct_responses, proxy_responses)
     response_namespace_shapes_match = _namespace_contract_matches(
@@ -518,7 +546,11 @@ def run(*, docker: Path, docker_config: Path, image: str,
                             for item in _requests(candidate=candidate, direct=True)]
     request_shape_proxy = [_shape(item, candidate=candidate)
                            for item in _requests(candidate=candidate, direct=False)]
-    request_shapes_match = request_shape_direct == request_shape_proxy
+    request_shapes_match = (
+        _shape_is_comparable(request_shape_direct)
+        and _shape_is_comparable(request_shape_proxy)
+        and request_shape_direct == request_shape_proxy
+    )
     result = {
         "schema_version": PATH_CONTRACT_REPORT_SCHEMA_VERSION,
         "verdict": "rpc-path-contract-equivalent" if (

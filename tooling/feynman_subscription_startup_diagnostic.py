@@ -20,7 +20,7 @@ import subprocess
 import tempfile
 import threading
 import time
-from typing import Any
+from typing import Any, Mapping
 
 try:
     from .feynman_subscription_checkpoint import (
@@ -37,7 +37,8 @@ try:
     )
     from .feynman_subscription_smoke_exec import (
         _directory, _load, _regular, _resolve_executable, _safe_exec_env,
-        _validate_control_files, prepare_full_runner_executor_wiring,
+        _validate_control_files, build_codex_exec_command,
+        prepare_full_runner_executor_wiring, _wiring_fingerprint,
     )
 except ImportError:
     from feynman_subscription_checkpoint import (
@@ -54,7 +55,8 @@ except ImportError:
     )
     from feynman_subscription_smoke_exec import (
         _directory, _load, _regular, _resolve_executable, _safe_exec_env,
-        _validate_control_files, prepare_full_runner_executor_wiring,
+        _validate_control_files, build_codex_exec_command,
+        prepare_full_runner_executor_wiring, _wiring_fingerprint,
     )
 
 
@@ -425,33 +427,79 @@ def _wait_for_proxy_telemetry_exit(path: Path, *, deadline: float) -> bool:
 
 def _proxy_telemetry_ready(value: dict[str, Any]) -> bool:
     """Require complete request/response accounting before declaring ready."""
-    response_records = (
-        value["responses_seen"] - value["notifications_seen"]
-        - value["malformed_responses"]
-    )
-    return (
-        value["requests_seen"] > 0
-        and value["responses_seen"] > 0
-        and response_records >= 0
-        and value["malformed_responses"] == 0
-        and value["requests_seen"] == value["requests_forwarded"]
-        and value["responses_seen"] == value["responses_forwarded"]
-        and value["responses_matched"] + value["responses_unmatched"] == response_records
-        and value["responses_unmatched"] == 0
-        and value["pending_request_ids"] == 0
-        and value["request_write_failures"] == 0
-        and value["request_id_duplicates"] == 0
-        and value["request_mapping_rejections"] == 0
-        and value["response_mapping_rejections"] == 0
-        and value["child_exit_code"] == 0
-    )
+    try:
+        required = {
+            "schema_version", "request_methods", "response_error_codes",
+            "requests_seen", "requests_forwarded", "request_mapping_rejections",
+            "request_mapping_rejection_methods", "request_mapping_rejection_reasons",
+            "request_mapping_rejection_method_reasons",
+            "request_mapping_rejection_method_reason_fields", "malformed_requests",
+            "responses_seen", "responses_forwarded", "response_mapping_rejections",
+            "malformed_responses", "probe_policy_rejections", "probe_read_limit_applied",
+            "probe_response_rejections", "probe_rejected_read_max_bytes",
+            "child_exit_code", "request_write_failures", "request_id_duplicates",
+            "responses_matched", "responses_unmatched", "notifications_seen",
+            "pending_request_ids",
+        }
+        if not isinstance(value, dict) or set(value) != required or value.get("schema_version") != 3:
+            return False
+        counters = (
+            "requests_seen", "requests_forwarded", "request_mapping_rejections",
+            "malformed_requests", "responses_seen", "responses_forwarded",
+            "response_mapping_rejections", "malformed_responses",
+            "probe_policy_rejections", "probe_read_limit_applied",
+            "probe_response_rejections", "probe_rejected_read_max_bytes",
+            "request_write_failures", "request_id_duplicates", "responses_matched",
+            "responses_unmatched", "notifications_seen", "pending_request_ids",
+        )
+        if any(type(value.get(name)) is not int or value[name] < 0 for name in counters):
+            return False
+        if value["child_exit_code"] is None or type(value["child_exit_code"]) is not int:
+            return False
+        request_methods = value["request_methods"]
+        response_errors = value["response_error_codes"]
+        if (not isinstance(request_methods, dict) or not isinstance(response_errors, dict)
+                or any(type(count) is not int or count < 0
+                       for counter in (request_methods, response_errors)
+                       for count in counter.values())):
+            return False
+        response_records = (
+            value["responses_seen"] - value["notifications_seen"]
+            - value["malformed_responses"]
+        )
+        return (
+            value["requests_seen"] > 0
+            and sum(request_methods.values()) == value["requests_seen"]
+            and value["requests_forwarded"] + value["request_mapping_rejections"] + value["request_write_failures"] == value["requests_seen"]
+            and sum(response_errors.values()) <= value["responses_seen"]
+            and value["responses_seen"] > 0
+            # A notification-only stream has no response record to correlate;
+            # it must not be accepted as a successful startup handshake.
+            and response_records > 0
+            and value["responses_matched"] > 0
+            and value["malformed_responses"] == 0
+            and value["requests_seen"] == value["requests_forwarded"]
+            and value["responses_seen"] == value["responses_forwarded"]
+            and value["responses_matched"] + value["responses_unmatched"] == response_records
+            and value["responses_unmatched"] == 0
+            and value["pending_request_ids"] == 0
+            and value["request_write_failures"] == 0
+            and value["request_id_duplicates"] == 0
+            and value["request_mapping_rejections"] == 0
+            and value["response_mapping_rejections"] == 0
+            and value["child_exit_code"] == 0
+        )
+    except (KeyError, TypeError, AttributeError):
+        # A partial or synthetic-looking mapping is incomplete evidence.
+        return False
 
 
 def run(*, runner_job_path: Path, boundary_profile_path: Path,
         remote_environment_path: Path, binding_path: Path, codex_bin: Path,
         node_bin: Path, adapter: Path, docker_bin: Path, docker_config: Path,
         docker_image_id: str, telemetry_path: Path, output_path: Path,
-        timeout_seconds: int = 30) -> dict[str, Any]:
+        timeout_seconds: int = 30,
+        prepared_wiring: Mapping[str, Any] | None = None) -> dict[str, Any]:
     if type(timeout_seconds) is not int or not 10 <= timeout_seconds <= 120:
         raise ValueError("timeout_seconds must be an integer in 10..120")
     # A startup diagnostic has one bounded budget.  The public argument keeps
@@ -507,17 +555,63 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
         raise ValueError("runner job has invalid subscription model")
     control_home, _ = _validate_control_files(job, remote_environment_path)
     try:
-        wiring_remaining = startup_deadline - time.monotonic()
-        if wiring_remaining <= 0:
-            raise StartupDiagnosticError("startup-timeout")
-        wiring = prepare_full_runner_executor_wiring(
-            codex_bin=str(codex_bin), binding_path=binding_path,
-            runner_job_path=runner_job_path, boundary_profile_path=boundary_profile_path,
-            job=job, candidate_dir=candidate, node_bin=node_bin, adapter=adapter,
-            docker_bin=docker_bin, docker_config=docker_config,
-            docker_image_id=docker_image_id,
-            timeout_seconds=max(1, min(startup_timeout, int(wiring_remaining))),
-        )
+        resolved_codex = _resolve_executable(str(codex_bin))
+        if prepared_wiring is not None:
+            if not isinstance(prepared_wiring, Mapping):
+                raise ValueError("prepared wiring is not a mapping")
+            raw_overrides = prepared_wiring.get("all_config_overrides")
+            raw_command = prepared_wiring.get("command")
+            preparation_fingerprint = prepared_wiring.get("preparation_fingerprint")
+            if (not isinstance(raw_overrides, (tuple, list))
+                    or any(not isinstance(value, str) or not value for value in raw_overrides)
+                    or not isinstance(raw_command, list)
+                    or not isinstance(preparation_fingerprint, str)
+                    or len(preparation_fingerprint) != 64
+                    or any(char not in "0123456789abcdef" for char in preparation_fingerprint)):
+                raise ValueError("prepared wiring evidence is incomplete")
+            all_overrides = tuple(raw_overrides)
+            expected_command = build_codex_exec_command(
+                executable=resolved_codex, model=model, candidate_dir=candidate,
+                config_overrides=all_overrides,
+            )
+            if raw_command != expected_command:
+                raise ValueError("prepared wiring model command drift")
+            expected_fingerprint = _wiring_fingerprint(
+                resolved_codex=resolved_codex,
+                model=model,
+                candidate_dir=candidate,
+                runner_job_path=runner_job_path,
+                boundary_profile_path=boundary_profile_path,
+                binding_path=binding_path,
+                node_bin=node_bin,
+                adapter=adapter,
+                docker_bin=docker_bin,
+                docker_config=docker_config,
+                docker_image_id=docker_image_id,
+                all_config_overrides=all_overrides,
+                command=expected_command,
+            )
+            if preparation_fingerprint != expected_fingerprint:
+                raise ValueError("prepared wiring fingerprint drift")
+            wiring = prepared_wiring
+        else:
+            wiring_remaining = startup_deadline - time.monotonic()
+            if wiring_remaining <= 0:
+                raise StartupDiagnosticError("startup-timeout")
+            wiring = prepare_full_runner_executor_wiring(
+                codex_bin=str(codex_bin), binding_path=binding_path,
+                runner_job_path=runner_job_path, boundary_profile_path=boundary_profile_path,
+                job=job, candidate_dir=candidate, node_bin=node_bin, adapter=adapter,
+                docker_bin=docker_bin, docker_config=docker_config,
+                docker_image_id=docker_image_id,
+                timeout_seconds=max(1, min(startup_timeout, int(wiring_remaining))),
+                deadline=startup_deadline,
+            )
+            preparation_fingerprint = wiring.get("preparation_fingerprint")
+            if not isinstance(preparation_fingerprint, str) or len(preparation_fingerprint) != 64:
+                raise ValueError("startup wiring did not produce a fingerprint")
+    except StartupDiagnosticError:
+        raise
     except ValueError as exc:
         # Keep the underlying validation text private while identifying the
         # bounded pre-start stage that rejected the wiring inputs.
@@ -560,9 +654,14 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
         forced_shutdown = False
         process_tree_reaped = False
         initialize_completed = False
-        if startup_deadline <= time.monotonic():
-            raise StartupDiagnosticError("startup-timeout")
         try:
+            # Keep the post-spawn deadline check inside the same cleanup
+            # boundary as the protocol exchange.  A preparation delay can
+            # consume the whole startup budget after Popen/readers have
+            # acquired resources; that path must still close and reap this
+            # diagnostic process before reporting the timeout.
+            if startup_deadline <= time.monotonic():
+                raise StartupDiagnosticError("startup-timeout")
             try:
                 process.stdin.write(_request(1, "initialize", {
                     "clientInfo": {"name": "feynman-startup-diagnostic", "version": "0.1.0"},
@@ -661,6 +760,7 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
     )
     result = {
         "schema_version": 3,
+        "preparation_fingerprint": preparation_fingerprint,
         "verdict": (
             "subscription-startup-thread-ready"
             if (thread["thread_started"] and thread["instruction_sources_allowed"]

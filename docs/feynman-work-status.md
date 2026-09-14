@@ -1,6 +1,16 @@
 # feynman-thinking 작업 상태
 
-최신 재개 지점: [LOG-102](feynman-work-log/LOG-102-checkpoint-refresh-and-docker-lifecycle-blocker-20260914.md).
+최신 재개 지점: [LOG-103](feynman-work-log/LOG-103-required-fix-report-implementation-20260914.md).
+필수 결함 리포트의 FIX-01~07을 현재 코드와 대조해 evaluator-owned startup artifact,
+deadline/cleanup, telemetry/evidence completeness, path false-equality, 준비/진단/본실행
+fingerprint 결속, 기본 unit의 Docker/Codex opt-in을 수정하고 합성 회귀를 통과시켰다.
+변경 영역은 `130 tests OK, 1 skipped`, 전체는 `479 tests OK, 11 skipped`, schema 17개
+errors=0, ResourceWarning 없음이다. skip은 호환성 성공으로 세지 않는다.
+실제 Docker lifecycle, ChatGPT 구독 auth/startup, Luna model smoke는 이번 묶음에서
+실행하지 않았다. Docker create/run blocker와 과거 `thread/start -32603`은 별도
+외부 차단으로 유지되며, 실제 startup은 최신 승인과 선행 조건 뒤에만 판단한다.
+
+이전 최신 기록: [LOG-102](feynman-work-log/LOG-102-checkpoint-refresh-and-docker-lifecycle-blocker-20260914.md).
 새 v4 checkpoint는 evaluator 경계 안의 새 출력 경로로 `subscription-checkpoint-valid`를
 통과했다. 그러나 model-free Docker path contract 1회가 direct/proxy 모두
 initialize 전에 `docker-peer-startup-timeout`으로 막혔다. Docker `info`·image inspect·

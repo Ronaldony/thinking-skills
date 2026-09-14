@@ -16,7 +16,7 @@ from tooling.feynman_subscription_models import SUBSCRIPTION_WORK_MODELS, model_
 from tooling.feynman_rpc_path_contract_probe import (
     PROBE_IMAGE, _docker_args, _namespace_contract_matches, _namespace_shape,
     _path_namespace, _probe_failure_stage, _response_shape_matches_by_id,
-    _run_peer, _shape, _requests,
+    _run_peer, _shape, _shape_is_comparable, _requests,
 )
 
 
@@ -136,6 +136,22 @@ class CompatibilityTests(unittest.TestCase):
         self.assertEqual(shaped["cwd"], {"path_role": "candidate/sub"})
         self.assertEqual(shaped["path"], {"path_role": "candidate/sub/config.toml"})
         self.assertNotIn("SYNTHETIC_PRIVATE", json.dumps(shaped))
+
+    def test_candidate_mount_root_has_a_stable_root_role(self):
+        candidate = Path(r"C:\fixture\candidate")
+        self.assertEqual(
+            _shape({"path": "file:///run/candidate"}, candidate=candidate),
+            {"path": {"path_role": "candidate/"}},
+        )
+
+    def test_outside_mount_roles_are_not_comparable_even_when_equal(self):
+        candidate = Path(r"C:\fixture\candidate")
+        direct = _shape({"path": "file:///run/unknown/private"}, candidate=candidate)
+        proxy = _shape({"path": "file:///run/unknown/private"}, candidate=candidate)
+        self.assertEqual(direct, proxy)
+        self.assertFalse(_shape_is_comparable(direct))
+        self.assertFalse(_response_shape_matches_by_id(
+            {"1": direct}, {"1": proxy})["1"])
 
     def test_path_contract_probe_shape_detects_different_fixture_values(self):
         candidate = Path(r"C:\fixture\candidate")

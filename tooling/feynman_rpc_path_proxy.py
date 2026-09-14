@@ -762,6 +762,15 @@ def run_proxy(
         if telemetry_writer.is_alive():
             telemetry_write_failed[0] = True
             exit_code = 1
+    # The proxy owns these child streams.  Close them after the forwarding
+    # workers and telemetry writer have had their bounded cleanup window so a
+    # direct library caller cannot leak file descriptors or ResourceWarnings.
+    for stream in (child.stdin, child.stdout, child.stderr):
+        if stream is not None:
+            try:
+                stream.close()
+            except OSError:
+                pass
     return exit_code
 
 

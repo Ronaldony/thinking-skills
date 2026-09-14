@@ -13,6 +13,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from tooling import feynman_subscription_smoke_exec as executor
+from tooling.feynman_rpc_path_proxy import _ProxyTelemetry
 
 CONFIG_TEXT = executor.CONFIG_TEXT
 AUTH_CALLS = []
@@ -89,6 +90,8 @@ class SubscriptionSmokeExecTests(unittest.TestCase):
         self.full_runner_docker_bin.write_text("synthetic docker", encoding="utf-8")
         self.full_runner_docker_config = self.base / "docker-config"
         self.full_runner_docker_config.mkdir()
+        self.startup_call = None
+        self.control_call = None
 
     def tearDown(self):
         self.auth_patch.stop(); self.preflight_patch.stop(); self.env_patch.stop(); self.tmp.cleanup()
@@ -119,7 +122,80 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
         else:
             self.codex.write_text(code, encoding="utf-8"); self.codex.chmod(0o755)
 
-    def _run(self, *, with_full_runner=True, **overrides):
+    def _fake_startup(self, **kwargs):
+        telemetry = _ProxyTelemetry().snapshot()
+        telemetry.update({
+            "request_methods": {"initialize": 1, "thread/start": 1},
+            "requests_seen": 2,
+            "requests_forwarded": 2,
+            "responses_seen": 2,
+            "responses_forwarded": 2,
+            "responses_matched": 2,
+            "child_exit_code": 0,
+        })
+        gate = {
+            "schema_version": 3,
+            "preparation_fingerprint": kwargs.get(
+                "prepared_wiring", {"preparation_fingerprint": "a" * 64}
+            )["preparation_fingerprint"],
+            "verdict": "subscription-startup-thread-ready",
+            "model": "gpt-test",
+            "checks": {
+                "initialize_completed": True,
+                "thread_started": True,
+                "ephemeral_thread": True,
+                "instruction_sources_present": True,
+                "instruction_sources_allowed": True,
+                "response_payload_preserved": False,
+                "process_tree_reaped": True,
+                "cleanup_verified": True,
+                "proxy_telemetry_complete": True,
+                "proxy_request_response_correlated": True,
+                "request_mapping_clean": True,
+                "error_code": None,
+                "error_category": None,
+                "error_signals": {
+                    "mentions_environment": False,
+                    "mentions_exec_server": False,
+                    "mentions_connection": False,
+                    "mentions_initialize": False,
+                    "mentions_exit": False,
+                    "mentions_closed": False,
+                    "mentions_timeout": False,
+                    "mentions_config": False,
+                    "mentions_path": False,
+                    "mentions_not_found": False,
+                },
+                "error_data_kind": "none",
+                "turn_requests_sent": 0,
+                "model_generation_requests_sent": 0,
+            },
+            "notification_methods": {},
+            "proxy_telemetry_status": "available",
+            "proxy_telemetry": telemetry,
+            "privacy": {
+                "request_or_response_payload_preserved": False,
+                "thread_id_preserved": False,
+                "instruction_source_paths_preserved": False,
+                "raw_stderr_preserved": False,
+                "credential_files_directly_read_by_probe": False,
+                "control_home_contents_serialized": False,
+            },
+            "scope": "synthetic startup evidence for executor boundary testing",
+        }
+        self.startup_call = kwargs
+        telemetry_path = Path(kwargs["telemetry_path"])
+        report_path = Path(kwargs["output_path"])
+        telemetry_path.parent.mkdir(parents=True, exist_ok=True)
+        telemetry_path.write_text(json.dumps(gate["proxy_telemetry"]), encoding="utf-8")
+        report_path.write_text(json.dumps(gate), encoding="utf-8")
+        return gate
+
+    def _fake_control(self, **kwargs):
+        self.control_call = kwargs
+        return {"verdict": "subscription-control-plane-ready"}
+
+    def _run(self, *, with_full_runner=True, startup_runner=None, **overrides):
         kwargs = dict(plan_path=self.plan, smoke_spec_path=self.smoke_spec, ordinal=1, evaluator_case_path=self.eval_case,
                       runner_job_path=self.job, boundary_profile_path=self.profile, remote_environment_path=self.remote,
                       output_dir=self.evaluator / "exec-1", codex_bin=str(self.codex), timeout_seconds=60)
@@ -146,41 +222,57 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
                             candidate_dir=self.candidate,
                         ),
                         "app_server": {},
+                        "preparation_fingerprint": "a" * 64,
                     },
                 ))
                 stack.enter_context(patch(
                     "tooling.feynman_subscription_control_plane_preflight.run",
-                    return_value={"verdict": "subscription-control-plane-ready"},
+                    side_effect=self._fake_control,
                 ))
                 stack.enter_context(patch(
                     "tooling.feynman_subscription_startup_diagnostic.run",
-                    return_value={
-                        "verdict": "subscription-startup-thread-ready",
-                        "checks": {
-                            "initialize_completed": True,
-                            "thread_started": True,
-                            "ephemeral_thread": True,
-                            "instruction_sources_allowed": True,
-                            "process_tree_reaped": True,
-                            "cleanup_verified": True,
-                            "proxy_telemetry_complete": True,
-                            "proxy_request_response_correlated": True,
-                            "request_mapping_clean": True,
-                            "error_code": None,
-                            "error_category": None,
-                            "turn_requests_sent": 0,
-                            "model_generation_requests_sent": 0,
-                        },
-                        "proxy_telemetry_status": "available",
-                        "proxy_telemetry": {},
-                    },
+                    side_effect=startup_runner or self._fake_startup,
                 ))
             return executor.execute_smoke_job(**kwargs)
+
+    def test_startup_artifacts_are_evaluator_owned_and_persisted(self):
+        result = self._run()
+        self.assertIsNotNone(self.startup_call)
+        for field in ("telemetry_path", "output_path"):
+            path = Path(self.startup_call[field])
+            self.assertTrue(path.is_relative_to(self.evaluator / "exec-1"), path)
+            self.assertTrue(path.is_file(), path)
+        self.assertEqual(
+            result["startup_gate"]["artifacts"]["report"],
+            "startup-gate/startup-report.json",
+        )
+        self.assertIsNotNone(self.control_call)
+        self.assertEqual(
+            self.control_call["cwd"], self.candidate.resolve(),
+        )
+        self.assertEqual(
+            tuple(self.control_call["config_overrides"]),
+            tuple(self.startup_call["prepared_wiring"]["all_config_overrides"]),
+        )
+        self.assertEqual(
+            self.startup_call["prepared_wiring"]["preparation_fingerprint"],
+            result["startup_gate"]["preparation_fingerprint"],
+        )
+
+    def test_startup_fingerprint_drift_blocks_before_auth_or_model(self):
+        def drifted_startup(**kwargs):
+            gate = self._fake_startup(**kwargs)
+            gate["preparation_fingerprint"] = "b" * 64
+            return gate
+
+        with self.assertRaisesRegex(ValueError, "differs from model command"):
+            self._run(startup_runner=drifted_startup)
+        self.assertEqual(AUTH_CALLS, [])
 
     def test_success_uses_scrubbed_env_and_frozen_controls(self):
         result = self._run(); state = json.loads(self.state.read_text(encoding="utf-8"))
         self.assertEqual(result["verdict"], "subscription-codex-smoke-exec-completed")
-        self.assertEqual(result["schema_version"], 2)
+        self.assertEqual(result["schema_version"], 3)
         self.assertEqual(result["versions"]["model_reasoning_effort"], "model-default")
         self.assertEqual(result["conversation"]["thread_id"], "thread-smoke-1"); self.assertFalse(result["privacy"]["stderr_nonempty"])
         self.assertEqual(result["candidate_tool_activity"], {
@@ -191,6 +283,10 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
         })
         self.assertIn("smoke_spec_sha256", result["digests"]); self.assertNotIn("stderr_sha256", result["digests"])
         self.assertEqual(result["startup_gate"]["verdict"], "subscription-startup-thread-ready")
+        self.assertEqual(
+            result["startup_gate"]["artifacts"]["report"],
+            "startup-gate/startup-report.json",
+        )
         self.assertEqual((self.evaluator / "exec-1" / "candidate-final.txt").read_text(encoding="utf-8"), "FAKE_SMOKE_OK")
         argv = state["argv"]
         for flag in ("--json", "--ephemeral", "--strict-config", "--ignore-rules", "--skip-git-repo-check"): self.assertIn(flag, argv)
@@ -222,12 +318,17 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
 
     def test_startup_gate_requires_complete_model_free_evidence(self):
         gate = {
+            "schema_version": 3,
+            "preparation_fingerprint": "a" * 64,
             "verdict": "subscription-startup-thread-ready",
+            "model": "gpt-test",
             "checks": {
                 "initialize_completed": True,
                 "thread_started": True,
                 "ephemeral_thread": True,
+                "instruction_sources_present": True,
                 "instruction_sources_allowed": True,
+                "response_payload_preserved": False,
                 "process_tree_reaped": True,
                 "cleanup_verified": True,
                 "proxy_telemetry_complete": True,
@@ -235,16 +336,96 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
                 "request_mapping_clean": True,
                 "error_code": None,
                 "error_category": None,
+                "error_signals": {
+                    "mentions_environment": False,
+                    "mentions_exec_server": False,
+                    "mentions_connection": False,
+                    "mentions_initialize": False,
+                    "mentions_exit": False,
+                    "mentions_closed": False,
+                    "mentions_timeout": False,
+                    "mentions_config": False,
+                    "mentions_path": False,
+                    "mentions_not_found": False,
+                },
+                "error_data_kind": "none",
                 "turn_requests_sent": 0,
                 "model_generation_requests_sent": 0,
             },
+            "notification_methods": {},
             "proxy_telemetry_status": "available",
-            "proxy_telemetry": {},
+            "proxy_telemetry": {
+                **_ProxyTelemetry().snapshot(),
+                "request_methods": {"initialize": 1, "thread/start": 1},
+                "requests_seen": 2,
+                "requests_forwarded": 2,
+                "responses_seen": 2,
+                "responses_forwarded": 2,
+                "responses_matched": 2,
+                "child_exit_code": 0,
+            },
+            "privacy": {
+                "request_or_response_payload_preserved": False,
+                "thread_id_preserved": False,
+                "instruction_source_paths_preserved": False,
+                "raw_stderr_preserved": False,
+                "credential_files_directly_read_by_probe": False,
+                "control_home_contents_serialized": False,
+            },
+            "scope": "synthetic startup evidence for validator testing",
         }
         executor._validate_startup_gate(gate)
         gate["checks"]["cleanup_verified"] = False
         with self.assertRaisesRegex(ValueError, "evidence is incomplete"):
             executor._validate_startup_gate(gate)
+
+    def test_startup_gate_rejects_empty_telemetry_despite_green_flags(self):
+        with tempfile.TemporaryDirectory() as root:
+            base = Path(root)
+            gate = self._fake_startup(
+                telemetry_path=base / "telemetry.json",
+                output_path=base / "startup.json",
+            )
+            gate["proxy_telemetry"] = {}
+            with self.assertRaisesRegex(ValueError, "telemetry schema"):
+                executor._validate_startup_gate(gate)
+
+    def test_startup_gate_rejects_notification_only_telemetry(self):
+        with tempfile.TemporaryDirectory() as root:
+            base = Path(root)
+            gate = self._fake_startup(
+                telemetry_path=base / "telemetry.json",
+                output_path=base / "startup.json",
+            )
+            telemetry = gate["proxy_telemetry"]
+            telemetry.update({
+                "responses_matched": 0,
+                "notifications_seen": 2,
+            })
+            with self.assertRaisesRegex(ValueError, "telemetry is incomplete"):
+                executor._validate_startup_gate(gate)
+
+    def test_startup_gate_rejects_inconsistent_telemetry_counts(self):
+        with tempfile.TemporaryDirectory() as root:
+            base = Path(root)
+            gate = self._fake_startup(
+                telemetry_path=base / "telemetry.json",
+                output_path=base / "startup.json",
+            )
+            gate["proxy_telemetry"]["requests_seen"] = 3
+            with self.assertRaisesRegex(ValueError, "request total is inconsistent"):
+                executor._validate_startup_gate(gate)
+
+    def test_startup_gate_rejects_nonzero_child_exit_with_green_flags(self):
+        with tempfile.TemporaryDirectory() as root:
+            base = Path(root)
+            gate = self._fake_startup(
+                telemetry_path=base / "telemetry.json",
+                output_path=base / "startup.json",
+            )
+            gate["proxy_telemetry"]["child_exit_code"] = 7
+            with self.assertRaisesRegex(ValueError, "telemetry is incomplete"):
+                executor._validate_startup_gate(gate)
 
     def test_command_builder_appends_validated_mcp_overrides_before_stdin(self):
         command = executor.build_codex_exec_command(
@@ -405,7 +586,7 @@ class SubscriptionSmokeExecSchemaTests(unittest.TestCase):
 
     def test_schema_tracks_privacy_and_reasoning_policy(self):
         schema = json.loads((ROOT / "evals" / "feynman-thinking" / "subscription-smoke-exec-result.schema.json").read_text(encoding="utf-8"))
-        self.assertEqual(schema["properties"]["schema_version"]["const"], 2)
+        self.assertEqual(schema["properties"]["schema_version"]["const"], 3)
         digests = schema["properties"]["digests"]; self.assertIn("smoke_spec_sha256", digests["required"]); self.assertNotIn("stderr_sha256", digests["properties"])
         self.assertEqual(schema["properties"]["versions"]["properties"]["model_reasoning_effort"]["const"], "model-default")
         self.assertIn("stderr_nonempty", schema["properties"]["privacy"]["required"])
@@ -415,6 +596,10 @@ class SubscriptionSmokeExecSchemaTests(unittest.TestCase):
         self.assertEqual(
             schema["properties"]["startup_gate"]["properties"]["verdict"]["const"],
             "subscription-startup-thread-ready",
+        )
+        self.assertEqual(
+            set(schema["properties"]["startup_gate"]["properties"]["artifacts"]["required"]),
+            {"report", "telemetry", "report_sha256", "telemetry_sha256"},
         )
 
 
