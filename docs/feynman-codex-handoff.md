@@ -1,12 +1,12 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-101](feynman-work-log/LOG-101-commit-push-ci-receipt-20260914.md).
-> LOG-100의 A~D gate·telemetry·경로 보강을 commit
-> `8ddde9128ab1be6de62a67bc744589be931da08c`로 feature branch에 일반 push했고 CI 7개가
-> 모두 success다. 로컬 전체 `461 tests OK, 11 skipped`, schema `17 errors=0`,
-> ResourceWarning 없음이다. 실제 auth/startup/model smoke는 0회이고
-> `thread/start -32603` 원인은 미확정이다. 현재 판단·실행 계획은 LOG-101을 따른다.
-> 다음 사람 경계는 새 입력으로 추가 startup diagnostic 1회다.
+> 최신: [LOG-102](feynman-work-log/LOG-102-checkpoint-refresh-and-docker-lifecycle-blocker-20260914.md).
+> 새 v4 checkpoint는 evaluator 경계 안의 새 출력 경로로 `subscription-checkpoint-valid`를
+> 통과했다. model-free Docker path contract는 direct/proxy 모두 initialize 전에
+> `docker-peer-startup-timeout`으로 막혔다. `docker info`·image inspect·`ps`는 응답하지만
+> create/run lifecycle CLI가 반환하지 않는다. 실제 auth/startup/model smoke는 0회이며
+> path 의미 동등성도 미판정이다. 현재 판단과 실행 계획은 LOG-102를 따른다.
+> Docker lifecycle 회복 전에는 probe·startup·모델 실행을 반복하지 않는다.
 >
 > 직전: [LOG-093](feynman-work-log/LOG-093-windows-unit-ci-coverage-20260914.md).
 > Windows 순수 unittest CI job을 추가했고 로컬 `441 tests OK, 11 skipped`,

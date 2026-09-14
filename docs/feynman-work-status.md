@@ -1,12 +1,12 @@
 # feynman-thinking 작업 상태
 
-최신 재개 지점: [LOG-101](feynman-work-log/LOG-101-commit-push-ci-receipt-20260914.md).
-LOG-100의 A~D gate·telemetry·경로 보강을 commit `8ddde9128ab1be6de62a67bc744589be931da08c`로
-현재 feature branch에 일반 push했고 관련 CI 7개가 모두 success다. 로컬 전체
-`461 tests OK, 11 skipped`, schema `17 errors=0`, ResourceWarning 없음이다. 실제
-구독 auth/startup/model smoke는 실행하지 않았고 `thread/start -32603` 원인은
-여전히 미확정이다. 다음 사람 경계는 최신 입력으로 추가 구독 startup diagnostic
-1회이며, 통과 전 모델 명령을 실행하지 않는다.
+최신 재개 지점: [LOG-102](feynman-work-log/LOG-102-checkpoint-refresh-and-docker-lifecycle-blocker-20260914.md).
+새 v4 checkpoint는 evaluator 경계 안의 새 출력 경로로 `subscription-checkpoint-valid`를
+통과했다. 그러나 model-free Docker path contract 1회가 direct/proxy 모두
+initialize 전에 `docker-peer-startup-timeout`으로 막혔다. Docker `info`·image inspect·
+`ps`는 응답하지만 create/run lifecycle CLI가 반환하지 않는 별도 blocker다. 실제
+구독 auth/startup/model smoke는 실행하지 않았고, path 의미 동등성도 아직 판정하지
+않는다. Docker lifecycle 회복 증거 전에는 같은 probe·startup·모델 실행을 반복하지 않는다.
 
 아래 재개 지점은 역사 기록이다. 현재 판단과 실행 계획은 LOG-101을 따른다.
 

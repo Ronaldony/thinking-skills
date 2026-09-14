@@ -1,14 +1,14 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 최신 재개 지점은
-> `docs/feynman-work-log/LOG-101-commit-push-ci-receipt-20260914.md`다.
-> LOG-100의 A~D gate·telemetry·경로 보강은 commit
-> `8ddde9128ab1be6de62a67bc744589be931da08c`로 feature branch에 push됐고 CI 7개가
-> 모두 success다. 로컬 전체 `461 tests OK, 11 skipped`, schema `17 errors=0`,
-> ResourceWarning 없음이다. 실제 auth/startup/model smoke는 실행하지 않았고
-> `thread/start -32603` 원인은 미확정이다. 다음 작업은 최신 입력을 재확인한 뒤
-> 사람 경계인 추가 startup diagnostic 1회 준비이며, 통과 전 모델 명령을 실행하지
-> 않는다. 아래는 역사 기록이다. 현재 판단·실행 계획은 LOG-101만 따른다.
+> `docs/feynman-work-log/LOG-102-checkpoint-refresh-and-docker-lifecycle-blocker-20260914.md`다.
+> 새 v4 checkpoint는 evaluator 경계 안의 새 출력 경로로
+> `subscription-checkpoint-valid`를 통과했다. model-free Docker path contract는
+> direct/proxy 모두 initialize 전에 `docker-peer-startup-timeout`으로 막혔다.
+> Docker `info`·image inspect·`ps`는 응답하지만 create/run lifecycle CLI가 반환하지
+> 않는다. 실제 auth/startup/model smoke는 실행하지 않았고 path 의미 동등성도 아직
+> 판정하지 않았다. 아래는 역사 기록이며 현재 판단·실행 계획은 LOG-102만 따른다.
+> Docker lifecycle 회복 전에는 같은 probe·startup·모델 실행을 반복하지 않는다.
 >
 > 직전 재개 지점은
 > `docs/feynman-work-log/LOG-093-windows-unit-ci-coverage-20260914.md`다.
