@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from contextlib import ExitStack
 from pathlib import Path
 import sys
 import tempfile
@@ -78,6 +79,16 @@ class SubscriptionSmokeExecTests(unittest.TestCase):
         self.state = self.base / "fake-codex-state.json"
         self.codex = self.base / ("fake-codex.cmd" if os.name == "nt" else "fake-codex")
         self._write_fake_codex(success=True)
+        self.full_runner_binding = self.base / "binding.json"
+        self.full_runner_binding.write_text("{}", encoding="utf-8")
+        self.full_runner_node_bin = self.base / "node.bin"
+        self.full_runner_node_bin.write_text("synthetic node", encoding="utf-8")
+        self.full_runner_adapter = self.base / "adapter.mjs"
+        self.full_runner_adapter.write_text("synthetic adapter", encoding="utf-8")
+        self.full_runner_docker_bin = self.base / "docker.bin"
+        self.full_runner_docker_bin.write_text("synthetic docker", encoding="utf-8")
+        self.full_runner_docker_config = self.base / "docker-config"
+        self.full_runner_docker_config.mkdir()
 
     def tearDown(self):
         self.auth_patch.stop(); self.preflight_patch.stop(); self.env_patch.stop(); self.tmp.cleanup()
@@ -108,11 +119,63 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
         else:
             self.codex.write_text(code, encoding="utf-8"); self.codex.chmod(0o755)
 
-    def _run(self, **overrides):
+    def _run(self, *, with_full_runner=True, **overrides):
         kwargs = dict(plan_path=self.plan, smoke_spec_path=self.smoke_spec, ordinal=1, evaluator_case_path=self.eval_case,
                       runner_job_path=self.job, boundary_profile_path=self.profile, remote_environment_path=self.remote,
                       output_dir=self.evaluator / "exec-1", codex_bin=str(self.codex), timeout_seconds=60)
-        kwargs.update(overrides); return executor.execute_smoke_job(**kwargs)
+        if with_full_runner:
+            kwargs.update(
+                full_runner_binding_path=self.full_runner_binding,
+                full_runner_node_bin=self.full_runner_node_bin,
+                full_runner_adapter=self.full_runner_adapter,
+                full_runner_docker_bin=self.full_runner_docker_bin,
+                full_runner_docker_config=self.full_runner_docker_config,
+                full_runner_image_id="sha256:" + "a" * 64,
+            )
+        kwargs.update(overrides)
+        with ExitStack() as stack:
+            if with_full_runner:
+                stack.enter_context(patch.object(
+                    executor, "prepare_full_runner_executor_wiring",
+                    return_value={
+                        "full_runner_override": object(),
+                        "all_config_overrides": (),
+                        "skill_config_overrides": (),
+                        "command": executor.build_codex_exec_command(
+                            executable=str(self.codex), model="gpt-test",
+                            candidate_dir=self.candidate,
+                        ),
+                        "app_server": {},
+                    },
+                ))
+                stack.enter_context(patch(
+                    "tooling.feynman_subscription_control_plane_preflight.run",
+                    return_value={"verdict": "subscription-control-plane-ready"},
+                ))
+                stack.enter_context(patch(
+                    "tooling.feynman_subscription_startup_diagnostic.run",
+                    return_value={
+                        "verdict": "subscription-startup-thread-ready",
+                        "checks": {
+                            "initialize_completed": True,
+                            "thread_started": True,
+                            "ephemeral_thread": True,
+                            "instruction_sources_allowed": True,
+                            "process_tree_reaped": True,
+                            "cleanup_verified": True,
+                            "proxy_telemetry_complete": True,
+                            "proxy_request_response_correlated": True,
+                            "request_mapping_clean": True,
+                            "error_code": None,
+                            "error_category": None,
+                            "turn_requests_sent": 0,
+                            "model_generation_requests_sent": 0,
+                        },
+                        "proxy_telemetry_status": "available",
+                        "proxy_telemetry": {},
+                    },
+                ))
+            return executor.execute_smoke_job(**kwargs)
 
     def test_success_uses_scrubbed_env_and_frozen_controls(self):
         result = self._run(); state = json.loads(self.state.read_text(encoding="utf-8"))
@@ -127,6 +190,7 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
             "postrun_evidence_eligibility": "blocked-no-candidate-tool-call",
         })
         self.assertIn("smoke_spec_sha256", result["digests"]); self.assertNotIn("stderr_sha256", result["digests"])
+        self.assertEqual(result["startup_gate"]["verdict"], "subscription-startup-thread-ready")
         self.assertEqual((self.evaluator / "exec-1" / "candidate-final.txt").read_text(encoding="utf-8"), "FAKE_SMOKE_OK")
         argv = state["argv"]
         for flag in ("--json", "--ephemeral", "--strict-config", "--ignore-rules", "--skip-git-repo-check"): self.assertIn(flag, argv)
@@ -155,6 +219,32 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
             executor._startup_model_generation_requests({
                 "checks": {"model_generation_requests_sent": 1},
             })
+
+    def test_startup_gate_requires_complete_model_free_evidence(self):
+        gate = {
+            "verdict": "subscription-startup-thread-ready",
+            "checks": {
+                "initialize_completed": True,
+                "thread_started": True,
+                "ephemeral_thread": True,
+                "instruction_sources_allowed": True,
+                "process_tree_reaped": True,
+                "cleanup_verified": True,
+                "proxy_telemetry_complete": True,
+                "proxy_request_response_correlated": True,
+                "request_mapping_clean": True,
+                "error_code": None,
+                "error_category": None,
+                "turn_requests_sent": 0,
+                "model_generation_requests_sent": 0,
+            },
+            "proxy_telemetry_status": "available",
+            "proxy_telemetry": {},
+        }
+        executor._validate_startup_gate(gate)
+        gate["checks"]["cleanup_verified"] = False
+        with self.assertRaisesRegex(ValueError, "evidence is incomplete"):
+            executor._validate_startup_gate(gate)
 
     def test_command_builder_appends_validated_mcp_overrides_before_stdin(self):
         command = executor.build_codex_exec_command(
@@ -282,8 +372,15 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
 
     def test_partial_full_runner_inputs_fail_before_auth(self):
         with self.assertRaises(ValueError):
-            self._run(full_runner_binding_path=self.base / "binding.json")
+            self._run(with_full_runner=False, full_runner_binding_path=self.base / "binding.json")
         self.assertEqual(AUTH_CALLS, [])
+
+    def test_missing_full_runner_inputs_block_before_auth_and_model(self):
+        with patch.object(executor.subprocess, "run") as model_run:
+            with self.assertRaisesRegex(ValueError, "complete full-runner"):
+                self._run(with_full_runner=False)
+        self.assertEqual(AUTH_CALLS, [])
+        model_run.assert_not_called()
 
     def test_nonzero_and_failed_trace_do_not_promote_result(self):
         self._write_fake_codex(success=False)
@@ -315,6 +412,10 @@ class SubscriptionSmokeExecSchemaTests(unittest.TestCase):
         activity = schema["properties"]["candidate_tool_activity"]
         self.assertIn("candidate_tool_activity", schema["required"])
         self.assertIn("postrun_evidence_eligibility", activity["required"])
+        self.assertEqual(
+            schema["properties"]["startup_gate"]["properties"]["verdict"]["const"],
+            "subscription-startup-thread-ready",
+        )
 
 
 if __name__ == "__main__": unittest.main()

@@ -13,6 +13,7 @@ import time
 import unittest
 from unittest.mock import patch
 
+from tooling import feynman_subscription_startup_diagnostic as startup_module
 from tooling.feynman_subscription_startup_diagnostic import (
     APP_SERVER_LOCAL_ISOLATION_OVERRIDES, StartupDiagnosticError,
     _SAFE_NOTIFICATION_METHODS, _safe_proxy_telemetry, _thread_start_params,
@@ -153,6 +154,13 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
             }
             fake_job = {"paths": paths, "versions": {"model": "gpt-5.6-luna"}}
             telemetry = _ProxyTelemetry().snapshot()
+            telemetry.update({
+                "requests_seen": 2,
+                "requests_forwarded": 2,
+                "responses_seen": 2,
+                "responses_forwarded": 2,
+                "responses_matched": 2,
+            })
             telemetry["child_exit_code"] = 0
             process = FakeProcess()
             with patch(
@@ -164,6 +172,9 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
             ), patch(
                 "tooling.feynman_subscription_startup_diagnostic._load",
                 return_value=fake_job,
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic.validate_checkpoint",
+                return_value={},
             ), patch(
                 "tooling.feynman_subscription_startup_diagnostic.validate_files",
                 return_value={"verdict": "remote-exec-environment-valid"},
@@ -208,6 +219,83 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
             self.assertTrue(result["checks"]["process_tree_reaped"])
             self.assertTrue(result["checks"]["cleanup_verified"])
             self.assertEqual(result["verdict"], "subscription-startup-thread-ready")
+
+    def test_direct_run_validation_blocks_before_app_server(self):
+        process = unittest.mock.Mock()
+        with tempfile.TemporaryDirectory() as root:
+            base = Path(root)
+            with patch(
+                "tooling.feynman_subscription_startup_diagnostic._regular",
+                side_effect=lambda path, label: path,
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic._directory",
+                return_value=base,
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic.from_run_inputs",
+                return_value={"schema_version": 1},
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic.validate_checkpoint",
+                side_effect=ValueError("synthetic checkpoint rejection"),
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic.subprocess.Popen",
+                return_value=process,
+            ) as popen:
+                with self.assertRaisesRegex(
+                    StartupDiagnosticError, "^startup-input-validation-failed$"
+                ):
+                    run_startup_diagnostic(
+                        runner_job_path=base / "runner.json",
+                        boundary_profile_path=base / "profile.json",
+                        remote_environment_path=base / "environment.toml",
+                        binding_path=base / "binding.json",
+                        codex_bin=base / "codex.cmd",
+                        node_bin=base / "node.exe",
+                        adapter=base / "adapter.mjs",
+                        docker_bin=base / "docker.exe",
+                        docker_config=base / "docker-config",
+                        docker_image_id="sha256:" + "a" * 64,
+                        telemetry_path=base / "telemetry.json",
+                        output_path=base / "startup.json",
+                        timeout_seconds=10,
+                    )
+            popen.assert_not_called()
+
+    def test_individual_cli_validates_checkpoint_before_run(self):
+        with tempfile.TemporaryDirectory() as root:
+            base = Path(root)
+            args = [
+                "startup-diagnostic.py",
+                "--runner-job", str(base / "runner.json"),
+                "--boundary-profile", str(base / "profile.json"),
+                "--remote-environment", str(base / "environment.toml"),
+                "--binding", str(base / "binding.json"),
+                "--codex-bin", str(base / "codex.cmd"),
+                "--node-bin", str(base / "node.exe"),
+                "--adapter", str(base / "adapter.mjs"),
+                "--docker-bin", str(base / "docker.exe"),
+                "--docker-config", str(base / "docker-config"),
+                "--docker-image-id", "sha256:" + "a" * 64,
+                "--telemetry", str(base / "telemetry.json"),
+                "--output", str(base / "startup.json"),
+            ]
+            fake_result = {
+                "verdict": "subscription-startup-thread-ready",
+                "checks": {
+                    "thread_started": True, "error_code": None,
+                    "error_category": None, "turn_requests_sent": 0,
+                    "model_generation_requests_sent": 0,
+                },
+                "proxy_telemetry_status": "available",
+                "proxy_telemetry": {},
+            }
+            with patch.object(sys, "argv", args), patch.object(
+                startup_module, "validate_checkpoint", return_value={}
+            ) as validate, patch.object(
+                startup_module, "run", return_value=fake_result
+            ) as run_mock, patch.object(startup_module, "_write_failure_artifact"):
+                self.assertEqual(startup_module.main(), 0)
+            validate.assert_called_once()
+            run_mock.assert_called_once()
 
     def test_offline_fixture_ignores_unmatched_response_id(self):
         process, received, reader = self._lifecycle_process("wrong-response-id")
@@ -357,6 +445,29 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
         self.assertTrue(_proxy_telemetry_ready(value))
         value["responses_unmatched"] = 1
         self.assertFalse(_proxy_telemetry_ready(value))
+
+    def test_empty_proxy_telemetry_is_not_ready(self):
+        value = {
+            "requests_seen": 0, "requests_forwarded": 0,
+            "responses_seen": 0, "responses_forwarded": 0,
+            "responses_matched": 0, "responses_unmatched": 0,
+            "notifications_seen": 0, "malformed_responses": 0,
+            "pending_request_ids": 0, "request_write_failures": 0,
+            "request_id_duplicates": 0, "request_mapping_rejections": 0,
+            "response_mapping_rejections": 0, "child_exit_code": 0,
+        }
+        self.assertFalse(_proxy_telemetry_ready(value))
+
+    def test_proxy_telemetry_rejects_non_numeric_error_code_label(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "telemetry.json"
+            value = _ProxyTelemetry().snapshot()
+            value["response_error_codes"] = {"SYNTHETIC_PRIVATE_CODE": 1}
+            path.write_text(json.dumps(value), encoding="utf-8")
+            with self.assertRaisesRegex(
+                StartupDiagnosticError, "^startup-telemetry-error-code-shape$"
+            ):
+                _safe_proxy_telemetry(path)
 
     def test_proxy_telemetry_rejects_nonzero_child_exit(self):
         value = {

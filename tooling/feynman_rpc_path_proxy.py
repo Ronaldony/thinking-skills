@@ -572,17 +572,39 @@ def run_proxy(
     telemetry_path = _effective_telemetry_path(telemetry_path)
     telemetry = _ProxyTelemetry()
     telemetry_file_lock = threading.Lock()
+    telemetry_write_wakeup = threading.Event()
+    telemetry_write_stop = threading.Event()
+    telemetry_write_failed = [False]
 
     def persist_telemetry() -> None:
         if telemetry_path is None:
             return
-        with telemetry_file_lock:
-            _write_telemetry(telemetry_path, telemetry)
+        # Forwarding workers only publish that a newer snapshot exists.  The
+        # single writer below owns filesystem I/O so fsync/replace latency
+        # cannot stall an RPC pipe or make protocol timing nondeterministic.
+        telemetry_write_wakeup.set()
+
+    def write_telemetry_snapshots() -> None:
+        while True:
+            telemetry_write_wakeup.wait()
+            telemetry_write_wakeup.clear()
+            try:
+                with telemetry_file_lock:
+                    _write_telemetry(telemetry_path, telemetry)
+            except (OSError, ValueError):
+                # Keep the failure sticky.  A later successful write cannot
+                # turn an execution with incomplete evidence into a green
+                # proxy result; the final child exit is forced nonzero.
+                telemetry_write_failed[0] = True
+            if telemetry_write_stop.is_set() and not telemetry_write_wakeup.is_set():
+                return
 
     # Materialize a safe initial snapshot before any child launch.  Later
     # snapshots make partial lifecycle evidence durable even when App Server
     # tears down the proxy before EOF.
-    persist_telemetry()
+    if telemetry_path is not None:
+        with telemetry_file_lock:
+            _write_telemetry(telemetry_path, telemetry)
     child = subprocess.Popen(
         [docker, *docker_args],
         stdin=subprocess.PIPE,
@@ -592,6 +614,11 @@ def run_proxy(
     )
     assert child.stdin is not None
     assert child.stdout is not None
+    telemetry_writer = None
+    if telemetry_path is not None:
+        telemetry_writer = threading.Thread(
+            target=write_telemetry_snapshots, name="rpc-proxy-telemetry-writer", daemon=True)
+        telemetry_writer.start()
     output_lock = threading.Lock()
     stop = threading.Event()
     pending_lock = threading.Lock()
@@ -724,8 +751,17 @@ def run_proxy(
         exit_code = 1
     with pending_lock:
         telemetry.pending_request_ids(len(pending_methods))
+    if telemetry_write_failed[0]:
+        exit_code = 1
     telemetry.child_exit(exit_code)
     persist_telemetry()
+    if telemetry_writer is not None:
+        telemetry_write_stop.set()
+        telemetry_write_wakeup.set()
+        telemetry_writer.join(timeout=15)
+        if telemetry_writer.is_alive():
+            telemetry_write_failed[0] = True
+            exit_code = 1
     return exit_code
 
 

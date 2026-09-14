@@ -64,7 +64,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "verdict": {"enum": ["subscription-startup-thread-ready", "not-run-no-full-runner-binding"]},
+        "verdict": {"const": "subscription-startup-thread-ready"},
         "model_generation_requests_sent": {"const": 0}
       },
       "required": ["verdict", "model_generation_requests_sent"]

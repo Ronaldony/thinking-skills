@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 from pathlib import PurePosixPath
 import queue
+import re
 import subprocess
 import tempfile
 import threading
@@ -22,7 +23,9 @@ import time
 from typing import Any
 
 try:
-    from .feynman_subscription_checkpoint import load as load_checkpoint, validate as validate_checkpoint
+    from .feynman_subscription_checkpoint import (
+        from_run_inputs, load as load_checkpoint, validate as validate_checkpoint,
+    )
     from .feynman_remote_exec_environment import validate_files
     from .feynman_rpc_path_proxy import (
         SAFE_REJECTION_FIELDS, SAFE_REJECTION_METHODS, SAFE_TELEMETRY_METHODS,
@@ -37,7 +40,9 @@ try:
         _validate_control_files, prepare_full_runner_executor_wiring,
     )
 except ImportError:
-    from feynman_subscription_checkpoint import load as load_checkpoint, validate as validate_checkpoint
+    from feynman_subscription_checkpoint import (
+        from_run_inputs, load as load_checkpoint, validate as validate_checkpoint,
+    )
     from feynman_remote_exec_environment import validate_files
     from feynman_rpc_path_proxy import (
         SAFE_REJECTION_FIELDS, SAFE_REJECTION_METHODS, SAFE_TELEMETRY_METHODS,
@@ -354,6 +359,9 @@ def _safe_proxy_telemetry(path: Path) -> dict[str, Any]:
             for item, count in counter.items()
         ):
             raise StartupDiagnosticError("startup-telemetry-counter-shape")
+    if any(not re.fullmatch(r"-?[0-9]{1,9}", item)
+           for item in value["response_error_codes"]):
+        raise StartupDiagnosticError("startup-telemetry-error-code-shape")
     if not set(value["request_methods"]).issubset(SAFE_TELEMETRY_METHODS):
         raise StartupDiagnosticError("startup-telemetry-method-not-allowed")
     if not set(value["request_mapping_rejection_methods"]).issubset(SAFE_REJECTION_METHODS):
@@ -422,7 +430,9 @@ def _proxy_telemetry_ready(value: dict[str, Any]) -> bool:
         - value["malformed_responses"]
     )
     return (
-        response_records >= 0
+        value["requests_seen"] > 0
+        and value["responses_seen"] > 0
+        and response_records >= 0
         and value["malformed_responses"] == 0
         and value["requests_seen"] == value["requests_forwarded"]
         and value["responses_seen"] == value["responses_forwarded"]
@@ -444,6 +454,11 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
         timeout_seconds: int = 30) -> dict[str, Any]:
     if type(timeout_seconds) is not int or not 10 <= timeout_seconds <= 120:
         raise ValueError("timeout_seconds must be an integer in 10..120")
+    # A startup diagnostic has one bounded budget.  The public argument keeps
+    # its historical range for callers, but no startup attempt may use more
+    # than the planned 60-second preparation/handshake window.
+    startup_timeout = min(timeout_seconds, 60)
+    startup_deadline = time.monotonic() + startup_timeout
     for path, label in ((telemetry_path, "telemetry"), (output_path, "output")):
         if not path.is_absolute() or path.exists() or path.is_symlink():
             raise ValueError(f"startup diagnostic {label} must be a new absolute path")
@@ -456,6 +471,28 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
     adapter = _regular(adapter, "full-runner adapter")
     docker_bin = _regular(docker_bin, "Docker executable")
     docker_config = _directory(docker_config, "Docker config directory")
+    # Direct Python callers must pass through the same immutable checkpoint
+    # contract as the CLI.  This runs before validate_files or Popen and keeps
+    # evaluator ownership, binding identity, canonical control-home paths, and
+    # new output paths consistent across both entry points.
+    checkpoint = from_run_inputs(
+        runner_job_path=runner_job_path,
+        boundary_profile_path=boundary_profile_path,
+        remote_environment_path=remote_environment_path,
+        binding_path=binding_path,
+        codex_bin=codex_bin,
+        node_bin=node_bin,
+        adapter=adapter,
+        docker_bin=docker_bin,
+        docker_config=docker_config,
+        docker_image_id=docker_image_id,
+        telemetry_path=telemetry_path,
+        output_path=output_path,
+    )
+    try:
+        validate_checkpoint(checkpoint)
+    except ValueError as exc:
+        raise StartupDiagnosticError("startup-input-validation-failed") from exc
     if validate_files(runner_job_path, boundary_profile_path,
                       remote_environment_path).get("verdict") != "remote-exec-environment-valid":
         raise ValueError("remote environment validation did not pass")
@@ -470,12 +507,16 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
         raise ValueError("runner job has invalid subscription model")
     control_home, _ = _validate_control_files(job, remote_environment_path)
     try:
+        wiring_remaining = startup_deadline - time.monotonic()
+        if wiring_remaining <= 0:
+            raise StartupDiagnosticError("startup-timeout")
         wiring = prepare_full_runner_executor_wiring(
             codex_bin=str(codex_bin), binding_path=binding_path,
             runner_job_path=runner_job_path, boundary_profile_path=boundary_profile_path,
             job=job, candidate_dir=candidate, node_bin=node_bin, adapter=adapter,
             docker_bin=docker_bin, docker_config=docker_config,
-            docker_image_id=docker_image_id, timeout_seconds=timeout_seconds,
+            docker_image_id=docker_image_id,
+            timeout_seconds=max(1, min(startup_timeout, int(wiring_remaining))),
         )
     except ValueError as exc:
         # Keep the underlying validation text private while identifying the
@@ -519,7 +560,8 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
         forced_shutdown = False
         process_tree_reaped = False
         initialize_completed = False
-        startup_deadline = time.monotonic() + timeout_seconds
+        if startup_deadline <= time.monotonic():
+            raise StartupDiagnosticError("startup-timeout")
         try:
             try:
                 process.stdin.write(_request(1, "initialize", {
@@ -689,10 +731,6 @@ def main() -> int:
                     "docker_image_id", "telemetry", "output")):
                 raise ValueError("checkpoint cannot be combined with individual input arguments")
             checkpoint = load_checkpoint(args.checkpoint)
-            # Validate every file, boundary, and binding before any execution
-            # path can launch a subprocess.  The normal run() validation is
-            # retained for callers that use the Python API directly.
-            validate_checkpoint(checkpoint)
         else:
             fields = (
                 "runner_job", "boundary_profile", "remote_environment", "binding",
@@ -705,9 +743,12 @@ def main() -> int:
             checkpoint = {"schema_version": 1, **{
                 name: str(getattr(args, name)) for name in fields
             }}
+        # Validate every file, boundary, and binding before any execution
+        # path can launch a subprocess.  This is deliberately shared by the
+        # checkpoint and individual-argument CLI forms.
+        validation_result = validate_checkpoint(checkpoint)
         if args.validate_only:
-            result = validate_checkpoint(checkpoint)
-            print(json.dumps(result, ensure_ascii=False, indent=2))
+            print(json.dumps(validation_result, ensure_ascii=False, indent=2))
             return 0
         result = run(
             runner_job_path=Path(checkpoint["runner_job"]),

@@ -71,6 +71,12 @@ class SubscriptionCheckpointTests(unittest.TestCase):
             with self.assertRaisesRegex(CheckpointError, "fields"):
                 load(path)
 
+            value.pop("OPENAI_API_KEY")
+            value["docker_image_id"] = "sha256:" + "g" * 64
+            path.write_text(json.dumps(value), encoding="utf-8")
+            with self.assertRaisesRegex(CheckpointError, "sha256 digest"):
+                load(path)
+
     def test_validate_rejects_missing_input_without_running_process(self):
         with tempfile.TemporaryDirectory() as raw:
             value = self._value(Path(raw))
@@ -131,6 +137,25 @@ class SubscriptionCheckpointTests(unittest.TestCase):
             value = self._valid_fixture(root)
             value["output"] = str(root / "candidate" / "execution")
             with self.assertRaisesRegex(CheckpointError, "evaluator-owned"):
+                validate(value)
+
+    def test_validate_rejects_output_under_file_ancestor(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            value = self._valid_fixture(root)
+            blocker = root / "evaluator" / "blocking-file"
+            blocker.write_text("synthetic", encoding="utf-8")
+            value["output"] = str(blocker / "report.json")
+            with self.assertRaisesRegex(CheckpointError, "parent must be a directory"):
+                validate(value)
+
+    def test_validate_rejects_overlapping_new_output_paths(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            value = self._valid_fixture(root)
+            value["output"] = str(root / "evaluator" / "run")
+            value["telemetry"] = str(root / "evaluator" / "run" / "telemetry.json")
+            with self.assertRaisesRegex(CheckpointError, "non-overlapping"):
                 validate(value)
 
 

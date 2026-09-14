@@ -194,21 +194,26 @@ def run(*, codex_bin: str, control_home: Path, temp_dir: Path,
     stderr_reader.start()
     forced_shutdown = False
     process_tree_reaped = False
-    cleanup_deadline = time.monotonic() + 15
+    control_deadline = time.monotonic() + min(timeout_seconds, 60)
     try:
         process.stdin.write(_request(1, "initialize", {
             "clientInfo": {"name": "feynman-control-plane-preflight", "version": "0.1.0"},
             "capabilities": {"experimentalApi": True},
         }))
         process.stdin.flush()
-        initialized = _wait_response(received, 1, timeout_seconds)
+        initialized = _wait_response(
+            received, 1, max(0.0, control_deadline - time.monotonic()))
         if "error" in initialized:
             raise ControlPlaneError("app-server-initialize-error")
         process.stdin.write(_notification("initialized", {}))
         process.stdin.write(_request(2, "environment/info", {"environmentId": "candidate"}))
         process.stdin.flush()
-        environment = _environment_summary(_wait_response(received, 2, timeout_seconds))
+        environment = _environment_summary(_wait_response(
+            received, 2, max(0.0, control_deadline - time.monotonic())))
     finally:
+        # Cleanup gets its own bounded budget and never consumes time that was
+        # supposed to be available for the control-plane handshake.
+        cleanup_deadline = time.monotonic() + 15
         try:
             process.stdin.close()
         except OSError:

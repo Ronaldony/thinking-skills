@@ -1,14 +1,15 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 최신 재개 지점은
-> `docs/feynman-work-log/LOG-098-startup-lifecycle-reap-regression-20260914.md`다.
-> startup/control-plane lifecycle의 `process_tree_reaped`를 실제 graceful wait 또는
-> bounded stop 관찰 뒤에만 true로 기록하도록 보강했다. synthetic `run()` fixture와
-> 관련 60개, 전체 452개 테스트가 통과했으며 skip 11개는 유지됐다. 실제
-> `thread/start -32603`의 원인은 아직 미확정이다. 다음은 telemetry 비간섭, 경로
-> 의미 비교, 실제 실행기 통합 순으로 구현한다. 이번 묶음의 auth/startup/model/Docker
-> 실행은 없다. 아래는 역사 기록이다. 현재 판단·실행 계획은 LOG-098만 따르며
-> 새 결함 증거와 기존 실행 횟수 제한을 확인한 뒤 진행한다.
+> `docs/feynman-work-log/LOG-100-autonomous-gate-and-telemetry-hardening-20260914.md`다.
+> startup 직접 API·개별 CLI·tools-10 smoke의 gate 우회를 닫고 checkpoint/output 경계,
+> shared deadline, 빈 telemetry 차단, 단일 telemetry writer, path suffix 비교,
+> startup evidence 필수 검사를 보강했다. 변경 영역 및 전체 `461 tests OK, 11 skipped`,
+> schema `17 errors=0`, ResourceWarning 없음이다. 실제 auth/startup/model smoke는
+> 실행하지 않았고 `thread/start -32603` 원인은 미확정이다. 다음 자동 작업은 Git
+> commit/push와 원격 CI 확인이며, 그 뒤 새 증거가 있을 때만 추가 startup diagnostic
+> 1회를 사람 경계로 검토한다. 아래는 역사 기록이다. 현재 판단·실행 계획은 LOG-100만
+> 따른다.
 >
 > 직전 재개 지점은
 > `docs/feynman-work-log/LOG-093-windows-unit-ci-coverage-20260914.md`다.

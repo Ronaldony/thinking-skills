@@ -67,6 +67,32 @@ def _startup_model_generation_requests(startup_gate: Mapping[str, Any]) -> int:
     return value
 
 
+def _validate_startup_gate(startup_gate: Mapping[str, Any]) -> None:
+    """Require complete model-free startup evidence before model execution."""
+    if startup_gate.get("verdict") != "subscription-startup-thread-ready":
+        raise ValueError("subscription startup gate did not pass")
+    checks = startup_gate.get("checks")
+    if not isinstance(checks, Mapping):
+        raise ValueError("subscription startup gate has no checks object")
+    required_true = (
+        "initialize_completed", "thread_started", "ephemeral_thread",
+        "instruction_sources_allowed", "process_tree_reaped",
+        "cleanup_verified", "proxy_telemetry_complete",
+        "proxy_request_response_correlated", "request_mapping_clean",
+    )
+    if any(checks.get(name) is not True for name in required_true):
+        raise ValueError("subscription startup gate evidence is incomplete")
+    if checks.get("error_code") is not None or checks.get("error_category") is not None:
+        raise ValueError("subscription startup gate contains an RPC error")
+    if checks.get("turn_requests_sent") != 0:
+        raise ValueError("subscription startup gate reported a turn request")
+    _startup_model_generation_requests(startup_gate)
+    if startup_gate.get("proxy_telemetry_status") != "available":
+        raise ValueError("subscription startup gate telemetry is unavailable")
+    if not isinstance(startup_gate.get("proxy_telemetry"), Mapping):
+        raise ValueError("subscription startup gate telemetry is missing")
+
+
 def _no_symlink_components(path: Path, label: str, *, must_exist: bool) -> Path:
     absolute = path.expanduser().absolute()
     parts = absolute.parts
@@ -585,6 +611,13 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
         value is not None for value in full_runner_inputs
     ):
         raise ValueError("full-runner binding, adapter, Docker, and image inputs are all required")
+    # The fixed tools-10 smoke is only meaningful when its model-facing tool
+    # boundary and model-free startup gate are both actually bound.  A
+    # missing full-runner set must stop before auth and before any model
+    # subprocess; the old sentinel path allowed an unbound generic `codex exec`
+    # to continue.
+    if not all(value is not None for value in full_runner_inputs):
+        raise ValueError("tools-10 smoke requires the complete full-runner startup gate inputs")
 
     versions = job.get("versions")
     paths = job.get("paths")
@@ -596,78 +629,69 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
     if model.lower().startswith("mock"):
         raise ValueError("subscription smoke executor refuses mock model IDs")
     candidate_dir = _directory(Path(paths["candidate_dir"]), "candidate directory")
-    full_runner_wiring = None
-    full_runner_override = None
-    startup_gate: dict[str, Any] = {
-        "verdict": "not-run-no-full-runner-binding",
-        "model_generation_requests_sent": 0,
-    }
-    if all(value is not None for value in full_runner_inputs):
-        full_runner_wiring = prepare_full_runner_executor_wiring(
+    full_runner_wiring = prepare_full_runner_executor_wiring(
+        codex_bin=codex_bin,
+        binding_path=full_runner_binding_path,
+        runner_job_path=runner_job_path,
+        boundary_profile_path=boundary_profile_path,
+        job=job,
+        candidate_dir=candidate_dir,
+        node_bin=full_runner_node_bin,
+        adapter=full_runner_adapter,
+        docker_bin=full_runner_docker_bin,
+        docker_config=full_runner_docker_config,
+        docker_image_id=full_runner_image_id,
+        timeout_seconds=timeout_seconds,
+    )
+    full_runner_override = full_runner_wiring["full_runner_override"]
+
+    control_home, remote_environment_path = _validate_control_files(job, remote_environment_path)
+    # This must run before the auth gate and any model-facing command.  It
+    # verifies that the actual protected control home can hand off to its
+    # selected remote environment with the exact transient full-runner and
+    # skill-isolation overrides.  Its disposable telemetry never touches the
+    # evaluator's canonical runtime telemetry.
+    try:
+        from .feynman_subscription_control_plane_preflight import run as control_plane_preflight
+    except ImportError:
+        from feynman_subscription_control_plane_preflight import run as control_plane_preflight
+    with tempfile.TemporaryDirectory(prefix="feynman-control-plane-") as control_plane_root:
+        control_plane_dir = Path(control_plane_root)
+        control_plane = control_plane_preflight(
             codex_bin=codex_bin,
-            binding_path=full_runner_binding_path,
+            control_home=control_home,
+            temp_dir=control_plane_dir,
+            proxy_telemetry=control_plane_dir / "rpc-proxy-telemetry.json",
+            config_overrides=full_runner_wiring["all_config_overrides"],
+            timeout_seconds=min(timeout_seconds, 30),
+        )
+    if control_plane.get("verdict") != "subscription-control-plane-ready":
+        raise ValueError("subscription control-plane preflight did not pass")
+    # The model-facing executor must consume a fresh startup result for the
+    # same job, binding, image, and control home.  A previous model-free report
+    # cannot be replayed as evidence for this process.
+    try:
+        from .feynman_subscription_startup_diagnostic import run as startup_diagnostic
+    except ImportError:
+        from feynman_subscription_startup_diagnostic import run as startup_diagnostic
+    with tempfile.TemporaryDirectory(prefix="feynman-startup-gate-") as startup_root:
+        startup_dir = Path(startup_root)
+        startup_gate = startup_diagnostic(
             runner_job_path=runner_job_path,
             boundary_profile_path=boundary_profile_path,
-            job=job,
-            candidate_dir=candidate_dir,
+            remote_environment_path=remote_environment_path,
+            binding_path=full_runner_binding_path,
+            codex_bin=Path(_resolve_executable(codex_bin)),
             node_bin=full_runner_node_bin,
             adapter=full_runner_adapter,
             docker_bin=full_runner_docker_bin,
             docker_config=full_runner_docker_config,
             docker_image_id=full_runner_image_id,
-            timeout_seconds=timeout_seconds,
+            telemetry_path=startup_dir / "startup-rpc-telemetry.json",
+            output_path=startup_dir / "startup-report.json",
+            timeout_seconds=min(timeout_seconds, 60),
         )
-        full_runner_override = full_runner_wiring["full_runner_override"]
-
-    control_home, remote_environment_path = _validate_control_files(job, remote_environment_path)
-    if full_runner_wiring is not None:
-        # This must run before the auth gate and any model-facing command.  It
-        # verifies that the actual protected control home can hand off to its
-        # selected remote environment with the exact transient full-runner and
-        # skill-isolation overrides.  Its disposable telemetry never touches
-        # the evaluator's canonical runtime telemetry.
-        try:
-            from .feynman_subscription_control_plane_preflight import run as control_plane_preflight
-        except ImportError:
-            from feynman_subscription_control_plane_preflight import run as control_plane_preflight
-        with tempfile.TemporaryDirectory(prefix="feynman-control-plane-") as control_plane_root:
-            control_plane_dir = Path(control_plane_root)
-            control_plane = control_plane_preflight(
-                codex_bin=codex_bin,
-                control_home=control_home,
-                temp_dir=control_plane_dir,
-                proxy_telemetry=control_plane_dir / "rpc-proxy-telemetry.json",
-                config_overrides=full_runner_wiring["all_config_overrides"],
-                timeout_seconds=min(timeout_seconds, 30),
-            )
-        if control_plane.get("verdict") != "subscription-control-plane-ready":
-            raise ValueError("subscription control-plane preflight did not pass")
-        # The model-facing executor must consume a fresh startup result for
-        # the same job, binding, image, and control home.  A previous
-        # model-free report cannot be replayed as evidence for this process.
-        try:
-            from .feynman_subscription_startup_diagnostic import run as startup_diagnostic
-        except ImportError:
-            from feynman_subscription_startup_diagnostic import run as startup_diagnostic
-        with tempfile.TemporaryDirectory(prefix="feynman-startup-gate-") as startup_root:
-            startup_dir = Path(startup_root)
-            startup_gate = startup_diagnostic(
-                runner_job_path=runner_job_path,
-                boundary_profile_path=boundary_profile_path,
-                remote_environment_path=remote_environment_path,
-                binding_path=full_runner_binding_path,
-                codex_bin=Path(_resolve_executable(codex_bin)),
-                node_bin=full_runner_node_bin,
-                adapter=full_runner_adapter,
-                docker_bin=full_runner_docker_bin,
-                docker_config=full_runner_docker_config,
-                docker_image_id=full_runner_image_id,
-                telemetry_path=startup_dir / "startup-rpc-telemetry.json",
-                output_path=startup_dir / "startup-report.json",
-                timeout_seconds=min(timeout_seconds, 60),
-            )
-        if startup_gate.get("verdict") != "subscription-startup-thread-ready":
-            raise ValueError("subscription startup gate did not pass")
+    _validate_startup_gate(startup_gate)
     auth = check_auth(control_home, codex_bin=codex_bin, timeout_seconds=min(timeout_seconds, 120))
     if auth.get("verdict") != "chatgpt-subscription-authenticated":
         raise ValueError("ChatGPT subscription auth gate did not pass")

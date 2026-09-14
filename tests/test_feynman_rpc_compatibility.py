@@ -157,6 +157,14 @@ class CompatibilityTests(unittest.TestCase):
         }, candidate=candidate)
         self.assertEqual(direct, proxy)
 
+    def test_distinct_non_candidate_mount_subpaths_do_not_collapse(self):
+        candidate = Path(r"C:\fixture\candidate")
+        first = _shape({"path": "file:///run/codex/first"}, candidate=candidate)
+        second = _shape({"path": "file:///run/codex/second"}, candidate=candidate)
+        self.assertNotEqual(first, second)
+        self.assertNotIn("first", json.dumps(first))
+        self.assertNotIn("second", json.dumps(second))
+
     def test_nested_path_value_is_semantic_without_relying_on_field_name(self):
         candidate = Path(r"C:\fixture\candidate")
         direct = _shape({"source": "file:///run/candidate/sub/config.toml"},

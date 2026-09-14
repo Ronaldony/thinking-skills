@@ -1,13 +1,15 @@
 # feynman-thinking 작업 상태
 
-최신 재개 지점: [LOG-098](feynman-work-log/LOG-098-startup-lifecycle-reap-regression-20260914.md).
-startup/control-plane lifecycle의 `process_tree_reaped`를 실제 graceful wait 또는
-bounded stop 관찰 뒤에만 true로 기록하도록 보강했다. synthetic `run()` fixture와
-관련 60개, 전체 452개 테스트가 통과했으며 기존 skip 11개는 유지했다. 실제
-`thread/start -32603` 원인은 미확정이고 이번 묶음의 auth/startup/model/Docker는
-실행하지 않았다.
+최신 재개 지점: [LOG-100](feynman-work-log/LOG-100-autonomous-gate-and-telemetry-hardening-20260914.md).
+startup 직접 API·개별 CLI·tools-10 smoke의 gate 우회를 닫고, checkpoint digest/output
+경계, startup/control-plane shared deadline, 빈 telemetry 차단, 단일 telemetry
+writer, non-candidate path suffix 비교, startup evidence 필수 검사를 보강했다.
+변경 영역 및 전체 `461 tests OK, 11 skipped`, schema `17 errors=0`,
+ResourceWarning 없음이다. 실제 구독 auth/startup/model smoke는 실행하지 않았고,
+실제 `thread/start -32603` 원인은 여전히 미확정이다. 다음 사람 경계는 새 증거를
+확인한 뒤의 추가 구독 startup diagnostic 1회다.
 
-아래 재개 지점은 역사 기록이다. 현재 판단과 실행 계획은 LOG-098을 따른다.
+아래 재개 지점은 역사 기록이다. 현재 판단과 실행 계획은 LOG-100을 따른다.
 
 직전 재개 지점: [LOG-093](feynman-work-log/LOG-093-windows-unit-ci-coverage-20260914.md).
 Docker와 인증을 호출하지 않는 Windows 순수 회귀 CI job을 추가했고 로컬에서

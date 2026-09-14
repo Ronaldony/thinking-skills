@@ -113,7 +113,14 @@ def _path_role(value: str, candidate: Path) -> str:
         return "candidate/" + normalized[len(host):].lstrip("/")
     for root in ("/run/home", "/run/codex", "/run/temp"):
         if normalized == root or normalized.startswith(root + "/"):
-            return root.removeprefix("/") + "/..."
+            # Keep mount identity and a deterministic suffix fingerprint.  A
+            # single `...` marker made distinct files such as
+            # `/run/codex/first` and `/run/codex/second` compare equal, which
+            # could turn two different configuration selections into a false
+            # path-contract match.  The suffix itself is never persisted.
+            suffix = normalized[len(root):].lstrip("/")
+            suffix_digest = hashlib.sha256(suffix.encode("utf-8")).hexdigest()
+            return root.removeprefix("/") + "/suffix-sha256:" + suffix_digest
     return "outside-declared-mount"
 
 

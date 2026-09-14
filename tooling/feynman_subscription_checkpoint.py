@@ -8,7 +8,9 @@ Docker, an App Server, or a model.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import re
 from typing import Any, Mapping
 
 
@@ -39,6 +41,42 @@ def _absolute_path(value: Any, field: str) -> Path:
     return path
 
 
+def _is_link_like(path: Path) -> bool:
+    """Treat symlinks and Windows junctions as non-owned path components."""
+    is_junction = getattr(os.path, "isjunction", None)
+    return path.is_symlink() or bool(is_junction and is_junction(path))
+
+
+def from_run_inputs(*, runner_job_path: Path, boundary_profile_path: Path,
+                    remote_environment_path: Path, binding_path: Path,
+                    codex_bin: Path, node_bin: Path, adapter: Path,
+                    docker_bin: Path, docker_config: Path,
+                    docker_image_id: str, telemetry_path: Path,
+                    output_path: Path) -> dict[str, Any]:
+    """Build the one non-secret checkpoint shape used by direct API callers.
+
+    The startup diagnostic and its CLI must validate the same immutable input
+    set.  Keeping construction here prevents a direct Python caller from
+    silently omitting a field that the checkpoint CLI would have required.
+    No filesystem or process access occurs in this helper.
+    """
+    return {
+        "schema_version": 1,
+        "runner_job": str(runner_job_path),
+        "boundary_profile": str(boundary_profile_path),
+        "remote_environment": str(remote_environment_path),
+        "binding": str(binding_path),
+        "codex_bin": str(codex_bin),
+        "node_bin": str(node_bin),
+        "adapter": str(adapter),
+        "docker_bin": str(docker_bin),
+        "docker_config": str(docker_config),
+        "docker_image_id": docker_image_id,
+        "telemetry": str(telemetry_path),
+        "output": str(output_path),
+    }
+
+
 def load(path: Path) -> dict[str, Any]:
     """Read a checkpoint and return a validated, non-secret dictionary."""
     if path.is_symlink() or not path.is_file():
@@ -54,7 +92,7 @@ def load(path: Path) -> dict[str, Any]:
     for field in PATH_FIELDS:
         value[field] = str(_absolute_path(value[field], field))
     image = value.get("docker_image_id")
-    if not isinstance(image, str) or not image.startswith("sha256:") or len(image) != 71:
+    if not isinstance(image, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", image):
         raise CheckpointError("checkpoint Docker image must be a sha256 digest")
     serialized = json.dumps(value, ensure_ascii=True)
     if any(token in serialized for token in ("OPENAI_API_KEY", "CODEX_ACCESS_TOKEN", "api.openai.com")):
@@ -78,8 +116,18 @@ def _resolved_existing_directory(value: Any, field: str) -> Path:
 
 def _new_evaluator_path(value: Any, field: str, evaluator: Path) -> Path:
     path = _absolute_path(value, field)
-    if path.exists() or path.is_symlink():
+    if path.exists() or _is_link_like(path):
         raise CheckpointError(f"checkpoint output must be a new path: {field}")
+    current = path.parent
+    while current != evaluator:
+        if _is_link_like(current):
+            raise CheckpointError(f"checkpoint output parent must not be a symlink or junction: {field}")
+        if current.exists() and not current.is_dir():
+            raise CheckpointError(f"checkpoint output parent must be a directory: {field}")
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
     # Resolve the existing prefix without following a symlink in the new
     # portion.  This keeps an absent output from escaping evaluator ownership
     # through a symlinked parent while still allowing a fresh child path.
@@ -97,7 +145,7 @@ def validate(value: Mapping[str, Any]) -> dict[str, Any]:
     for field in PATH_FIELDS:
         normalized[field] = str(_absolute_path(value.get(field), field))
     image = normalized.get("docker_image_id")
-    if not isinstance(image, str) or not image.startswith("sha256:") or len(image) != 71:
+    if not isinstance(image, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", image):
         raise CheckpointError("checkpoint Docker image must be a sha256 digest")
     directories = DIRECTORY_FIELDS
     files = INPUT_FILE_FIELDS
@@ -110,7 +158,7 @@ def validate(value: Mapping[str, Any]) -> dict[str, Any]:
             raise CheckpointError(f"checkpoint input is not a directory: {field}")
     for field in NEW_PATH_FIELDS:
         output = Path(normalized[field])
-        if output.exists() or output.is_symlink():
+        if output.exists() or _is_link_like(output):
             raise CheckpointError(f"checkpoint output must be a new path: {field}")
 
     # Reuse the runner's existing immutable binding validator.  Imports are
@@ -124,7 +172,7 @@ def validate(value: Mapping[str, Any]) -> dict[str, Any]:
         from feynman_subscription_smoke_exec import (
             _directory, _load, _validate_full_runner_binding,
         )
-    job = _load(Path(str(value["runner_job"])), "runner job")
+    job = _load(Path(normalized["runner_job"]), "runner job")
     paths = job.get("paths")
     if not isinstance(paths, dict):
         raise CheckpointError("runner job lacks paths")
@@ -147,8 +195,11 @@ def validate(value: Mapping[str, Any]) -> dict[str, Any]:
         )
     telemetry = _new_evaluator_path(normalized["telemetry"], "telemetry", evaluator)
     output = _new_evaluator_path(normalized["output"], "output", evaluator)
-    if telemetry == output:
-        raise CheckpointError("checkpoint telemetry and output must be distinct paths")
+    if (telemetry == output or telemetry.is_relative_to(output)
+            or output.is_relative_to(telemetry)):
+        raise CheckpointError(
+            "checkpoint telemetry and output must be distinct, non-overlapping paths"
+        )
     try:
         override = _validate_full_runner_binding(
             binding_path=Path(normalized["binding"]),

@@ -1,11 +1,12 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-098](feynman-work-log/LOG-098-startup-lifecycle-reap-regression-20260914.md).
-> startup/control-plane lifecycle의 `process_tree_reaped`를 실제 graceful wait 또는
-> bounded stop 관찰 뒤에만 true로 기록하도록 보강했다. synthetic `run()` fixture와
-> 관련 60개, 전체 452개 테스트가 통과했으며 skip 11개는 유지됐다. 실제
-> `thread/start -32603` 원인은 미확정이고 auth/startup/model/Docker 실행은 0회다.
-> 아래 내용은 역사 기록이며 현재 판단·실행 계획은 LOG-098을 따른다.
+> 최신: [LOG-100](feynman-work-log/LOG-100-autonomous-gate-and-telemetry-hardening-20260914.md).
+> startup 직접 API·개별 CLI·tools-10 smoke의 gate 우회를 닫고 checkpoint/output 경계,
+> shared deadline, 빈 telemetry 차단, 단일 telemetry writer, path suffix 비교,
+> startup evidence 필수 검사를 보강했다. 변경 영역 및 전체 `461 tests OK, 11 skipped`,
+> schema `17 errors=0`, ResourceWarning 없음이다. 실제 auth/startup/model smoke는
+> 0회이고 `thread/start -32603` 원인은 미확정이다. 현재 판단·실행 계획은 LOG-100을
+> 따른다. 다음 사람 경계는 새 증거 확인 후 추가 startup diagnostic 1회다.
 >
 > 직전: [LOG-093](feynman-work-log/LOG-093-windows-unit-ci-coverage-20260914.md).
 > Windows 순수 unittest CI job을 추가했고 로컬 `441 tests OK, 11 skipped`,
