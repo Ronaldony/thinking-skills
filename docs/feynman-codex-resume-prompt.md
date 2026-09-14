@@ -1,14 +1,15 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 최신 재개 지점은
-> `docs/feynman-work-log/LOG-105-docker-runtime-and-path-contract-recovery-20260914.md`다.
+> `docs/feynman-work-log/LOG-106-docker-path-gate-commit-push-receipt-20260914.md`다.
 > Docker runtime probe가 `docker-runtime-ready`, direct/proxy path contract가
-> `rpc-path-contract-equivalent`로 통과했다. request/response/namespace shape가
-> 모두 동등하고 ID 1~7 response가 일치한다. 전체 unit은 `486 tests OK, 11 skipped`,
-> schema 17개 errors=0, ResourceWarning 없음이다. 실제 구독 auth/startup·Luna model
-> smoke는 0회이며 `.tmp/`, PNG 2개, `LOG-099`는 보존 중이다.
+> `rpc-path-contract-equivalent`로 통과했고 변경은 `0c5c6b8`로 feature branch에
+> push됐다. request/response/namespace shape가 모두 동등하고 ID 1~7 response가
+> 일치한다. 전체 unit은 `486 tests OK, 11 skipped`, schema 17개 errors=0,
+> ResourceWarning 없음이다. 실제 구독 auth/startup·Luna model smoke는 0회이며
+> `.tmp/`, PNG 2개, `LOG-099`는 보존 중이다.
 > 이전 실행 기록은
-> `docs/feynman-work-log/LOG-104-required-fix-commit-push-receipt-20260914.md`다.
+> `docs/feynman-work-log/LOG-105-docker-runtime-and-path-contract-recovery-20260914.md`다.
 > 구현 상세는
 > `docs/feynman-work-log/LOG-103-required-fix-report-implementation-20260914.md`다.
 > 필수 FIX-01~07을 현재 코드와 대조해 evaluator-owned startup artifact,
