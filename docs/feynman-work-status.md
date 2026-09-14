@@ -1,8 +1,10 @@
 # feynman-thinking 작업 상태
 
-최신 재개 지점: [LOG-091](feynman-work-log/LOG-091-docker-lifecycle-control-blocker-20260914.md).
-probe 보안 옵션을 모두 제거한 최소 control도 pinned image `docker create`에서
-10초 timeout됐고, 제가 만든 control label의 `docker ps`·cleanup도 timeout됐다.
+최신 재개 지점: [LOG-092](feynman-work-log/LOG-092-docker-lifecycle-list-recheck-20260914.md).
+Docker Engine `info`는 `29.7.2|linux|aarch64|0|0|14`로 응답했지만, 제가 만든
+control label의 `docker ps -a`가 45초 이상 응답하지 않아 중단됐다. 따라서
+container lifecycle API blocker가 유지되며, 같은 `create`·path probe·구독 startup·
+모델 실행은 반복하지 않는다.
 따라서 blocker는 image/path가 아니라 Docker container lifecycle API 처리로 좁혀졌다.
 전체 `441 tests OK, 11 skipped`, schema 17개 errors=0이며 path contract 실제 비교·
 구독 startup·모델 평가는 아직 실행하지 않는다.

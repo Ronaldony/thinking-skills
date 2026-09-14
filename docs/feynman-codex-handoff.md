@@ -1,8 +1,8 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-091](feynman-work-log/LOG-091-docker-lifecycle-control-blocker-20260914.md).
-> hardening 옵션을 제거한 최소 control도 pinned image `docker create`에서 10초
-> timeout됐고, 제가 만든 control label의 목록·cleanup도 timeout됐다. blocker는
+> 최신: [LOG-092](feynman-work-log/LOG-092-docker-lifecycle-list-recheck-20260914.md).
+> Docker Engine `info`는 응답했지만 제가 만든 control label의 `docker ps -a`가
+> 45초 이상 응답하지 않아 중단됐다. blocker는
 > Docker container lifecycle API 처리로 좁혀졌다. 전체 `441 tests OK, 11 skipped`,
 > schema 17개 errors=0이다. lifecycle 정상화 전에는 start/node/exec-server, path
 > contract 실제 비교, 구독 startup, 모델 실행을 하지 않는다.

@@ -1,12 +1,11 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 최신 재개 지점은
-> `docs/feynman-work-log/LOG-091-docker-lifecycle-control-blocker-20260914.md`다.
-> probe 보안 옵션을 제거한 최소 control도 pinned image `docker create`에서 10초
-> timeout됐고, control label의 `docker ps`·cleanup도 timeout됐다. 같은 create를
-> 반복하지 말고, Docker lifecycle 응답 정상화와 control label 잔존 확인 뒤에만
-> runtime probe를 1회 실행하라. initialize 전에는 path contract·구독 startup·인증·
-> 모델 평가를 실행하지 마라.
+> `docs/feynman-work-log/LOG-092-docker-lifecycle-list-recheck-20260914.md`다.
+> Docker Engine `info`는 응답했지만 제가 만든 control label의 `docker ps -a`가
+> 45초 이상 응답하지 않아 중단됐다. container lifecycle API blocker가 유지되므로
+> 같은 `create`·path probe·구독 startup·모델 실행을 반복하지 말고, lifecycle 회복
+> 증거가 생긴 뒤 수정된 runtime probe를 1회 실행하라.
 
 > 직전 재개 지점은
 > `docs/feynman-work-log/LOG-087-docker-runtime-stage-blocker-20260914.md`다.
