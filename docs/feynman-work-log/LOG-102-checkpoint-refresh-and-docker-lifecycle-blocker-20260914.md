@@ -115,6 +115,11 @@ backend 프로세스는 종료하지 않았다.
 이번 로그와 포인터 문서만 별도 commit/push 대상으로 삼는다. `git ls-remote`는
 이번 재확인에서 Windows Schannel `SEC_E_NO_CREDENTIALS`로 실패했으나, 직전
 push·CI receipt에서 같은 feature branch의 remote SHA는 확인돼 있었다.
+실제 문서 변경은 `cde3196 docs: record checkpoint and docker lifecycle blocker`로
+커밋했고 `git push origin HEAD:feat/feynman-thinking-v0.5-draft`가
+`7625a7c..cde3196`으로 성공했다. 이후 working tree에는 보존 대상 untracked
+항목만 남았다. 이 docs-only 커밋에 대해 `gh run list --commit cde3196`를 즉시
+조회하고 20초 후 한 번 재조회했지만 새 workflow run은 없었다.
 
 ## 미완료와 다음 행동
 
