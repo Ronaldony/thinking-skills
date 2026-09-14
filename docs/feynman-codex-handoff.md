@@ -1,11 +1,11 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-090](feynman-work-log/LOG-090-runtime-and-path-verdict-hardening-20260914.md).
-> runtime marker·container presence/cleanup·initialize ID·path response shape 판정을
-> 보강했다. 명시 local named pipe에서도 pinned image `docker create`가 30초 timeout으로
-> 재현됐다. 전체 `441 tests OK, 11 skipped`, schema 17개 errors=0이다. Docker create가
-> 완료됐다는 새 증거 전에는 start/node/exec-server, path contract 실제 비교, 구독
-> startup, 모델 실행을 하지 않는다.
+> 최신: [LOG-091](feynman-work-log/LOG-091-docker-lifecycle-control-blocker-20260914.md).
+> hardening 옵션을 제거한 최소 control도 pinned image `docker create`에서 10초
+> timeout됐고, 제가 만든 control label의 목록·cleanup도 timeout됐다. blocker는
+> Docker container lifecycle API 처리로 좁혀졌다. 전체 `441 tests OK, 11 skipped`,
+> schema 17개 errors=0이다. lifecycle 정상화 전에는 start/node/exec-server, path
+> contract 실제 비교, 구독 startup, 모델 실행을 하지 않는다.
 
 > 직전: [LOG-087](feynman-work-log/LOG-087-docker-runtime-stage-blocker-20260914.md).
 > 단계별 Docker runtime probe를 추가했으며 고정 image의 첫 `entrypoint-echo`부터

@@ -1,11 +1,11 @@
 # feynman-thinking 작업 상태
 
-최신 재개 지점: [LOG-090](feynman-work-log/LOG-090-runtime-and-path-verdict-hardening-20260914.md).
-runtime marker·container presence/cleanup·initialize ID·path response shape 판정을
-보강했다. 명시 local named pipe로 수정 후 runtime probe를 1회 실행했지만
-`container-create`에서 30초 timeout이 재현됐다. 전체 `441 tests OK, 11 skipped`,
-schema 17개 errors=0이며 path contract 실제 비교·구독 startup·모델 평가는 아직
-실행하지 않는다.
+최신 재개 지점: [LOG-091](feynman-work-log/LOG-091-docker-lifecycle-control-blocker-20260914.md).
+probe 보안 옵션을 모두 제거한 최소 control도 pinned image `docker create`에서
+10초 timeout됐고, 제가 만든 control label의 `docker ps`·cleanup도 timeout됐다.
+따라서 blocker는 image/path가 아니라 Docker container lifecycle API 처리로 좁혀졌다.
+전체 `441 tests OK, 11 skipped`, schema 17개 errors=0이며 path contract 실제 비교·
+구독 startup·모델 평가는 아직 실행하지 않는다.
 
 직전 지점: [LOG-087](feynman-work-log/LOG-087-docker-runtime-stage-blocker-20260914.md).
 단계별 Docker runtime probe를 추가했다. 고정 image의 `entrypoint-echo`부터

@@ -1,10 +1,10 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 최신 재개 지점은
-> `docs/feynman-work-log/LOG-090-runtime-and-path-verdict-hardening-20260914.md`다.
-> marker·container 정리·initialize ID·path shape 판정을 보강한 뒤 명시 local named
-> pipe로 runtime probe를 1회 실행했지만 `container-create` 30초 timeout이 재현됐다.
-> 같은 create를 반복하지 말고, Docker create가 완료됐다는 새 증거가 있을 때만
+> `docs/feynman-work-log/LOG-091-docker-lifecycle-control-blocker-20260914.md`다.
+> probe 보안 옵션을 제거한 최소 control도 pinned image `docker create`에서 10초
+> timeout됐고, control label의 `docker ps`·cleanup도 timeout됐다. 같은 create를
+> 반복하지 말고, Docker lifecycle 응답 정상화와 control label 잔존 확인 뒤에만
 > runtime probe를 1회 실행하라. initialize 전에는 path contract·구독 startup·인증·
 > 모델 평가를 실행하지 마라.
 
