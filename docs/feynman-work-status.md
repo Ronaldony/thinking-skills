@@ -1,12 +1,13 @@
 # feynman-thinking 작업 상태
 
-최신 재개 지점: [LOG-097](feynman-work-log/LOG-097-checkpoint-input-validation-hardening-20260914.md).
-checkpoint validator가 canonical control environment, evaluator-owned 신규 출력,
-절대 경로와 digest를 확인하도록 보강했고 회귀를 추가했다. 관련 59개와 전체
-451개 테스트가 통과했으며 기존 skip 11개는 유지했다. 실제 `thread/start -32603`의
-원인은 미확정이고, 이번 묶음에서는 auth/startup/model/Docker를 실행하지 않았다.
+최신 재개 지점: [LOG-098](feynman-work-log/LOG-098-startup-lifecycle-reap-regression-20260914.md).
+startup/control-plane lifecycle의 `process_tree_reaped`를 실제 graceful wait 또는
+bounded stop 관찰 뒤에만 true로 기록하도록 보강했다. synthetic `run()` fixture와
+관련 60개, 전체 452개 테스트가 통과했으며 기존 skip 11개는 유지했다. 실제
+`thread/start -32603` 원인은 미확정이고 이번 묶음의 auth/startup/model/Docker는
+실행하지 않았다.
 
-아래 재개 지점은 역사 기록이다. 현재 판단과 실행 계획은 LOG-097을 따른다.
+아래 재개 지점은 역사 기록이다. 현재 판단과 실행 계획은 LOG-098을 따른다.
 
 직전 재개 지점: [LOG-093](feynman-work-log/LOG-093-windows-unit-ci-coverage-20260914.md).
 Docker와 인증을 호출하지 않는 Windows 순수 회귀 CI job을 추가했고 로컬에서

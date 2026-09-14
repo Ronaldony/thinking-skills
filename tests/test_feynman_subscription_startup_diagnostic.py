@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 from tooling.feynman_subscription_startup_diagnostic import (
     APP_SERVER_LOCAL_ISOLATION_OVERRIDES, StartupDiagnosticError,
@@ -18,6 +19,7 @@ from tooling.feynman_subscription_startup_diagnostic import (
     _thread_summary, _wait_for_thread_start, _proxy_telemetry_ready,
     _write_failure_artifact, _consume_private_stderr, _read_json_lines,
     _instruction_sources_allowed, _wait_for_proxy_telemetry_exit,
+    run as run_startup_diagnostic,
 )
 from tooling.feynman_rpc_path_proxy import _ProxyTelemetry
 
@@ -122,6 +124,90 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
             self.assertEqual(summary["error_category"], "remote-environment-error")
         finally:
             self._close_lifecycle_process(process, reader)
+
+    def test_synthetic_run_records_graceful_process_reap(self):
+        class FakeProcess:
+            def __init__(self):
+                self.stdin = io.BytesIO()
+                self.stdout = io.BytesIO(
+                    b'{"id":1,"result":{}}\n'
+                    b'{"id":2,"result":{"thread":{"id":"private",'
+                    b'"ephemeral":true},"instructionSources":[]}}\n'
+                )
+                self.stderr = io.BytesIO()
+                self.returncode = None
+                self.wait_calls = 0
+
+            def wait(self, timeout=None):
+                self.wait_calls += 1
+                self.returncode = 0
+                return 0
+
+            def poll(self):
+                return self.returncode
+
+        with tempfile.TemporaryDirectory() as root:
+            base = Path(root)
+            paths = {
+                "candidate_dir": str(base / "candidate"),
+            }
+            fake_job = {"paths": paths, "versions": {"model": "gpt-5.6-luna"}}
+            telemetry = _ProxyTelemetry().snapshot()
+            telemetry["child_exit_code"] = 0
+            process = FakeProcess()
+            with patch(
+                "tooling.feynman_subscription_startup_diagnostic._regular",
+                side_effect=lambda path, label: path,
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic._directory",
+                return_value=base / "candidate",
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic._load",
+                return_value=fake_job,
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic.validate_files",
+                return_value={"verdict": "remote-exec-environment-valid"},
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic._validate_control_files",
+                return_value=(base / "control", base / "environment.toml"),
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic.prepare_full_runner_executor_wiring",
+                return_value={"all_config_overrides": []},
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic._resolve_executable",
+                return_value="codex",
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic._safe_exec_env",
+                return_value={},
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic.subprocess.Popen",
+                return_value=process,
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic._wait_for_proxy_telemetry_exit",
+                return_value=True,
+            ), patch(
+                "tooling.feynman_subscription_startup_diagnostic._safe_proxy_telemetry",
+                return_value=telemetry,
+            ):
+                result = run_startup_diagnostic(
+                    runner_job_path=base / "runner.json",
+                    boundary_profile_path=base / "profile.json",
+                    remote_environment_path=base / "environment.toml",
+                    binding_path=base / "binding.json",
+                    codex_bin=base / "codex.cmd",
+                    node_bin=base / "node.exe",
+                    adapter=base / "adapter.mjs",
+                    docker_bin=base / "docker.exe",
+                    docker_config=base / "docker-config",
+                    docker_image_id="sha256:" + "a" * 64,
+                    telemetry_path=base / "telemetry.json",
+                    output_path=base / "startup.json",
+                    timeout_seconds=10,
+                )
+            self.assertEqual(process.wait_calls, 1)
+            self.assertTrue(result["checks"]["process_tree_reaped"])
+            self.assertTrue(result["checks"]["cleanup_verified"])
+            self.assertEqual(result["verdict"], "subscription-startup-thread-ready")
 
     def test_offline_fixture_ignores_unmatched_response_id(self):
         process, received, reader = self._lifecycle_process("wrong-response-id")

@@ -193,7 +193,7 @@ def run(*, codex_bin: str, control_home: Path, temp_dir: Path,
         target=_consume_private_stderr, args=(process.stderr, stderr_chunks), daemon=True)
     stderr_reader.start()
     forced_shutdown = False
-    process_tree_reaped = True
+    process_tree_reaped = False
     cleanup_deadline = time.monotonic() + 15
     try:
         process.stdin.write(_request(1, "initialize", {
@@ -215,6 +215,7 @@ def run(*, codex_bin: str, control_home: Path, temp_dir: Path,
             pass
         try:
             process.wait(timeout=max(0.1, min(10, cleanup_deadline - time.monotonic())))
+            process_tree_reaped = True
         except subprocess.TimeoutExpired:
             # App Server may keep its stdio loop alive while its just-opened
             # remote environment finishes teardown.  The successful response

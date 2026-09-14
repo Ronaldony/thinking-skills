@@ -517,7 +517,7 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
             target=_consume_private_stderr, args=(process.stderr, stderr_chunks), daemon=True)
         stderr_reader.start()
         forced_shutdown = False
-        process_tree_reaped = True
+        process_tree_reaped = False
         initialize_completed = False
         startup_deadline = time.monotonic() + timeout_seconds
         try:
@@ -564,6 +564,7 @@ def run(*, runner_job_path: Path, boundary_profile_path: Path,
             try:
                 process.wait(timeout=max(
                     0.1, graceful_cleanup_deadline - time.monotonic()))
+                process_tree_reaped = True
             except subprocess.TimeoutExpired:
                 forced_shutdown = True
                 process_wait_timed_out = True

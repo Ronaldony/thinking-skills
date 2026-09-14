@@ -1,13 +1,13 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 최신 재개 지점은
-> `docs/feynman-work-log/LOG-097-checkpoint-input-validation-hardening-20260914.md`다.
-> checkpoint validator가 canonical control environment, evaluator-owned 신규 출력,
-> 절대 경로와 digest를 확인하도록 보강됐다. 관련 59개와 전체 451개 테스트가
-> 통과했으며 skip 11개는 유지됐다. 실제 `thread/start -32603`의 원인은 아직
-> 미확정이다. 다음은 진단 전체 흐름·종료 계측, 경로 의미 비교, 실제 실행기 통합
-> 순으로 구현하는 일이다. 이번 묶음의 auth/startup/model/Docker 실행은 없다.
-> 아래는 역사 기록이다. 현재 판단·실행 계획은 LOG-097만 따르며 실제 재검증은
+> `docs/feynman-work-log/LOG-098-startup-lifecycle-reap-regression-20260914.md`다.
+> startup/control-plane lifecycle의 `process_tree_reaped`를 실제 graceful wait 또는
+> bounded stop 관찰 뒤에만 true로 기록하도록 보강했다. synthetic `run()` fixture와
+> 관련 60개, 전체 452개 테스트가 통과했으며 skip 11개는 유지됐다. 실제
+> `thread/start -32603`의 원인은 아직 미확정이다. 다음은 telemetry 비간섭, 경로
+> 의미 비교, 실제 실행기 통합 순으로 구현한다. 이번 묶음의 auth/startup/model/Docker
+> 실행은 없다. 아래는 역사 기록이다. 현재 판단·실행 계획은 LOG-098만 따르며
 > 새 결함 증거와 기존 실행 횟수 제한을 확인한 뒤 진행한다.
 >
 > 직전 재개 지점은
