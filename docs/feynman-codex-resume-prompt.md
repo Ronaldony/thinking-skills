@@ -1,12 +1,13 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 최신 재개 지점은
-> `docs/feynman-work-log/LOG-094-docker-runtime-and-path-contract-green-20260914.md`다.
-> Docker lifecycle API가 회복됐고 수정된 runtime probe 4/4 및 direct Linux 대
-> Windows proxy path contract가 통과했다. 로컬 `446 tests OK, 11 skipped`, 구현
-> SHA의 push/PR CI 14개가 모두 success다. 다음은 실제 실행기와 동일한 ChatGPT 구독
-> model-free startup diagnostic 1회이며 별도 사용자 승인 전 실행하지 마라. 통과 전
-> Luna smoke·fallback·baseline·모델 평가는 시작하지 마라.
+> `docs/feynman-work-log/LOG-095-subscription-startup-gate-revalidation-20260914.md`다.
+> canonical control-home으로 실제 ChatGPT 구독 model-free startup diagnostic
+> 1회를 수행했으나 `initialize` 후 `thread/start -32603 remote-environment-error`로
+> blocked됐다. turn/model generation은 0회이며 6/6 request forward, 5/5 response
+> 관찰, mapping rejection 0, child exit null이다. 같은 startup 반복·fallback·Luna
+> smoke·baseline·모델 평가는 시작하지 말고, method별 missing-response와 child
+> lifecycle을 synthetic remote fixture에서 payload-free로 재현하라.
 >
 > 직전 재개 지점은
 > `docs/feynman-work-log/LOG-093-windows-unit-ci-coverage-20260914.md`다.

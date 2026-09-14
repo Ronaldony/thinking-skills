@@ -1,11 +1,12 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-094](feynman-work-log/LOG-094-docker-runtime-and-path-contract-green-20260914.md).
-> Docker lifecycle API가 회복됐고 runtime probe 4/4와 direct Linux 대 Windows proxy
-> path contract가 통과했다. stdin lifecycle 및 path/namespace/runtime hostname
-> 판정 결함을 수정했고 로컬 `446 tests OK, 11 skipped`, 구현 SHA의 push/PR CI
-> 14개가 모두 success다. 다음은 별도 승인된 실제 ChatGPT 구독 model-free startup
-> diagnostic 1회이며, 통과 전 모델 실행은 없다.
+> 최신: [LOG-095](feynman-work-log/LOG-095-subscription-startup-gate-revalidation-20260914.md).
+> canonical control-home으로 실제 ChatGPT 구독 model-free startup diagnostic
+> 1회를 수행했으나 `initialize` 후 `thread/start -32603 remote-environment-error`로
+> blocked됐다. turn/model generation은 0회이며, 6/6 request forward·5/5 response
+> 관찰·mapping rejection 0이지만 child exit null로 cleanup 증거가 불완전하다.
+> 같은 startup 반복·fallback·모델 실행은 하지 않는다. 다음은 method별
+> missing-response와 remote child lifecycle의 payload-free offline 재현이다.
 >
 > 직전: [LOG-093](feynman-work-log/LOG-093-windows-unit-ci-coverage-20260914.md).
 > Windows 순수 unittest CI job을 추가했고 로컬 `441 tests OK, 11 skipped`,
