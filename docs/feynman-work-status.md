@@ -1,12 +1,12 @@
 # feynman-thinking 작업 상태
 
-최신 재개 지점: [LOG-095](feynman-work-log/LOG-095-subscription-startup-gate-revalidation-20260914.md).
-canonical control-home을 사용한 실제 ChatGPT 구독 model-free startup diagnostic
-1회가 `initialize` 후 `thread/start -32603 remote-environment-error`로 blocked됐다.
-turn/model generation은 0회다. proxy는 6/6 request forward, 5/5 response 관찰,
-mapping rejection 0이지만 child exit가 null이라 cleanup 증거도 불완전하다. 새 startup
-반복·모델 실행은 하지 않고, method별 missing-response/lifecycle offline 재현이 다음
-행동이다. 직전 Docker runtime/path contract와 full-runner preflight는 green이다.
+최신 재개 지점: [LOG-097](feynman-work-log/LOG-097-checkpoint-input-validation-hardening-20260914.md).
+checkpoint validator가 canonical control environment, evaluator-owned 신규 출력,
+절대 경로와 digest를 확인하도록 보강했고 회귀를 추가했다. 관련 59개와 전체
+451개 테스트가 통과했으며 기존 skip 11개는 유지했다. 실제 `thread/start -32603`의
+원인은 미확정이고, 이번 묶음에서는 auth/startup/model/Docker를 실행하지 않았다.
+
+아래 재개 지점은 역사 기록이다. 현재 판단과 실행 계획은 LOG-097을 따른다.
 
 직전 재개 지점: [LOG-093](feynman-work-log/LOG-093-windows-unit-ci-coverage-20260914.md).
 Docker와 인증을 호출하지 않는 Windows 순수 회귀 CI job을 추가했고 로컬에서

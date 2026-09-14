@@ -1,13 +1,14 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 최신 재개 지점은
-> `docs/feynman-work-log/LOG-095-subscription-startup-gate-revalidation-20260914.md`다.
-> canonical control-home으로 실제 ChatGPT 구독 model-free startup diagnostic
-> 1회를 수행했으나 `initialize` 후 `thread/start -32603 remote-environment-error`로
-> blocked됐다. turn/model generation은 0회이며 6/6 request forward, 5/5 response
-> 관찰, mapping rejection 0, child exit null이다. 같은 startup 반복·fallback·Luna
-> smoke·baseline·모델 평가는 시작하지 말고, method별 missing-response와 child
-> lifecycle을 synthetic remote fixture에서 payload-free로 재현하라.
+> `docs/feynman-work-log/LOG-097-checkpoint-input-validation-hardening-20260914.md`다.
+> checkpoint validator가 canonical control environment, evaluator-owned 신규 출력,
+> 절대 경로와 digest를 확인하도록 보강됐다. 관련 59개와 전체 451개 테스트가
+> 통과했으며 skip 11개는 유지됐다. 실제 `thread/start -32603`의 원인은 아직
+> 미확정이다. 다음은 진단 전체 흐름·종료 계측, 경로 의미 비교, 실제 실행기 통합
+> 순으로 구현하는 일이다. 이번 묶음의 auth/startup/model/Docker 실행은 없다.
+> 아래는 역사 기록이다. 현재 판단·실행 계획은 LOG-097만 따르며 실제 재검증은
+> 새 결함 증거와 기존 실행 횟수 제한을 확인한 뒤 진행한다.
 >
 > 직전 재개 지점은
 > `docs/feynman-work-log/LOG-093-windows-unit-ci-coverage-20260914.md`다.

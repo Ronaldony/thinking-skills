@@ -69,21 +69,47 @@ def _path_kind(value: str, *, directory: bool) -> bool:
     return path.is_dir() if directory else path.is_file()
 
 
+def _resolved_existing_directory(value: Any, field: str) -> Path:
+    path = _absolute_path(value, field)
+    if not _path_kind(str(path), directory=True):
+        raise CheckpointError(f"checkpoint input is not a regular directory: {field}")
+    return path.resolve()
+
+
+def _new_evaluator_path(value: Any, field: str, evaluator: Path) -> Path:
+    path = _absolute_path(value, field)
+    if path.exists() or path.is_symlink():
+        raise CheckpointError(f"checkpoint output must be a new path: {field}")
+    # Resolve the existing prefix without following a symlink in the new
+    # portion.  This keeps an absent output from escaping evaluator ownership
+    # through a symlinked parent while still allowing a fresh child path.
+    resolved = path.resolve(strict=False)
+    if resolved == evaluator or not resolved.is_relative_to(evaluator):
+        raise CheckpointError(f"checkpoint output must be evaluator-owned: {field}")
+    return resolved
+
+
 def validate(value: Mapping[str, Any]) -> dict[str, Any]:
     """Validate paths and binding identity without launching a subprocess."""
     if set(value) != CHECKPOINT_FIELDS or value.get("schema_version") != 1:
         raise CheckpointError("checkpoint fields do not match the fixed contract")
+    normalized = dict(value)
+    for field in PATH_FIELDS:
+        normalized[field] = str(_absolute_path(value.get(field), field))
+    image = normalized.get("docker_image_id")
+    if not isinstance(image, str) or not image.startswith("sha256:") or len(image) != 71:
+        raise CheckpointError("checkpoint Docker image must be a sha256 digest")
     directories = DIRECTORY_FIELDS
     files = INPUT_FILE_FIELDS
     for field in files:
-        if not _path_kind(str(value[field]), directory=False):
+        if not _path_kind(normalized[field], directory=False):
             raise CheckpointError(f"checkpoint input is not a regular file: {field}")
     for field in directories:
-        output = Path(str(value[field]))
+        output = Path(normalized[field])
         if not _path_kind(str(output), directory=True):
             raise CheckpointError(f"checkpoint input is not a directory: {field}")
     for field in NEW_PATH_FIELDS:
-        output = Path(str(value[field]))
+        output = Path(normalized[field])
         if output.exists() or output.is_symlink():
             raise CheckpointError(f"checkpoint output must be a new path: {field}")
 
@@ -100,20 +126,40 @@ def validate(value: Mapping[str, Any]) -> dict[str, Any]:
         )
     job = _load(Path(str(value["runner_job"])), "runner job")
     paths = job.get("paths")
-    if not isinstance(paths, dict) or not isinstance(paths.get("candidate_dir"), str):
+    if not isinstance(paths, dict):
+        raise CheckpointError("runner job lacks paths")
+    if not isinstance(paths.get("candidate_dir"), str):
         raise CheckpointError("runner job lacks candidate directory")
+    if not isinstance(paths.get("evaluator_dir"), str):
+        raise CheckpointError("runner job lacks evaluator directory")
+    if not isinstance(paths.get("control_codex_home"), str):
+        raise CheckpointError("runner job lacks control CODEX_HOME")
     candidate = _directory(Path(paths["candidate_dir"]), "candidate directory")
+    evaluator = _resolved_existing_directory(paths["evaluator_dir"], "evaluator directory")
+    control_home = _resolved_existing_directory(paths["control_codex_home"], "control CODEX_HOME")
+    remote_environment = Path(normalized["remote_environment"])
+    if not _path_kind(str(remote_environment), directory=False):
+        raise CheckpointError("checkpoint remote environment is not a regular file")
+    remote_environment = remote_environment.resolve()
+    if remote_environment != control_home / "environments.toml":
+        raise CheckpointError(
+            "checkpoint remote environment must be the canonical control CODEX_HOME/environments.toml"
+        )
+    telemetry = _new_evaluator_path(normalized["telemetry"], "telemetry", evaluator)
+    output = _new_evaluator_path(normalized["output"], "output", evaluator)
+    if telemetry == output:
+        raise CheckpointError("checkpoint telemetry and output must be distinct paths")
     try:
         override = _validate_full_runner_binding(
-            binding_path=Path(str(value["binding"])),
-            runner_job_path=Path(str(value["runner_job"])),
-            boundary_profile_path=Path(str(value["boundary_profile"])),
+            binding_path=Path(normalized["binding"]),
+            runner_job_path=Path(normalized["runner_job"]),
+            boundary_profile_path=Path(normalized["boundary_profile"]),
             job=job,
-            node_bin=Path(str(value["node_bin"])),
-            adapter=Path(str(value["adapter"])),
-            docker_bin=Path(str(value["docker_bin"])),
-            docker_config=Path(str(value["docker_config"])),
-            docker_image_id=str(value["docker_image_id"]),
+            node_bin=Path(normalized["node_bin"]),
+            adapter=Path(normalized["adapter"]),
+            docker_bin=Path(normalized["docker_bin"]),
+            docker_config=Path(normalized["docker_config"]),
+            docker_image_id=str(normalized["docker_image_id"]),
             candidate_dir=candidate,
         )
     except (OSError, ValueError) as exc:

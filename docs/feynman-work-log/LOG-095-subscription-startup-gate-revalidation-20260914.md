@@ -1,5 +1,11 @@
 # LOG-095 — canonical control-home startup gate 재검증 결과 (2026-09-14)
 
+> 정정: [LOG-096](LOG-096-evidence-audit-and-recovery-plan-20260914.md)의 감사를
+> 우선한다. 아래의 stale binding·응답 1건 누락 해석은 잘못됐다. 기존 binding은
+> 올바른 이미지에서 통과하며, 전송 6건에는 응답이 필요 없는 `initialized`가 포함된다.
+> label 조회만으로 당시 container 정리를 확인했다는 설명도 충분하지 않았다.
+> `thread/start -32603`과 child exit 미확정이라는 실행 관찰은 유효하다.
+
 ## 상태
 
 - 작업 ID: LOG-095 / 상태: BLOCKED
