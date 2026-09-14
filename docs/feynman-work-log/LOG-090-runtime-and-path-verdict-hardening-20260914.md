@@ -97,6 +97,6 @@ runtime probe 성공 전에는 path contract 실제 Docker 비교를 실행하�
 
 ## 커밋·push
 
-- 이 로그와 코드·테스트 변경은 후속 commit에 기록한다.
+- 커밋 `fc9a896bb179fee389290da676ff0ed2aa87a705` (`fix: harden runtime and path probe verdicts`)를 생성하고 `origin/feat/feynman-thinking-v0.5-draft`에 일반 push했다. push 후 local HEAD와 remote ref가 동일 SHA임을 확인했다. 이 receipt 보정은 별도 문서 커밋으로 기록한다.
 - `.tmp/`와 사용자 PNG 2개는 stage하지 않는다.
 - main merge와 force push는 하지 않는다.
