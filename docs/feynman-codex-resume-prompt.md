@@ -1,6 +1,12 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 최신 재개 지점은
+> `docs/feynman-work-log/LOG-104-required-fix-commit-push-receipt-20260914.md`다.
+> LOG-103의 FIX-01~07 구현 묶음은 `18061ff`로 feature branch에 일반 commit·push됐다.
+> 변경 영역 `130 tests OK, 1 skipped`, 전체 `479 tests OK, 11 skipped`, schema 17개
+> errors=0, ResourceWarning 없음이다. 실제 Docker lifecycle·구독 auth/startup·Luna
+> model smoke는 0회이며 `.tmp/`, PNG 2개, `LOG-099`는 보존 중이다.
+> 구현 상세는
 > `docs/feynman-work-log/LOG-103-required-fix-report-implementation-20260914.md`다.
 > 필수 FIX-01~07을 현재 코드와 대조해 evaluator-owned startup artifact,
 > deadline/cleanup, telemetry/evidence completeness, path false-equality,
@@ -12,7 +18,7 @@
 > 최신 승인과 선행 조건 전에는 실제 startup/model을 실행하지 말고, 같은 실패를
 > 새 증거 없이 반복하거나 다른 모델로 fallback하지 마라.
 
-> 이전 최신 기록은
+> 이전 구현의 이전 기록은
 > `docs/feynman-work-log/LOG-102-checkpoint-refresh-and-docker-lifecycle-blocker-20260914.md`다.
 > 새 v4 checkpoint는 evaluator 경계 안의 새 출력 경로로
 > `subscription-checkpoint-valid`를 통과했다. model-free Docker path contract는
