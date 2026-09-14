@@ -1,6 +1,14 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 최신 재개 지점은
+> `docs/feynman-work-log/LOG-094-docker-runtime-and-path-contract-green-20260914.md`다.
+> Docker lifecycle API가 회복됐고 수정된 runtime probe 4/4 및 direct Linux 대
+> Windows proxy path contract가 통과했다. 로컬 `446 tests OK, 11 skipped`, 구현
+> SHA의 push/PR CI 14개가 모두 success다. 다음은 실제 실행기와 동일한 ChatGPT 구독
+> model-free startup diagnostic 1회이며 별도 사용자 승인 전 실행하지 마라. 통과 전
+> Luna smoke·fallback·baseline·모델 평가는 시작하지 마라.
+>
+> 직전 재개 지점은
 > `docs/feynman-work-log/LOG-093-windows-unit-ci-coverage-20260914.md`다.
 > Windows 순수 unittest CI job을 추가했고 로컬 `441 tests OK, 11 skipped`,
 > ResourceWarning 없음, schema 17개 errors=0을 확인했다. Docker lifecycle blocker는
