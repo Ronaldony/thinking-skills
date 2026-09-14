@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import io
 import json
+from contextlib import redirect_stdout
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
 
+import tooling.feynman_docker_runtime_probe as runtime_probe
 from tooling.feynman_docker_runtime_probe import (
-    MAX_CAPTURE_BYTES, _drain, _initialize_response_observed,
+    MAX_CAPTURE_BYTES, PROBE_IMAGE, _drain, _initialize_response_observed,
     _inspect_container, _new_capture, _validate_docker_host,
     _stage_passed, _base_command, run,
 )
@@ -176,6 +179,88 @@ class DockerRuntimeProbeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "new absolute"):
                 run(docker=Path("docker"), config=Path(raw),
                     image="sha256:" + "0" * 64, output=output)
+
+    def test_stage_exception_is_persisted_without_raw_error(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            docker = root / "docker.exe"
+            docker.write_bytes(b"fixture")
+            config = root / "config"
+            config.mkdir()
+            output = root / "report.json"
+            with patch("tooling.feynman_docker_runtime_probe._run_stage",
+                       side_effect=subprocess.TimeoutExpired("docker", 30)), \
+                 patch("tooling.feynman_docker_runtime_probe._inspect_container",
+                       return_value={"available": False, "presence": "unavailable"}), \
+                 patch("tooling.feynman_docker_runtime_probe._remove_owned_container",
+                       return_value={"status": "not-observed", "verified": False}):
+                result = run(docker=docker, config=config, image=PROBE_IMAGE,
+                             output=output, timeout=30)
+            self.assertEqual(result["verdict"], "docker-runtime-blocked")
+            self.assertEqual(result["failure_stage"], "container-create")
+            self.assertEqual(result["error_code"], "docker-cli-timeout")
+            persisted = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(persisted, result)
+            self.assertNotIn("TimeoutExpired", json.dumps(persisted))
+
+    def test_unreaped_cli_is_recorded_as_incomplete_without_raising(self):
+        class NeverReaped:
+            pid = 77
+            returncode = None
+
+            def __init__(self):
+                self.stdin = io.BytesIO()
+                self.stdout = io.BytesIO()
+                self.stderr = io.BytesIO()
+                self.wait_calls = 0
+                self.kill_called = False
+
+            def poll(self):
+                return None
+
+            def wait(self, timeout=None):
+                self.wait_calls += 1
+                raise subprocess.TimeoutExpired("docker", timeout)
+
+            def kill(self):
+                self.kill_called = True
+
+        process = NeverReaped()
+        with patch("tooling.feynman_docker_runtime_probe.subprocess.Popen",
+                   return_value=process), \
+             patch("tooling.feynman_docker_runtime_probe._stop_cli",
+                   return_value=True), \
+             patch("tooling.feynman_docker_runtime_probe._inspect_container",
+                   return_value={"available": False, "presence": "unavailable"}):
+            from tooling.feynman_docker_runtime_probe import _run_stage
+            value = _run_stage(
+                ["docker", "run"], docker=Path("docker"), config=Path("config"),
+                name="fixture", run_id="fixture", input_data=None, marker=None,
+                timeout=1,
+            )
+        self.assertTrue(value["timed_out"])
+        self.assertFalse(value["cli_stop_verified"])
+        self.assertTrue(process.kill_called)
+        self.assertGreaterEqual(process.wait_calls, 3)
+
+    def test_main_fallback_uses_fixed_error_code_without_raw_error(self):
+        argv = [
+            "feynman_docker_runtime_probe", "--docker", "docker.exe",
+            "--docker-config", "config", "--image", PROBE_IMAGE,
+            "--output", "report.json",
+        ]
+        with patch.object(runtime_probe, "run",
+                          side_effect=OSError("PRIVATE_DOCKER_ERROR")), \
+             patch.object(sys, "argv", argv):
+            captured = io.StringIO()
+            with redirect_stdout(captured):
+                code = runtime_probe.main()
+        payload = json.loads(captured.getvalue())
+        self.assertEqual(code, 1)
+        self.assertEqual(payload["failure_stage"], "probe-error")
+        self.assertEqual(payload["error_code"], "docker-os-error")
+        self.assertFalse(payload["report_written"])
+        self.assertNotIn("PRIVATE_DOCKER_ERROR", captured.getvalue())
 
 
 if __name__ == "__main__":

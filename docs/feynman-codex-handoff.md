@@ -1,11 +1,13 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-104](feynman-work-log/LOG-104-required-fix-commit-push-receipt-20260914.md).
-> LOG-103의 필수 FIX-01~07 구현 묶음은 `18061ff`로 feature branch에 일반
-> commit·push됐다. 변경 영역 `130 tests OK, 1 skipped`, 전체 `479 tests OK,
-> 11 skipped`, schema 17개 errors=0, ResourceWarning 없음이다. 실제 Docker
-> lifecycle·구독 auth/startup·Luna model smoke는 0회이고 `.tmp/`, PNG 2개,
-> `LOG-099`는 보존 중이다.
+> 최신: [LOG-105](feynman-work-log/LOG-105-docker-runtime-and-path-contract-recovery-20260914.md).
+> Docker runtime probe가 `docker-runtime-ready`로 통과했고 direct/proxy path contract도
+> `rpc-path-contract-equivalent`로 통과했다. request/response/namespace shape가 모두
+> 동등하고 ID 1~7 response가 일치한다. 수정 후 전체 `486 tests OK, 11 skipped`,
+> schema 17개 errors=0, ResourceWarning 없음이다. 실제 구독 auth/startup·Luna model
+> smoke는 0회이며 `.tmp/`, PNG 2개, `LOG-099`는 보존 중이다.
+>
+> 이전 실행 기록: [LOG-104](feynman-work-log/LOG-104-required-fix-commit-push-receipt-20260914.md).
 >
 > 구현 상세: [LOG-103](feynman-work-log/LOG-103-required-fix-report-implementation-20260914.md).
 > 필수 FIX-01~07을 현재 코드와 대조해 수정했다. evaluator-owned startup artifact,

@@ -18,7 +18,7 @@ import subprocess
 import threading
 import time
 import uuid
-from typing import BinaryIO, TypedDict
+from typing import BinaryIO, Callable, TypedDict
 
 
 PROBE_IMAGE = "sha256:36b6f50b88a3e5054e1943ef8a40bc80e1629ad0821b4657ec8a33d468179db6"
@@ -99,6 +99,39 @@ def _stop_cli(process: subprocess.Popen[bytes]) -> bool:
         return True
     except (OSError, subprocess.SubprocessError):
         return False
+
+
+def _safe_error_code(error: BaseException) -> str:
+    """Map a probe exception to a fixed non-sensitive diagnostic code."""
+    if isinstance(error, subprocess.TimeoutExpired):
+        return "docker-cli-timeout"
+    if isinstance(error, PermissionError):
+        return "docker-access-denied"
+    if isinstance(error, FileNotFoundError):
+        return "docker-executable-not-found"
+    if isinstance(error, subprocess.SubprocessError):
+        return "docker-subprocess-error"
+    if isinstance(error, OSError):
+        return "docker-os-error"
+    return "docker-probe-error"
+
+
+def _write_report(output: Path, result: dict[str, object]) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _blocked_result(image: str, stages: list[dict[str, object]],
+                   failure_stage: str, error_code: str) -> dict[str, object]:
+    return {
+        "schema_version": RUNTIME_REPORT_SCHEMA_VERSION,
+        "verdict": "docker-runtime-blocked",
+        "failure_stage": failure_stage,
+        "error_code": error_code,
+        "image_id": image,
+        "stages": stages,
+        "scope": "offline pinned Docker image process lifecycle; no auth, model, or evaluation",
+    }
 
 
 def _inspect_container(docker: Path, config: Path, name: str,
@@ -231,13 +264,19 @@ def _run_stage(command: list[str], *, docker: Path, config: Path, name: str,
     except subprocess.TimeoutExpired:
         timed_out = True
         observation = _inspect_container(docker, config, name, run_id, docker_host)
-        cli_stop_verified = _stop_cli(process)
+        stop_requested = _stop_cli(process)
         try:
             process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=5)
-            cli_stop_verified = False
+            try:
+                process.kill()
+            except OSError:
+                pass
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+        cli_stop_verified = stop_requested and process.poll() is not None
     stdout_reader.join(timeout=5)
     stderr_reader.join(timeout=5)
     try:
@@ -318,6 +357,17 @@ def _stage_passed(stage: str, value: dict[str, object]) -> bool:
     )
 
 
+def _call_stage(stage: str, operation: Callable[[], dict[str, object]]) -> tuple[dict[str, object], str | None]:
+    """Keep bounded stage failures in the report without preserving raw errors."""
+    try:
+        value = operation()
+    except (OSError, subprocess.SubprocessError) as error:
+        error_code = _safe_error_code(error)
+        return {"stage": stage, "error_code": error_code}, error_code
+    value["stage"] = stage
+    return value, None
+
+
 def run(*, docker: Path, config: Path, image: str, output: Path,
         timeout: int = 30, docker_host: str | None = None) -> dict[str, object]:
     if not output.is_absolute() or output.exists() or output.is_symlink():
@@ -331,28 +381,47 @@ def run(*, docker: Path, config: Path, image: str, output: Path,
     docker_host = _validate_docker_host(docker_host)
     run_id = uuid.uuid4().hex[:12]
     create_name = f"feynman-runtime-{run_id}-create"
-    create = _run_stage(
-        _base_command(docker, config, "create", create_name, run_id, docker_host)
-        + ["--entrypoint", "/bin/echo", image, MARKER.decode().rstrip("\r\n")],
-        docker=docker, config=config, name=create_name, run_id=run_id,
-        input_data=None, marker=None, timeout=timeout, cleanup_after=False,
-        docker_host=docker_host,
+    create, stage_error = _call_stage(
+        "container-create",
+        lambda: _run_stage(
+            _base_command(docker, config, "create", create_name, run_id, docker_host)
+            + ["--entrypoint", "/bin/echo", image, MARKER.decode().rstrip("\r\n")],
+            docker=docker, config=config, name=create_name, run_id=run_id,
+            input_data=None, marker=None, timeout=timeout, cleanup_after=False,
+            docker_host=docker_host,
+        ),
     )
-    create["stage"] = "container-create"
     results: list[dict[str, object]] = [create]
+    if stage_error is not None:
+        create["cleanup"] = _remove_owned_container(
+            docker, config, create_name, run_id,
+            _inspect_container(docker, config, create_name, run_id, docker_host),
+            docker_host,
+        )
+        result = _blocked_result(image, results, "container-create", stage_error)
+        _write_report(output, result)
+        return result
     if not _stage_passed("container-create", create):
         create["cleanup"] = _remove_owned_container(
             docker, config, create_name, run_id, create["container"], docker_host)
         stopped_after: str | None = "container-create"
     else:
-        start = _run_stage(
-            [str(docker), "--config", str(config),
-             *( ["--host", docker_host] if docker_host else [] ), "start", "-a", create_name],
-            docker=docker, config=config, name=create_name, run_id=run_id,
-            input_data=None, marker=MARKER, timeout=timeout, docker_host=docker_host,
+        start, stage_error = _call_stage(
+            "container-start",
+            lambda: _run_stage(
+                [str(docker), "--config", str(config),
+                 *( ["--host", docker_host] if docker_host else [] ), "start", "-a", create_name],
+                docker=docker, config=config, name=create_name, run_id=run_id,
+                input_data=None, marker=MARKER, timeout=timeout, docker_host=docker_host,
+            ),
         )
-        start["stage"] = "container-start"
         results.append(start)
+        if stage_error is not None:
+            create["cleanup"] = _remove_owned_container(
+                docker, config, create_name, run_id, create["container"], docker_host)
+            result = _blocked_result(image, results, "container-start", stage_error)
+            _write_report(output, result)
+            return result
         stopped_after = None if _stage_passed("container-start", start) else "container-start"
     stage_specs = [
         ("default-node-version", lambda name: _base_command(docker, config, "run", name, run_id, docker_host)
@@ -366,14 +435,24 @@ def run(*, docker: Path, config: Path, image: str, output: Path,
     if stopped_after is None:
         for stage, command_factory, input_data, marker in stage_specs:
             name = f"feynman-runtime-{run_id}-{len(results) + 1}"
-            value = _run_stage(
-                command_factory(name), docker=docker, config=config, name=name,
-                run_id=run_id, input_data=input_data, marker=marker, timeout=timeout,
-                docker_host=docker_host,
-                wait_for_stdout_before_close=stage == "exec-server-initialize",
+            value, stage_error = _call_stage(
+                stage,
+                lambda: _run_stage(
+                    command_factory(name), docker=docker, config=config, name=name,
+                    run_id=run_id, input_data=input_data, marker=marker, timeout=timeout,
+                    docker_host=docker_host,
+                    wait_for_stdout_before_close=stage == "exec-server-initialize",
+                ),
             )
-            value["stage"] = stage
             results.append(value)
+            if stage_error is not None:
+                value["cleanup"] = _remove_owned_container(
+                    docker, config, name, run_id,
+                    _inspect_container(docker, config, name, run_id, docker_host),
+                    docker_host,
+                )
+                stopped_after = stage
+                break
             if not _stage_passed(stage, value):
                 stopped_after = stage
                 break
@@ -381,12 +460,14 @@ def run(*, docker: Path, config: Path, image: str, output: Path,
         "schema_version": RUNTIME_REPORT_SCHEMA_VERSION,
         "verdict": "docker-runtime-ready" if stopped_after is None else "docker-runtime-blocked",
         "failure_stage": stopped_after,
+        **({} if stopped_after is None else {
+            "error_code": results[-1].get("error_code") if results else None,
+        }),
         "image_id": image,
         "stages": results,
         "scope": "offline pinned Docker image process lifecycle; no auth, model, or evaluation",
     }
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    _write_report(output, result)
     return result
 
 
@@ -403,8 +484,22 @@ def main() -> int:
         result = run(docker=args.docker, config=args.docker_config,
                      image=args.image, output=args.output, timeout=args.timeout,
                      docker_host=args.docker_host)
-    except (OSError, ValueError, subprocess.SubprocessError, json.JSONDecodeError):
-        parser.exit(2, "error: Docker runtime probe failed\n")
+    except ValueError:
+        print(json.dumps({
+            "verdict": "docker-runtime-invalid-input",
+            "failure_stage": "input-validation",
+            "error_code": "input-validation",
+            "report_written": False,
+        }, ensure_ascii=False, indent=2))
+        return 2
+    except (OSError, subprocess.SubprocessError) as error:
+        print(json.dumps({
+            "verdict": "docker-runtime-blocked",
+            "failure_stage": "probe-error",
+            "error_code": _safe_error_code(error),
+            "report_written": False,
+        }, ensure_ascii=False, indent=2))
+        return 1
     print(json.dumps({
         "verdict": result["verdict"],
         "failure_stage": result["failure_stage"],

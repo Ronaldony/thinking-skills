@@ -16,7 +16,9 @@ from tooling.feynman_subscription_models import SUBSCRIPTION_WORK_MODELS, model_
 from tooling.feynman_rpc_path_contract_probe import (
     PROBE_IMAGE, _docker_args, _namespace_contract_matches, _namespace_shape,
     _path_namespace, _probe_failure_stage, _response_shape_matches_by_id,
-    _run_peer, _shape, _shape_is_comparable, _requests,
+    _run_peer, _shape, _shape_is_comparable, _shape_path_role_counts,
+    _shape_path_role_counts_by_id, _shape_path_role_locations,
+    _shape_path_role_locations_by_id, _looks_like_path, _requests,
 )
 
 
@@ -112,6 +114,19 @@ class CompatibilityTests(unittest.TestCase):
                             docker_host="npipe:////./pipe/docker_engine")
         self.assertEqual(args[0:3], ["--host", "npipe:////./pipe/docker_engine", "run"])
 
+    def test_path_fixture_binds_remote_workdir_to_candidate_and_ignores_path_lists(self):
+        args = _docker_args(
+            image=PROBE_IMAGE,
+            candidate=Path(r"C:\fixture\candidate"),
+            home=Path(r"C:\fixture\home"),
+            codex_home=Path(r"C:\fixture\codex"),
+            temp=Path(r"C:\fixture\temp"),
+        )
+        workdir = args.index("--workdir")
+        self.assertEqual(args[workdir + 1], "/run/candidate")
+        self.assertTrue(_looks_like_path("/run/candidate/sub"))
+        self.assertFalse(_looks_like_path("/usr/local/bin:/usr/bin:/bin"))
+
     def test_path_contract_probe_rejects_nonlocal_transport(self):
         from tooling.feynman_rpc_path_contract_probe import run
         with tempfile.TemporaryDirectory() as raw:
@@ -152,6 +167,60 @@ class CompatibilityTests(unittest.TestCase):
         self.assertFalse(_shape_is_comparable(direct))
         self.assertFalse(_response_shape_matches_by_id(
             {"1": direct}, {"1": proxy})["1"])
+
+    def test_path_role_summary_contains_counts_without_raw_paths(self):
+        shape = {
+            "result": {
+                "cwd": {"path_role": "outside-declared-mount"},
+                "config": {"path_role": "candidate/sub/config.toml"},
+            }
+        }
+        self.assertEqual(_shape_path_role_counts(shape), {
+            "candidate/sub/config.toml": 1,
+            "outside-declared-mount": 1,
+        })
+        summary = _shape_path_role_counts_by_id({"1": shape})
+        self.assertEqual(summary["1"]["outside-declared-mount"], 1)
+        self.assertNotIn("file://", json.dumps(summary))
+        self.assertNotIn("C:\\", json.dumps(summary))
+
+    def test_path_role_location_summary_contains_only_structural_keys(self):
+        shape = {"result": {"environmentInfo": {
+            "cwd": {"path_role": "candidate/"},
+            "temp": {"path_role": "outside-declared-mount"},
+        }}}
+        self.assertEqual(_shape_path_role_locations(shape), {
+            "result.environmentInfo.cwd": "candidate/",
+            "result.environmentInfo.temp": "outside-declared-mount",
+        })
+        self.assertEqual(_shape_path_role_locations_by_id({"1": shape})["1"], {
+            "result.environmentInfo.cwd": "candidate/",
+            "result.environmentInfo.temp": "outside-declared-mount",
+        })
+        self.assertNotIn("file://", json.dumps(
+            _shape_path_role_locations_by_id({"1": shape})))
+
+    def test_known_environment_paths_are_comparable_but_unknown_paths_are_not(self):
+        candidate = Path(r"C:\fixture\candidate")
+        shaped = _shape({"result": {"environmentInfo": {
+            "shell": {"path": "/bin/sh"},
+            "tempDir": "/tmp",
+            "temporaryDirectories": ["/tmp"],
+            "unknown": "/private/outside",
+        }}}, candidate=candidate)
+        self.assertEqual(shaped["result"]["environmentInfo"]["shell"]["path"],
+                         {"path_role": "system/shell"})
+        self.assertEqual(shaped["result"]["environmentInfo"]["tempDir"],
+                         {"path_role": "system/temp"})
+        self.assertEqual(shaped["result"]["environmentInfo"]["temporaryDirectories"][0],
+                         {"path_role": "system/temp"})
+        self.assertFalse(_shape_is_comparable(shaped))
+        namespace = _namespace_shape({"result": {"environmentInfo": {
+            "shell": {"path": "/bin/sh"}, "tempDir": "/tmp",
+            "temporaryDirectories": ["/tmp"],
+        }}}, candidate=candidate)
+        self.assertEqual(namespace["result"]["environmentInfo"]["shell"]["path"],
+                         {"namespace": "system"})
 
     def test_path_contract_probe_shape_detects_different_fixture_values(self):
         candidate = Path(r"C:\fixture\candidate")

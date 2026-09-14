@@ -28,6 +28,11 @@ PATH_CONTRACT_REPORT_SCHEMA_VERSION = 3
 PATH_VALUE_KEYS = frozenset({"path", "cwd", "uri", "file", "root"})
 PATH_COLLECTION_KEYS = frozenset({"configPaths", "requirementsPaths"})
 OPAQUE_RUNTIME_ID_KEYS = frozenset({"sessionId", "hostname"})
+SYSTEM_PATH_LOCATIONS = {
+    ("result", "environmentInfo", "shell", "path"): "system/shell",
+    ("result", "environmentInfo", "tempDir"): "system/temp",
+    ("result", "environmentInfo", "temporaryDirectories"): "system/temp",
+}
 
 
 def _docker_args(*, image: str, candidate: Path, home: Path,
@@ -45,7 +50,7 @@ def _docker_args(*, image: str, candidate: Path, home: Path,
     args.extend([
         "--rm", "-i", "--network", "none", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges", "--read-only", "--user", "1000:1000",
-        "--tmpfs", "/tmp:rw,nosuid,nodev",
+        "--tmpfs", "/tmp:rw,nosuid,nodev", "--workdir", "/run/candidate",
     ])
     for source, destination in mounts:
         args.extend(("-v", f"{source}:{destination}:rw"))
@@ -142,6 +147,52 @@ def _shape_is_comparable(value: Any) -> bool:
     return True
 
 
+def _shape_path_role_counts(value: Any) -> dict[str, int]:
+    """Summarize path roles without retaining paths or response payloads."""
+    counts: dict[str, int] = {}
+    if isinstance(value, dict):
+        role = value.get("path_role")
+        if isinstance(role, str):
+            counts[role] = counts.get(role, 0) + 1
+        for item in value.values():
+            for name, count in _shape_path_role_counts(item).items():
+                counts[name] = counts.get(name, 0) + count
+    elif isinstance(value, list):
+        for item in value:
+            for name, count in _shape_path_role_counts(item).items():
+                counts[name] = counts.get(name, 0) + count
+    return dict(sorted(counts.items()))
+
+
+def _shape_path_role_counts_by_id(value: dict[str, Any]) -> dict[str, dict[str, int]]:
+    return {
+        identifier: _shape_path_role_counts(shape)
+        for identifier, shape in sorted(value.items())
+    }
+
+
+def _shape_path_role_locations(value: Any, prefix: tuple[str, ...] = ()) -> dict[str, str]:
+    """Report structural field locations and roles, never path values."""
+    locations: dict[str, str] = {}
+    if isinstance(value, dict):
+        role = value.get("path_role")
+        if isinstance(role, str):
+            locations[".".join(prefix) or "<root>"] = role
+        for name, item in value.items():
+            locations.update(_shape_path_role_locations(item, prefix + (str(name),)))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            locations.update(_shape_path_role_locations(item, prefix + (f"[{index}]",)))
+    return dict(sorted(locations.items()))
+
+
+def _shape_path_role_locations_by_id(value: dict[str, Any]) -> dict[str, dict[str, str]]:
+    return {
+        identifier: _shape_path_role_locations(shape)
+        for identifier, shape in sorted(value.items())
+    }
+
+
 def _path_namespace(value: str, candidate: Path) -> str:
     normalized = _normalize_path_value(value)
     if normalized.startswith("/run/"):
@@ -165,19 +216,30 @@ def _normalize_path_value(value: str) -> str:
 def _looks_like_path(value: str) -> bool:
     normalized = value.replace("\\", "/")
     return (
-        normalized.startswith(("file:///", "/"))
+        normalized.startswith("file:///")
+        or (normalized.startswith("/") and ":" not in normalized)
         or (len(normalized) >= 3 and normalized[0].isalpha()
             and normalized[1] == ":" and normalized[2] == "/")
     )
 
 
-def _shape(value: Any, *, candidate: Path, key: str | None = None) -> Any:
+def _known_system_path_role(path: tuple[str, ...]) -> str | None:
+    return SYSTEM_PATH_LOCATIONS.get(path)
+
+
+def _shape(value: Any, *, candidate: Path, key: str | None = None,
+           path: tuple[str, ...] = ()) -> Any:
     if isinstance(value, dict):
-        return {name: _shape(item, candidate=candidate, key=name)
+        return {name: _shape(item, candidate=candidate, key=name,
+                             path=path + (name,))
                 for name, item in sorted(value.items())}
     if isinstance(value, list):
-        return [_shape(item, candidate=candidate, key=key) for item in value]
+        return [_shape(item, candidate=candidate, key=key, path=path)
+                for item in value]
     if isinstance(value, str):
+        system_role = _known_system_path_role(path)
+        if system_role is not None:
+            return {"path_role": system_role}
         if key in PATH_VALUE_KEYS | PATH_COLLECTION_KEYS or _looks_like_path(value):
             return {"path_role": _path_role(value, candidate)}
         if key in OPAQUE_RUNTIME_ID_KEYS:
@@ -192,14 +254,20 @@ def _shape(value: Any, *, candidate: Path, key: str | None = None) -> Any:
 
 
 def _namespace_shape(value: Any, *, candidate: Path,
-                     key: str | None = None) -> Any:
+                     key: str | None = None,
+                     path: tuple[str, ...] = ()) -> Any:
     if isinstance(value, dict):
-        return {name: _namespace_shape(item, candidate=candidate, key=name)
+        return {name: _namespace_shape(item, candidate=candidate, key=name,
+                                       path=path + (name,))
                 for name, item in sorted(value.items())}
     if isinstance(value, list):
-        return [_namespace_shape(item, candidate=candidate, key=key) for item in value]
+        return [_namespace_shape(item, candidate=candidate, key=key, path=path)
+                for item in value]
     if (isinstance(value, str)
             and (key in PATH_VALUE_KEYS | PATH_COLLECTION_KEYS or _looks_like_path(value))):
+        system_role = _known_system_path_role(path)
+        if system_role is not None:
+            return {"namespace": "system"}
         return {"namespace": _path_namespace(value, candidate)}
     if isinstance(value, str):
         return {"string": "present" if value else "empty"}
@@ -592,6 +660,10 @@ def run(*, docker: Path, docker_config: Path, image: str,
         "proxy_request_shape_digest": _digest(request_shape_proxy),
         "response_shapes_match": response_shapes_match,
         "response_shape_matches_by_id": response_shape_matches_by_id,
+        "direct_response_path_role_counts_by_id": _shape_path_role_counts_by_id(direct_responses),
+        "proxy_response_path_role_counts_by_id": _shape_path_role_counts_by_id(proxy_responses),
+        "direct_response_path_role_locations_by_id": _shape_path_role_locations_by_id(direct_responses),
+        "proxy_response_path_role_locations_by_id": _shape_path_role_locations_by_id(proxy_responses),
         "response_namespace_shapes_match": response_namespace_shapes_match,
         "direct_response_shape_digest": _digest(direct_responses),
         "proxy_response_shape_digest": _digest(proxy_responses),
