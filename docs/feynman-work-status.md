@@ -1,10 +1,9 @@
 # feynman-thinking 작업 상태
 
-최신 재개 지점: [LOG-106](feynman-work-log/LOG-106-docker-path-gate-commit-push-receipt-20260914.md).
+최신 재개 지점: [LOG-107](feynman-work-log/LOG-107-final-docker-path-gate-receipt-20260914.md).
 Docker runtime probe가 `docker-runtime-ready`, direct/proxy path contract가
-`rpc-path-contract-equivalent`로 통과했고, 이 변경은 `0c5c6b8`로 feature branch에
-push됐다. request/response/namespace shape가 모두 동등하고 ID 1~7 response가
-일치한다. 전체 unit은 `486 tests OK, 11 skipped`, schema 17개 errors=0,
+`rpc-path-contract-equivalent`로 통과했다. 최종 HEAD는 `18026ce`이며 feature
+branch에 push됐다. 전체 unit은 `486 tests OK, 11 skipped`, schema 17개 errors=0,
 ResourceWarning 없음이다. 실제 구독 auth/startup·Luna model smoke는 0회이며,
 `.tmp/`, PNG 2개, `LOG-099`는 보존 중이다.
 필수 결함 리포트의 FIX-01~07을 현재 코드와 대조해 evaluator-owned startup artifact,
@@ -16,7 +15,8 @@ errors=0, ResourceWarning 없음이다. skip은 호환성 성공으로 세지 �
 실행하지 않았다. Docker create/run blocker와 과거 `thread/start -32603`은 별도
 외부 차단으로 유지되며, 실제 startup은 최신 승인과 선행 조건 뒤에만 판단한다.
 
-이전 실행 기록: [LOG-105](feynman-work-log/LOG-105-docker-runtime-and-path-contract-recovery-20260914.md).
+이전 실행 기록: [LOG-106](feynman-work-log/LOG-106-docker-path-gate-commit-push-receipt-20260914.md).
+그 이전 실행 기록: [LOG-105](feynman-work-log/LOG-105-docker-runtime-and-path-contract-recovery-20260914.md).
 그 이전 실행 기록: [LOG-104](feynman-work-log/LOG-104-required-fix-commit-push-receipt-20260914.md).
 이전 구현 기록: [LOG-103](feynman-work-log/LOG-103-required-fix-report-implementation-20260914.md).
 이전 최신 기록: [LOG-102](feynman-work-log/LOG-102-checkpoint-refresh-and-docker-lifecycle-blocker-20260914.md).
