@@ -1,6 +1,12 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 최신 재개 지점은
+> `docs/feynman-work-log/LOG-093-windows-unit-ci-coverage-20260914.md`다.
+> Windows 순수 unittest CI job을 추가했고 로컬 `441 tests OK, 11 skipped`,
+> ResourceWarning 없음, schema 17개 errors=0을 확인했다. Docker lifecycle blocker는
+> 유지 중이므로 lifecycle 회복 전에는 runtime probe·구독 startup·모델 실행을 하지 마라.
+>
+> 직전 재개 지점은
 > `docs/feynman-work-log/LOG-092-docker-lifecycle-list-recheck-20260914.md`다.
 > Docker Engine `info`는 응답했지만 제가 만든 control label의 `docker ps -a`가
 > 45초 이상 응답하지 않아 중단됐다. container lifecycle API blocker가 유지되므로

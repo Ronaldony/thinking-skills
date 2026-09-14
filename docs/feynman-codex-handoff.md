@@ -1,6 +1,11 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-092](feynman-work-log/LOG-092-docker-lifecycle-list-recheck-20260914.md).
+> 최신: [LOG-093](feynman-work-log/LOG-093-windows-unit-ci-coverage-20260914.md).
+> Windows 순수 unittest CI job을 추가했고 로컬 `441 tests OK, 11 skipped`,
+> ResourceWarning 없음, schema 17개 errors=0을 확인했다. Docker lifecycle blocker는
+> 유지 중이다.
+>
+> 직전: [LOG-092](feynman-work-log/LOG-092-docker-lifecycle-list-recheck-20260914.md).
 > Docker Engine `info`는 응답했지만 제가 만든 control label의 `docker ps -a`가
 > 45초 이상 응답하지 않아 중단됐다. blocker는
 > Docker container lifecycle API 처리로 좁혀졌다. 전체 `441 tests OK, 11 skipped`,

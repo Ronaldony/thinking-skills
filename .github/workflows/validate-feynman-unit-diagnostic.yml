@@ -45,3 +45,13 @@ jobs:
             /tmp/feynman-unittest-exit-code.txt
           if-no-files-found: error
           retention-days: 14
+
+  unit-diagnostic-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run full unittest suite on Windows
+        run: python -m unittest discover -s tests -v
