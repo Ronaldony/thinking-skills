@@ -109,7 +109,7 @@ class ToolUseProbeTests(unittest.TestCase):
                 "candidate_dir": str(candidate),
             }}
             self.assertEqual(
-                probe._validate_diagnostic_control_home(job, remote), control.absolute())
+                probe._validate_diagnostic_control_home(job, remote), control.resolve())
             with self.assertRaises(ValueError):
                 probe._validate_diagnostic_control_home(
                     job, control / "environments.toml")

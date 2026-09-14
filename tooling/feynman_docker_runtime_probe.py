@@ -59,7 +59,8 @@ def _new_capture() -> _Capture:
     }
 
 
-def _drain(stream: BinaryIO, capture: _Capture) -> None:
+def _drain(stream: BinaryIO, capture: _Capture,
+           first_output: threading.Event | None = None) -> None:
     digest = hashlib.sha256()
     sample = bytearray()
     try:
@@ -67,6 +68,8 @@ def _drain(stream: BinaryIO, capture: _Capture) -> None:
             chunk = stream.read(65536)
             if not chunk:
                 break
+            if first_output is not None:
+                first_output.set()
             capture["bytes"] += len(chunk)
             digest.update(chunk)
             remaining = MAX_CAPTURE_BYTES - len(sample)
@@ -189,7 +192,8 @@ def _initialize_response_observed(sample: bytes, *, truncated: bool) -> bool:
 def _run_stage(command: list[str], *, docker: Path, config: Path, name: str,
                run_id: str, input_data: bytes | None, marker: bytes | None,
                timeout: int, cleanup_after: bool = True,
-               docker_host: str | None = None) -> dict[str, object]:
+               docker_host: str | None = None,
+               wait_for_stdout_before_close: bool = False) -> dict[str, object]:
     started = time.monotonic()
     process = subprocess.Popen(
         command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -197,7 +201,9 @@ def _run_stage(command: list[str], *, docker: Path, config: Path, name: str,
     assert process.stdin is not None and process.stdout is not None and process.stderr is not None
     stdout_capture = _new_capture()
     stderr_capture = _new_capture()
-    stdout_reader = threading.Thread(target=_drain, args=(process.stdout, stdout_capture), daemon=True)
+    first_stdout = threading.Event()
+    stdout_reader = threading.Thread(
+        target=_drain, args=(process.stdout, stdout_capture, first_stdout), daemon=True)
     stderr_reader = threading.Thread(target=_drain, args=(process.stderr, stderr_capture), daemon=True)
     stdout_reader.start()
     stderr_reader.start()
@@ -206,6 +212,13 @@ def _run_stage(command: list[str], *, docker: Path, config: Path, name: str,
         if input_data is not None:
             process.stdin.write(input_data)
             process.stdin.flush()
+        if wait_for_stdout_before_close:
+            deadline = started + timeout
+            while not first_stdout.is_set() and process.poll() is None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                first_stdout.wait(timeout=min(0.05, remaining))
         process.stdin.close()
     except OSError:
         stdin_write_error = True
@@ -357,6 +370,7 @@ def run(*, docker: Path, config: Path, image: str, output: Path,
                 command_factory(name), docker=docker, config=config, name=name,
                 run_id=run_id, input_data=input_data, marker=marker, timeout=timeout,
                 docker_host=docker_host,
+                wait_for_stdout_before_close=stage == "exec-server-initialize",
             )
             value["stage"] = stage
             results.append(value)

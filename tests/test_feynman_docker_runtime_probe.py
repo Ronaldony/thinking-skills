@@ -40,6 +40,33 @@ class DockerRuntimeProbeTests(unittest.TestCase):
         self.assertTrue(value["marker_observed"])
         self.assertTrue(_stage_passed("container-start", value))
 
+    def test_initialize_stage_keeps_stdin_open_until_first_response(self):
+        script = (
+            "import sys,threading,time;"
+            "sys.stdin.readline();"
+            "done=threading.Event();"
+            "threading.Thread(target=lambda:(sys.stdin.read(),done.set()),daemon=True).start();"
+            "time.sleep(0.1);"
+            "sys.exit(7) if done.is_set() else None;"
+            "sys.stdout.write('{\\\"id\\\":1,\\\"result\\\":{}}\\n');"
+            "sys.stdout.flush();"
+            "done.wait(2)"
+        )
+        with patch("tooling.feynman_docker_runtime_probe._inspect_container", return_value={
+                "available": True, "presence": "present", "owned": True,
+                "status": "exited", "exit_code": 0, "oom_killed": False}), \
+             patch("tooling.feynman_docker_runtime_probe._remove_owned_container",
+                   return_value={"status": "removed", "verified": True}):
+            from tooling.feynman_docker_runtime_probe import _run_stage
+            value = _run_stage(
+                [sys.executable, "-B", "-c", script],
+                docker=Path("docker"), config=Path("config"), name="fixture",
+                run_id="fixture", input_data=b"request\n", marker=None, timeout=3,
+                wait_for_stdout_before_close=True,
+            )
+        self.assertTrue(value["initialize_response_observed"])
+        self.assertTrue(_stage_passed("exec-server-initialize", value))
+
     def test_inspect_container_requires_the_probe_label(self):
         completed = type("Completed", (), {
             "returncode": 0,

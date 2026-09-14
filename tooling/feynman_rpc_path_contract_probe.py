@@ -25,6 +25,9 @@ from urllib.parse import unquote
 PROBE_IMAGE = "sha256:36b6f50b88a3e5054e1943ef8a40bc80e1629ad0821b4657ec8a33d468179db6"
 EXPECTED_IDS = (1, 2, 3, 4, 5, 6, 7)
 PATH_CONTRACT_REPORT_SCHEMA_VERSION = 3
+PATH_VALUE_KEYS = frozenset({"path", "cwd", "uri", "file", "root"})
+PATH_COLLECTION_KEYS = frozenset({"configPaths", "requirementsPaths"})
+OPAQUE_RUNTIME_ID_KEYS = frozenset({"sessionId", "hostname"})
 
 
 def _docker_args(*, image: str, candidate: Path, home: Path,
@@ -101,7 +104,7 @@ def _requests(*, candidate: Path, direct: bool) -> list[dict[str, Any]]:
 
 
 def _path_role(value: str, candidate: Path) -> str:
-    host = candidate.as_posix().rstrip("/").casefold()
+    host = _normalize_path_value(str(candidate)).rstrip("/").casefold()
     normalized = _normalize_path_value(value)
     comparison = normalized.casefold()
     if normalized == "/run/candidate" or normalized.startswith("/run/candidate/"):
@@ -118,7 +121,7 @@ def _path_namespace(value: str, candidate: Path) -> str:
     normalized = _normalize_path_value(value)
     if normalized.startswith("/run/"):
         return "container"
-    host = candidate.as_posix().rstrip("/").casefold()
+    host = _normalize_path_value(str(candidate)).rstrip("/").casefold()
     comparison = normalized.casefold()
     if comparison == host or comparison.startswith(host + "/"):
         return "host"
@@ -134,6 +137,15 @@ def _normalize_path_value(value: str) -> str:
     return normalized
 
 
+def _looks_like_path(value: str) -> bool:
+    normalized = value.replace("\\", "/")
+    return (
+        normalized.startswith(("file:///", "/"))
+        or (len(normalized) >= 3 and normalized[0].isalpha()
+            and normalized[1] == ":" and normalized[2] == "/")
+    )
+
+
 def _shape(value: Any, *, candidate: Path, key: str | None = None) -> Any:
     if isinstance(value, dict):
         return {name: _shape(item, candidate=candidate, key=name)
@@ -141,8 +153,10 @@ def _shape(value: Any, *, candidate: Path, key: str | None = None) -> Any:
     if isinstance(value, list):
         return [_shape(item, candidate=candidate, key=key) for item in value]
     if isinstance(value, str):
-        if key in {"path", "cwd", "uri", "file", "root"}:
+        if key in PATH_VALUE_KEYS | PATH_COLLECTION_KEYS or _looks_like_path(value):
             return {"path_role": _path_role(value, candidate)}
+        if key in OPAQUE_RUNTIME_ID_KEYS:
+            return {"opaque_runtime_id": "present" if value else "empty"}
         return {
             "string_sha256": hashlib.sha256(value.encode("utf-8")).hexdigest(),
             "length": len(value),
@@ -159,13 +173,32 @@ def _namespace_shape(value: Any, *, candidate: Path,
                 for name, item in sorted(value.items())}
     if isinstance(value, list):
         return [_namespace_shape(item, candidate=candidate, key=key) for item in value]
-    if isinstance(value, str) and key in {"path", "cwd", "uri", "file", "root"}:
+    if (isinstance(value, str)
+            and (key in PATH_VALUE_KEYS | PATH_COLLECTION_KEYS or _looks_like_path(value))):
         return {"namespace": _path_namespace(value, candidate)}
     if isinstance(value, str):
         return {"string": "present" if value else "empty"}
     if value is None or isinstance(value, (bool, int, float)):
         return value
     return {"value_kind": type(value).__name__}
+
+
+def _namespace_contract_matches(direct: Any, proxy: Any) -> bool:
+    """Accept only equal namespaces or the expected container-to-host projection."""
+    if isinstance(direct, dict) and isinstance(proxy, dict):
+        if set(direct) == set(proxy) == {"namespace"}:
+            return direct["namespace"] == proxy["namespace"] or (
+                direct["namespace"] == "container" and proxy["namespace"] == "host"
+            )
+        return set(direct) == set(proxy) and all(
+            _namespace_contract_matches(direct[key], proxy[key]) for key in direct
+        )
+    if isinstance(direct, list) and isinstance(proxy, list):
+        return len(direct) == len(proxy) and all(
+            _namespace_contract_matches(left, right)
+            for left, right in zip(direct, proxy, strict=True)
+        )
+    return direct == proxy
 
 
 def _response_summary(stdout: str, *, candidate: Path) -> dict[str, Any]:
@@ -409,6 +442,14 @@ def _digest(value: Any) -> str:
     return hashlib.sha256(serialized).hexdigest()
 
 
+def _response_shape_matches_by_id(
+        direct: dict[str, Any], proxy: dict[str, Any]) -> dict[str, bool]:
+    return {
+        str(identifier): direct.get(str(identifier)) == proxy.get(str(identifier))
+        for identifier in EXPECTED_IDS
+    }
+
+
 def _probe_failure_stage(direct: dict[str, Any], proxy: dict[str, Any]) -> str:
     """Classify a blocked probe before interpreting any path response."""
     if not direct["response_ids"] and not proxy["response_ids"]:
@@ -462,7 +503,10 @@ def run(*, docker: Path, docker_config: Path, image: str,
     direct_namespaces = direct.pop("response_namespaces")
     proxy_namespaces = proxy.pop("response_namespaces")
     response_shapes_match = direct_responses == proxy_responses
-    response_namespace_shapes_match = direct_namespaces == proxy_namespaces
+    response_shape_matches_by_id = _response_shape_matches_by_id(
+        direct_responses, proxy_responses)
+    response_namespace_shapes_match = _namespace_contract_matches(
+        direct_namespaces, proxy_namespaces)
     request_shape_direct = [_shape(item, candidate=candidate)
                             for item in _requests(candidate=candidate, direct=True)]
     request_shape_proxy = [_shape(item, candidate=candidate)
@@ -508,6 +552,7 @@ def run(*, docker: Path, docker_config: Path, image: str,
         "direct_request_shape_digest": _digest(request_shape_direct),
         "proxy_request_shape_digest": _digest(request_shape_proxy),
         "response_shapes_match": response_shapes_match,
+        "response_shape_matches_by_id": response_shape_matches_by_id,
         "response_namespace_shapes_match": response_namespace_shapes_match,
         "direct_response_shape_digest": _digest(direct_responses),
         "proxy_response_shape_digest": _digest(proxy_responses),

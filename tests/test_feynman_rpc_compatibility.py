@@ -14,7 +14,9 @@ from tooling.feynman_rpc_path_proxy import _map_request_payload, _read_response_
 from tooling.feynman_rpc_version_gate import verify
 from tooling.feynman_subscription_models import SUBSCRIPTION_WORK_MODELS, model_selection_report
 from tooling.feynman_rpc_path_contract_probe import (
-    PROBE_IMAGE, _docker_args, _namespace_shape, _path_namespace, _probe_failure_stage, _run_peer, _shape, _requests,
+    PROBE_IMAGE, _docker_args, _namespace_contract_matches, _namespace_shape,
+    _path_namespace, _probe_failure_stage, _response_shape_matches_by_id,
+    _run_peer, _shape, _requests,
 )
 
 
@@ -143,6 +145,39 @@ class CompatibilityTests(unittest.TestCase):
         self.assertNotIn("ROOT_CONFIG", json.dumps(first))
         self.assertNotIn("SUB_CONFIG", json.dumps(second))
 
+    def test_path_collections_compare_by_semantic_role(self):
+        candidate = Path(r"C:\fixture\candidate")
+        direct = _shape({
+            "configPaths": [["file:///run/candidate/sub/config.toml"]],
+            "requirementsPaths": [["file:///run/candidate/sub/requirements.txt"]],
+        }, candidate=candidate)
+        proxy = _shape({
+            "configPaths": [["file:///C:/fixture/candidate/sub/config.toml"]],
+            "requirementsPaths": [["file:///C:/fixture/candidate/sub/requirements.txt"]],
+        }, candidate=candidate)
+        self.assertEqual(direct, proxy)
+
+    def test_nested_path_value_is_semantic_without_relying_on_field_name(self):
+        candidate = Path(r"C:\fixture\candidate")
+        direct = _shape({"source": "file:///run/candidate/sub/config.toml"},
+                        candidate=candidate)
+        proxy = _shape({"source": "file:///C:/fixture/candidate/sub/config.toml"},
+                       candidate=candidate)
+        self.assertEqual(direct, proxy)
+        self.assertEqual(direct["source"], {"path_role": "candidate/sub/config.toml"})
+
+    def test_only_allowlisted_runtime_identity_is_normalized_as_opaque(self):
+        candidate = Path(r"C:\fixture\candidate")
+        for key in ("sessionId", "hostname"):
+            self.assertEqual(
+                _shape({key: "direct"}, candidate=candidate),
+                _shape({key: "proxy"}, candidate=candidate),
+            )
+        self.assertNotEqual(
+            _shape({"marker": "direct"}, candidate=candidate),
+            _shape({"marker": "proxy"}, candidate=candidate),
+        )
+
     def test_path_probe_classifies_no_initialize_as_peer_startup_failure(self):
         empty = {
             "response_ids": [], "timed_out": True,
@@ -159,6 +194,16 @@ class CompatibilityTests(unittest.TestCase):
         self.assertEqual(_probe_failure_stage(peer, peer),
                          "rpc-response-contract-not-equivalent")
 
+    def test_response_shape_diagnostics_are_limited_to_fixed_ids(self):
+        result = _response_shape_matches_by_id(
+            {"1": {"value": 1}, "2": {"value": 2}, "private": {}},
+            {"1": {"value": 1}, "2": {"value": 3}, "private": {}},
+        )
+        self.assertEqual(set(result), {str(value) for value in range(1, 8)})
+        self.assertTrue(result["1"])
+        self.assertFalse(result["2"])
+        self.assertNotIn("private", result)
+
     def test_response_namespace_keeps_windows_and_container_forms_distinct(self):
         candidate = Path(r"C:\fixture\candidate")
         windows = _namespace_shape({
@@ -172,6 +217,8 @@ class CompatibilityTests(unittest.TestCase):
             "file:///C:/fixture/candidate/sub", candidate), "host")
         self.assertEqual(_path_namespace(
             "file:///run/candidate/sub", candidate), "container")
+        self.assertTrue(_namespace_contract_matches(container, windows))
+        self.assertFalse(_namespace_contract_matches(windows, container))
 
     def test_peer_fixture_drains_stderr_without_blocking_rpc(self):
         fixture = Path(__file__).with_name("feynman_subscription_lifecycle_fixture.py")
