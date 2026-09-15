@@ -1,19 +1,18 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-112](feynman-work-log/LOG-112-remote-proxy-stderr-counters-20260915.md).
-> 이번 단계의 model-free 코드 hardening commit은
-> `13b02cfd2e260363fc48651a30e60d6c19013d56`이다. production proxy child stderr를
-> EOF까지 drain하되 원문 없이 bounded scalar counters만 기록하도록 하고, cleanup·
-> startup gate·smoke validator·remote differential·schema를 함께 갱신했다. 새
-> shape는 `drained=true`, `read_error=false`일 때만 complete evidence로 인정하며
-> legacy v3 shape은 계속 읽는다. 전체 회귀는 `507 tests OK, 11 skipped`, schema
+> 최신: [LOG-113](feynman-work-log/LOG-113-docker-access-block-and-startup-response-shape-20260915.md).
+> 이번 단계의 model-free startup response hardening commit은 `bb2d618`이다. Codex
+> 0.154.0 static `ThreadStartResponse` required top-level fields를 fail-closed로
+> 검사하고 synthetic fixture/test를 갱신했다. 수정 전 incomplete success response가
+> green으로 통과하는 실패를 재현했다. 전체 회귀는 `508 tests OK, 11 skipped`, schema
 > 19개 errors=0, ResourceWarning 없음이다.
 > LOG-109의 실제 구독 startup 1회는 `initialize` 후
 > `thread/start -32603 / remote-environment-error`로 차단됐고 새 증거 없이
 > 재실행하지 않았다. 이번 단계의 actual ChatGPT startup/model 실행은 0회다.
 > `.tmp/`, PNG 2개, `LOG-099`, evaluator 증거와 로그인 홈을 보존한다.
-> child stderr 원문은 의도적으로 보존하지 않으므로 실제 startup 하위 원인은 여전히
-> 미확정이다. LOG-109 이전 문단은 역사 기록으로 유지한다.
+> LOG-112의 새 Docker differential 재검증은 backend 부재로 `docker-access`에서
+> 중단되어 재시도하지 않았다. child stderr 원문은 의도적으로 보존하지 않으므로 실제
+> startup 하위 원인은 여전히 미확정이다. LOG-109 이전 문단은 역사 기록으로 유지한다.
 >
 > 이전 실행 기록: [LOG-107](feynman-work-log/LOG-107-final-docker-path-gate-receipt-20260914.md).
 >

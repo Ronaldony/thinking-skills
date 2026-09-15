@@ -11,10 +11,10 @@ Feynman-thinking 작업을 안전하게 재개하기 위한 자료 목록과 붙
 - 저장소: `C:\DevWorks\thinking-skills`
 - 원격: `Ronaldony/thinking-skills`
 - 작업 브랜치: `feat/feynman-thinking-v0.5-draft`
-- 최신 model-free proxy hardening 코드 commit:
-  `13b02cfd2e260363fc48651a30e60d6c19013d56`
+- 최신 model-free startup response hardening 코드 commit:
+  `bb2d618`
 - 최신 상세 영수증:
-  `docs/feynman-work-log/LOG-112-remote-proxy-stderr-counters-20260915.md`
+  `docs/feynman-work-log/LOG-113-docker-access-block-and-startup-response-shape-20260915.md`
 - 이 단계의 문서 receipt와 feature branch push 결과는 git log/status로 다시 확인한다.
 - main 병합과 force push: 하지 않음
 - 적용되는 `AGENTS.md`: 이 작업 기준에서 발견되지 않음. 새 스레드에서 다시 확인한다.
@@ -28,16 +28,16 @@ untracked 상태를 유지하고 stage하거나 삭제하지 않는다.
 - `C:\DevWorks\thinking-skills\docs\feynman-work-log\LOG-099-autonomous-work-strategy-20260914.md`
 - 기존 평가 전용 로그인 홈과 evaluator-owned 자료
 
-## LOG-112 최신 checkpoint
+## LOG-113 최신 checkpoint
 
-- production proxy child stderr를 `PIPE`로 drain하고 원문 없이
-  `child_stderr_bytes/nonempty/truncated/read_error/drained` scalar만 telemetry에
-  기록하도록 최소 수정했다.
-- cleanup join, startup diagnostic/smoke validator, remote differential report와 두
-  schema를 함께 갱신했고, 새 telemetry shape는 drain 완료·read error 없음일 때만
-  complete evidence로 인정한다. legacy v3 shape은 계속 읽는다.
-- 전체 회귀는 `507 tests OK, 11 skipped`, schema는 `19개 errors=0`,
-  ResourceWarning은 없다.
+- Codex 0.154.0 static `ThreadStartResponse` required top-level fields를 startup
+  diagnostic이 fail-closed로 검사하도록 최소 수정했다. 수정 전 incomplete synthetic
+  success response가 green으로 통과하는 실패를 재현하고 fixture/test를 갱신했다.
+- targeted `109 tests OK`, 전체 회귀 `508 tests OK, 11 skipped`, schema `19개
+  errors=0`, ResourceWarning 없음이다.
+- LOG-112 proxy 변경의 Docker direct/proxy 재검증 1회는 `docker-access` exit 1로
+  중단됐다. Docker backend process가 관찰되지 않아 image/container/initialize는
+  실행하지 않았으며 새 증거 없는 재시도는 하지 않는다.
 - 이번 단계에는 actual ChatGPT startup/model 실행이 없었다. LOG-109의 실제
   `thread/start -32603 / remote-environment-error` 원인은 미확정이며 새 증거 없이
   재시도하지 않는다.
@@ -50,10 +50,11 @@ untracked 상태를 유지하고 stage하거나 삭제하지 않는다.
 1. `docs/feynman-codex-resume-prompt.md`
 2. `docs/feynman-codex-handoff.md`
 3. `docs/feynman-work-status.md`
-4. `docs/feynman-work-log/LOG-112-remote-proxy-stderr-counters-20260915.md`
-5. `docs/feynman-work-log/LOG-111-remote-proxy-cleanup-and-error-privacy-20260915.md`
-6. `docs/feynman-work-log/LOG-110-model-free-remote-child-differential-20260915.md`
-7. `docs/feynman-work-log/LOG-109-approved-subscription-startup-diagnostic-20260915.md`
+4. `docs/feynman-work-log/LOG-113-docker-access-block-and-startup-response-shape-20260915.md`
+5. `docs/feynman-work-log/LOG-112-remote-proxy-stderr-counters-20260915.md`
+6. `docs/feynman-work-log/LOG-111-remote-proxy-cleanup-and-error-privacy-20260915.md`
+7. `docs/feynman-work-log/LOG-110-model-free-remote-child-differential-20260915.md`
+8. `docs/feynman-work-log/LOG-109-approved-subscription-startup-diagnostic-20260915.md`
    (실제 파일명이 다르면 `LOG-109`를 검색하되 내용을 추측하지 않는다.)
 6. `tooling/feynman_remote_child_diagnostic.py`
 7. `tooling/feynman_remote_exec_environment.py`
@@ -79,7 +80,7 @@ untracked 상태를 유지하고 stage하거나 삭제하지 않는다.
    cleanup이 최종 실행에서 모두 통과했다.
 2. 진단 fixture를 실행한 최종 결과는
    `verdict=remote-child-differential-ready`, `failure_stage=null`이다.
-3. 전체 회귀는 `507 tests OK, 11 skipped`였고, `ResourceWarning`은 없었다. schema
+3. 전체 회귀는 `508 tests OK, 11 skipped`였고, `ResourceWarning`은 없었다. schema
    검증은 `19개, errors=0`이었다.
 4. `clientInfo`를 보낸 standalone child probe는 `-32602`를 반환했지만, 설치된
    child 계약에 맞는 `clientName` probe는 direct/proxy 모두 정상 initialize했다.
@@ -91,8 +92,8 @@ untracked 상태를 유지하고 stage하거나 삭제하지 않는다.
    remote-environment-error`로 실패했고, child는 exit 1·응답 없음·model 0·cleanup
    미확인 상태였다. 이 실행을 성공으로 해석하거나 새 증거 없이 반복하지 않는다.
 7. production path proxy는 child stderr를 EOF까지 drain하고 원문 없이 bounded
-   counters만 남긴다. raw stderr가 없으므로 실제 startup 하위 원인에 대한 관찰
-   공백은 일부 남아 있다.
+   counters만 남긴다. 최신 Docker differential 재검증은 backend 부재로
+   `docker-access`에서 중단되어 새 counters의 실제 Docker report 검증은 대기 중이다.
 
 ## 재개 시 지켜야 할 경계
 
@@ -123,7 +124,7 @@ Codex 0.154.0 실행 경로, Docker image digest와 기존 report 위치를 확�
 
 ### 2. model-free 범위의 추가 조사
 
-실제 startup을 바로 반복하지 말고, LOG-109와 LOG-110의 차이를 현재 코드와
+실제 startup을 바로 반복하지 말고, LOG-109와 LOG-110/112/113의 차이를 현재 코드와
 대조한다. 특히 다음을 확인한다.
 
 - App Server가 실제로 생성하는 remote child argv와 fixture argv의 차이
@@ -171,33 +172,35 @@ commit은 현재 feature branch에만 일반 push하고, main/force push는 하�
 브랜치: `feat/feynman-thinking-v0.5-draft`
 현재 기준 HEAD/origin: 새 스레드에서 `git rev-parse HEAD`와
 `git rev-parse origin/feat/feynman-thinking-v0.5-draft`로 다시 확인한다.
-마지막 구현 commit은 `13b02cfd2e260363fc48651a30e60d6c19013d56`이다.
+마지막 구현 commit은 `bb2d618`이다.
 
 먼저 현재 HEAD, tracked/untracked 변경, 적용 가능한 AGENTS.md, Codex 0.154.0 실행 경로를 확인해줘. 다음 자료를 순서대로 읽어줘.
 
 1. `docs/feynman-codex-resume-prompt.md`
 2. `docs/feynman-codex-handoff.md`
 3. `docs/feynman-work-status.md`
-4. `docs/feynman-work-log/LOG-112-remote-proxy-stderr-counters-20260915.md`
-5. `docs/feynman-work-log/LOG-111-remote-proxy-cleanup-and-error-privacy-20260915.md`
-6. `docs/feynman-work-log/LOG-110-model-free-remote-child-differential-20260915.md`
-7. `LOG-109` startup diagnostic log
-8. `tooling/feynman_remote_child_diagnostic.py`
-9. `tooling/feynman_remote_exec_environment.py`
-10. `tooling/feynman_rpc_path_proxy.py`
-11. `tooling/feynman_subscription_startup_diagnostic.py`
-12. `tooling/feynman_subscription_smoke_exec.py`
-13. `evals/feynman-thinking/remote-child-differential.schema.json`
-14. 관련 회귀 테스트
+4. `docs/feynman-work-log/LOG-113-docker-access-block-and-startup-response-shape-20260915.md`
+5. `docs/feynman-work-log/LOG-112-remote-proxy-stderr-counters-20260915.md`
+6. `docs/feynman-work-log/LOG-111-remote-proxy-cleanup-and-error-privacy-20260915.md`
+7. `docs/feynman-work-log/LOG-110-model-free-remote-child-differential-20260915.md`
+8. `LOG-109` startup diagnostic log
+9. `tooling/feynman_remote_child_diagnostic.py`
+10. `tooling/feynman_remote_exec_environment.py`
+11. `tooling/feynman_rpc_path_proxy.py`
+12. `tooling/feynman_subscription_startup_diagnostic.py`
+13. `tooling/feynman_subscription_smoke_exec.py`
+14. `evals/feynman-thinking/remote-child-differential.schema.json`
+15. 관련 회귀 테스트
 
 현재 사실:
 - model-free remote-child differential 최종 결과는 `remote-child-differential-ready`다.
 - Docker access/image/create/start, 네 native mount, direct/proxy child initialize, v3 telemetry/correlation, cleanup은 통과했다.
-- 전체 회귀는 `507 OK, 11 skipped`, schema는 `19개 errors=0`, ResourceWarning은 없다.
+- 전체 회귀는 `508 OK, 11 skipped`, schema는 `19개 errors=0`, ResourceWarning은 없다.
 - 과거 LOG-109의 보호된 실제 ChatGPT startup은 1회뿐이며 `initialize` 성공 뒤 `thread/start -32603 / remote-environment-error`, child exit1/no response/model0/cleanup 미확인이었다.
 - 새 fixture는 App Server의 실제 내부 initialize/environment envelope이나 `thread/start`를 검증하지 않는다.
 - production proxy는 child stderr를 EOF까지 drain하고 raw text 없이 bounded counters만
-  기록한다. raw stderr가 없어 원인 분류의 관찰 공백은 일부 남아 있다.
+  기록한다. 최신 Docker differential 재검증은 backend 부재로 `docker-access`에서
+  중단되어 새 counters의 실제 Docker report 검증은 대기 중이다.
 
 목표는 `thread/start` 문제를 새 증거로 좁히는 것이다. model-free 코드·fixture·회귀 검증은 계속 진행할 수 있지만 실제 subscription startup, 모델 실행, Luna/Terra/Sol fallback, 행동평가, baseline 비교는 별도 명시 승인을 받기 전에는 실행하지 마.
 
@@ -211,7 +214,7 @@ commit은 현재 feature branch에만 일반 push하고, main/force push는 하�
 - main merge, force push, broad Docker prune, Docker Desktop 전체 종료를 하지 말 것.
 
 작업 순서:
-1. 현재 코드와 LOG-109/110/111/112를 대조해 이미 해결된 항목은 회귀로만 확인한다.
+1. 현재 코드와 LOG-109/110/111/112/113을 대조해 이미 해결된 항목은 회귀로만 확인한다.
 2. App Server 실제 child argv/protocol 경계와 fixture의 차이, `clientName`/`clientInfo`,
    bounded stderr evidence, cleanup/evidence 결속을 model-free 방식으로 조사한다.
 3. 결함이 재현되면 결함 재현 → 최소 수정 → 수정 전 실패/수정 후 통과 회귀 → 관련 통합 경계 시험 → 상세 로그 순서로 처리한다.

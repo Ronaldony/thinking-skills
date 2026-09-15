@@ -1,14 +1,15 @@
 # feynman-thinking 작업 상태
 
-최신 재개 지점: [LOG-112](feynman-work-log/LOG-112-remote-proxy-stderr-counters-20260915.md).
-이번 단계의 model-free proxy hardening commit은
-`13b02cfd2e260363fc48651a30e60d6c19013d56`이다. production child stderr를
-`DEVNULL`로 버리지 않고 EOF까지 drain하면서 원문 없이 bytes/nonempty/truncated/
-read_error/drained scalar만 telemetry에 기록하도록 고쳤고, cleanup·startup gate·
-smoke validator·remote differential·schema를 함께 갱신했다. 새 shape는
-`drained=true`, `read_error=false`일 때만 complete evidence로 승격하며 legacy v3
-shape은 읽을 수 있다. 전체 회귀는 `507 tests OK, 11 skipped`, schema 19개
+최신 재개 지점: [LOG-113](feynman-work-log/LOG-113-docker-access-block-and-startup-response-shape-20260915.md).
+이번 단계의 model-free startup response hardening commit은
+`bb2d618`이다. Codex 0.154.0 App Server schema의 `thread/start` 성공 응답 required
+top-level fields를 fail-closed로 검사하고, synthetic fixture를 schema-complete 최소
+응답으로 갱신했다. 수정 전 누락 response가 green으로 통과하는 실패를 재현했고,
+수정 후 targeted `109 tests OK`, 전체 `508 tests OK, 11 skipped`, schema 19개
 `errors=0`, ResourceWarning 없음이다.
+LOG-112의 새 proxy child-stderr counters를 실제 Docker direct/proxy 경계에서 재검증한
+1회 시도는 `docker-access`에서 exit 1로 막혔다. backend process가 관찰되지 않아
+image/container/initialize 단계는 실행되지 않았고, 동일 외부 상태에서 재시도하지 않았다.
 LOG-109의 실제 구독 startup 1회는 `initialize` 후
 `thread/start -32603 / remote-environment-error`로 차단됐고 새 증거 없이
 재실행하지 않았다. 이번 단계 actual ChatGPT startup/model 실행은 0회다.
