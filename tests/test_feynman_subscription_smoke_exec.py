@@ -267,11 +267,11 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
                                 b'"model":"synthetic-model","modelProvider":"synthetic-provider",'
                                 b'"sandbox":{"type":"workspaceWrite"},'
                                 b'"thread":{"cliVersion":"synthetic-cli",'
-                                b'"createdAt":"2026-01-01T00:00:00Z","cwd":"/run/candidate",'
+                                b'"createdAt":1767225600,"cwd":"/run/candidate",'
                                 b'"ephemeral":true,"id":"synthetic",'
-                                b'"modelProvider":"synthetic-provider","preview":false,'
+                                b'"modelProvider":"synthetic-provider","preview":"synthetic preview",'
                                 b'"projectId":null,"sessionId":"synthetic-session",'
-                                b'"source":"cli","status":"idle","turns":[],"updatedAt":"2026-01-01T00:00:00Z"},'
+                                b'"source":"cli","status":{"type":"idle"},"turns":[],"updatedAt":1767225600},'
                                 b'"instructionSources":['
                                 b'"/run/candidate/AGENTS.md"]}}\n')
                             self.stderr = io.BytesIO()

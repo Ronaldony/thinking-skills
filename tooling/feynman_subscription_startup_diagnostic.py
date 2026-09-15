@@ -298,14 +298,18 @@ def _thread_summary(response: dict[str, Any]) -> dict[str, Any]:
         or any(
             not isinstance(thread[field], str)
             for field in (
-                "cliVersion", "createdAt", "cwd", "modelProvider", "sessionId",
-                "source", "status", "updatedAt",
+                "cliVersion", "cwd", "modelProvider", "sessionId",
             )
         )
+        or type(thread["createdAt"]) is not int
         or type(thread["ephemeral"]) is not bool
-        or type(thread["preview"]) is not bool
+        or not isinstance(thread["preview"], str)
         or (thread["projectId"] is not None and not isinstance(thread["projectId"], str))
+        or not isinstance(thread["source"], (str, dict))
+        or not isinstance(thread["status"], dict)
+        or not isinstance(thread["status"].get("type"), str)
         or not isinstance(thread["turns"], list)
+        or type(thread["updatedAt"]) is not int
     ):
         raise StartupDiagnosticError("thread-start-response-shape")
     sources = result.get("instructionSources")
