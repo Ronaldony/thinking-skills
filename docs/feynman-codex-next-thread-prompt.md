@@ -12,14 +12,14 @@ Feynman-thinking 작업을 안전하게 재개하기 위한 자료 목록과 붙
 - 원격: `Ronaldony/thinking-skills`
 - 작업 브랜치: `feat/feynman-thinking-v0.5-draft`
 - 최신 model-free startup response hardening 코드 commit:
-  `eb96b30`
+  `dbce0c7`
 - 최신 상세 영수증:
   `docs/feynman-work-log/LOG-115-nested-thread-response-shape-20260915.md`
 - 이 단계의 문서 receipt와 feature branch push 결과는 git log/status로 다시 확인한다.
 - main 병합과 force push: 하지 않음
 - 적용되는 `AGENTS.md`: 이 작업 기준에서 발견되지 않음. 새 스레드에서 다시 확인한다.
 
-현재 코드 변경은 `eb96b30`에 기록되어 있다. 다음 항목은 기존 사용자 작업·증거이므로
+현재 코드 변경은 `dbce0c7`에 기록되어 있다. 다음 항목은 기존 사용자 작업·증거이므로
 untracked 상태를 유지하고 stage하거나 삭제하지 않는다.
 
 - `C:\DevWorks\thinking-skills\.tmp\`
@@ -34,7 +34,7 @@ untracked 상태를 유지하고 stage하거나 삭제하지 않는다.
   fields를 startup diagnostic이 fail-closed로 검사하도록 최소 수정했다. 수정 전
   nested incomplete synthetic success response가 green으로 통과하는 실패를 재현하고
   fixture/test를 갱신했다.
-- targeted `110 tests OK`, 전체 회귀 `509 tests OK, 11 skipped`, schema `19개
+- targeted `111 tests OK`, 전체 회귀 `510 tests OK, 11 skipped`, schema `19개
   errors=0`, ResourceWarning 없음이다.
 - Docker backend process는 responding 상태였지만 empty/default config의 `docker info`
   와 `docker version`이 모두 exit 1이었다. 15초 bounded wait 뒤에도 새 `-06`
@@ -83,7 +83,7 @@ untracked 상태를 유지하고 stage하거나 삭제하지 않는다.
    cleanup이 최종 실행에서 모두 통과했다.
 2. 진단 fixture를 실행한 최종 결과는
    `verdict=remote-child-differential-ready`, `failure_stage=null`이다.
-3. 전체 회귀는 `509 tests OK, 11 skipped`였고, `ResourceWarning`은 없었다. schema
+3. 전체 회귀는 `510 tests OK, 11 skipped`였고, `ResourceWarning`은 없었다. schema
    검증은 `19개, errors=0`이었다.
 4. `clientInfo`를 보낸 standalone child probe는 `-32602`를 반환했지만, 설치된
    child 계약에 맞는 `clientName` probe는 direct/proxy 모두 정상 initialize했다.
@@ -175,7 +175,7 @@ commit은 현재 feature branch에만 일반 push하고, main/force push는 하�
 브랜치: `feat/feynman-thinking-v0.5-draft`
 현재 기준 HEAD/origin: 새 스레드에서 `git rev-parse HEAD`와
 `git rev-parse origin/feat/feynman-thinking-v0.5-draft`로 다시 확인한다.
-마지막 구현 commit은 `eb96b30`이다.
+마지막 구현 commit은 `dbce0c7`이다.
 
 먼저 현재 HEAD, tracked/untracked 변경, 적용 가능한 AGENTS.md, Codex 0.154.0 실행 경로를 확인해줘. 다음 자료를 순서대로 읽어줘.
 
@@ -200,7 +200,7 @@ commit은 현재 feature branch에만 일반 push하고, main/force push는 하�
 현재 사실:
 - model-free remote-child differential 최종 결과는 `remote-child-differential-ready`다.
 - Docker access/image/create/start, 네 native mount, direct/proxy child initialize, v3 telemetry/correlation, cleanup은 통과했다.
-- 전체 회귀는 `509 OK, 11 skipped`, schema는 `19개 errors=0`, ResourceWarning은 없다.
+- 전체 회귀는 `510 OK, 11 skipped`, schema는 `19개 errors=0`, ResourceWarning은 없다.
 - 과거 LOG-109의 보호된 실제 ChatGPT startup은 1회뿐이며 `initialize` 성공 뒤 `thread/start -32603 / remote-environment-error`, child exit1/no response/model0/cleanup 미확인이었다.
 - 새 fixture는 App Server의 실제 내부 initialize/environment envelope이나 `thread/start`를 검증하지 않는다.
 - production proxy는 child stderr를 EOF까지 drain하고 raw text 없이 bounded counters만

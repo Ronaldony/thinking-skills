@@ -5,7 +5,8 @@
 - 저장소: `C:\DevWorks\thinking-skills`
 - branch: `feat/feynman-thinking-v0.5-draft`
 - 시작 HEAD: `6ce750c50e309dee4b47ecae0ba94aabf53b7e8c`
-- 구현 commit: `eb96b30` (`fix: validate nested startup thread shape`)
+- 구현 commits: `eb96b30` (`fix: validate nested startup thread shape`),
+  `dbce0c7` (`fix: align startup thread fields with schema`)
 - actual ChatGPT subscription startup: 0회
 - model smoke/fallback: 0회
 - OpenAI Platform API/API key, 로그인 파일·토큰·전체 환경변수: 사용·출력하지 않음
@@ -37,14 +38,19 @@ FAIL: StartupDiagnosticError not raised
 이는 설치된 schema의 required nested shape와 diagnostic의 green 판정 경계가 달랐다는
 직접 증거다. 실제 subscription startup이나 model 호출로 재현하지 않았다.
 
+이후 required field의 schema 타입을 다시 대조한 결과 `createdAt`/`updatedAt`는 integer,
+`preview`는 string, `source`는 string 또는 object, `status`는 `type`을 가진 object였다.
+첫 최소 fixture가 이 계약을 따르지 않는 것도 외부 실행 전에 발견했다. 잘못된 타입을
+거부하는 회귀를 추가하고 fixture와 validator를 schema에 맞게 보정했다.
+
 ## 최소 수정
 
 `tooling/feynman_subscription_startup_diagnostic.py`의 `_thread_summary`에 nested required
 field 집합과 제한된 타입 검사를 추가했다.
 
 - required key가 모두 있는지 fail-closed로 확인한다.
-- schema의 scalar/container 계약에 맞춰 문자열, boolean, nullable project id, turns 배열을
-  확인한다.
+- schema의 scalar/container 계약에 맞춰 timestamp integer, preview string, boolean,
+  source/status object shape, nullable project id, turns 배열을 확인한다.
 - thread id와 ephemeral 판정, instruction source allowlist의 기존 순서는 유지한다.
 - thread id, cwd, model/provider, source path 등 응답 값은 summary/artifact에 보존하지
   않는다.
@@ -54,13 +60,14 @@ field 집합과 제한된 타입 검사를 추가했다.
 ## 검증 영수증
 
 - nested incomplete response 회귀: 수정 전 실패, 수정 후 통과
-- targeted startup/smoke/proxy/remote differential: `110 tests OK`
-- 전체 회귀: `509 tests OK (skipped=11)`
+- nested wrong-type response 회귀: 수정 후 통과
+- targeted startup/smoke/proxy/remote differential: `111 tests OK`
+- 전체 회귀: `510 tests OK (skipped=11)`
 - `ResourceWarning`: 없음 (`python -W error::ResourceWarning -m unittest discover -s tests -p "test_*.py"`)
 - JSON Schema: `schema_files=19 errors=0`
 - 변경 Python files `py_compile`: 통과
 - `git diff --check`: 통과
-- 코드 commit: `eb96b30`
+- 코드 commits: `eb96b30`, `dbce0c7`
 
 ## Docker 및 외부 경계
 
