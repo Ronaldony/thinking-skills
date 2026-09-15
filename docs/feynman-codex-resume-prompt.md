@@ -1,14 +1,16 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 최신 재개 지점은
-> `docs/feynman-work-log/LOG-108-next-01-03-execution-spec-and-boundary-preflight-20260915.md`다.
+> `docs/feynman-work-log/LOG-109-approved-subscription-startup-diagnostic-20260915.md`다.
 > code 기준(작업 시작)은
 > `f7e9efdd61ee67f9df98cd509f54d925bcb0bd31`이며, 문서 갱신 commit과 별도다.
 > immutable execution spec, evaluator-owned spec artifact, startup validator 연결,
 > input drift fail-closed를 구현했다. 변경 영역은 `133 tests OK, 2 skipped`, 전체는
 > `489 tests OK, 11 skipped`, schema 18개 errors=0, ResourceWarning 없음이다.
 > checkpoint/structural preflight/isolated model-free wiring preparation은 통과했지만
-> 실제 구독 auth/startup·model smoke는 0회다. `.tmp/`, PNG 2개, `LOG-099`, 기존
+> 승인된 startup diagnostic은 1회 실행했으며 initialize는 통과했지만
+> `thread/start -32603 / remote-environment-error`로 차단됐다. 모델 요청은 0회다.
+> `.tmp/`, PNG 2개, `LOG-099`, 기존
 > evaluator 증거와 로그인 홈을 보존한다. LOG-107은 역사 기록으로만 읽는다.
 > 이전 실행 기록은
 > `docs/feynman-work-log/LOG-107-final-docker-path-gate-receipt-20260914.md`다.

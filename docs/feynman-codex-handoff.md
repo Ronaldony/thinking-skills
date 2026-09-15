@@ -1,12 +1,13 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-108](feynman-work-log/LOG-108-next-01-03-execution-spec-and-boundary-preflight-20260915.md).
+> 최신: [LOG-109](feynman-work-log/LOG-109-approved-subscription-startup-diagnostic-20260915.md).
 > code 기준(작업 시작)은 `f7e9efdd61ee67f9df98cd509f54d925bcb0bd31`이다. 현재
 > 문서 갱신으로 생성되는 후속 documentation SHA와 code 기준 SHA를 혼동하지
 > 않는다. immutable execution spec과 실제 startup validator 연결 회귀를 추가했고
 > 변경 영역 `133 tests OK, 2 skipped`, 전체 `489 tests OK, 11 skipped`, schema 18개
 > errors=0, ResourceWarning 없음이다. checkpoint/structural preflight와 isolated
-> model-free wiring preparation은 통과했지만 실제 구독 auth/startup·model smoke는
+> model-free wiring preparation은 통과했다. 승인된 실제 startup diagnostic은 1회
+> 실행했으며 initialize는 통과했지만 `thread/start -32603`으로 차단됐다. 모델 turn은
 > 0회다. `.tmp/`, PNG 2개, `LOG-099`, evaluator 증거와 로그인 홈은 보존 중이다.
 > LOG-107은 역사 기록으로 유지한다.
 >

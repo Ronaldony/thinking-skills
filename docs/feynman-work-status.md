@@ -1,6 +1,6 @@
 # feynman-thinking 작업 상태
 
-최신 재개 지점: [LOG-108](feynman-work-log/LOG-108-next-01-03-execution-spec-and-boundary-preflight-20260915.md).
+최신 재개 지점: [LOG-109](feynman-work-log/LOG-109-approved-subscription-startup-diagnostic-20260915.md).
 code 기준은 이 작업 시작 시 `f7e9efdd61ee67f9df98cd509f54d925bcb0bd31`이며,
 현재 문서 pointer 갱신으로 생기는 후속 documentation SHA와 구분한다. LOG-107은
 역사 기록으로 보존한다. 이번 단계에서 비밀 없는 immutable execution spec을
@@ -9,11 +9,12 @@ fail-closed하도록 연결했다. 실제 startup 함수를 호출하는 합성 
 300초 model timeout 전달 회귀를 포함해 변경 영역 `133 tests OK, 2 skipped`,
 전체 `489 tests OK, 11 skipped`, schema 18개 `errors=0`, ResourceWarning 없음이다.
 현재 checkpoint는 `subscription-checkpoint-valid`, 실제 canonical structural
-preflight와 isolated model-free wiring preparation도 통과했다. 실제 구독
-auth/startup/thread, model smoke, baseline/evaluation은 0회다. `.tmp/`, PNG 2개,
-`LOG-099`는 보존 중이다. Docker/path offline gate 통과와 실제 구독 startup
-호환성은 별도 증거이며, 과거 `thread/start -32603`도 별도 외부 계약 차단으로
-유지한다.
+preflight와 isolated model-free wiring preparation도 통과했다. 승인된 실제 startup
+diagnostic은 정확히 1회 실행했으며 `initialize`까지 통과했지만 `thread/start`가
+`-32603 / remote-environment-error`로 차단됐다. 모델 요청은 0회이며 report
+schema v3와 payload-free telemetry를 검증했다. `cleanup_verified=false`이므로
+startup 성공으로 승격하지 않는다. 실제 model smoke·baseline/evaluation은 아직
+없다. `.tmp/`, PNG 2개, `LOG-099`와 로그인 홈은 보존 중이다.
 
 이전 실행 기록: [LOG-107](feynman-work-log/LOG-107-final-docker-path-gate-receipt-20260914.md).
 그 이전 실행 기록: [LOG-106](feynman-work-log/LOG-106-docker-path-gate-commit-push-receipt-20260914.md).
