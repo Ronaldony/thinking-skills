@@ -133,8 +133,11 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
                 self.stdin = io.BytesIO()
                 self.stdout = io.BytesIO(
                     b'{"id":1,"result":{}}\n'
-                    b'{"id":2,"result":{"thread":{"id":"private",'
-                    b'"ephemeral":true},"instructionSources":[]}}\n'
+                    b'{"id":2,"result":{"approvalPolicy":"never",'
+                    b'"approvalsReviewer":"user","cwd":"/run/candidate",'
+                    b'"model":"synthetic-model","modelProvider":"synthetic-provider",'
+                    b'"sandbox":{"type":"workspaceWrite"},'
+                    b'"thread":{"id":"private","ephemeral":true},"instructionSources":[]}}\n'
                 )
                 self.stderr = io.BytesIO()
                 self.returncode = None
@@ -320,8 +323,11 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
                 self.stdin = io.BytesIO()
                 self.stdout = io.BytesIO(
                     b'{"id":1,"result":{}}\n'
-                    b'{"id":2,"result":{"thread":{"id":"private",'
-                    b'"ephemeral":true},"instructionSources":[]}}\n'
+                    b'{"id":2,"result":{"approvalPolicy":"never",'
+                    b'"approvalsReviewer":"user","cwd":"/run/candidate",'
+                    b'"model":"synthetic-model","modelProvider":"synthetic-provider",'
+                    b'"sandbox":{"type":"workspaceWrite"},'
+                    b'"thread":{"id":"private","ephemeral":true},"instructionSources":[]}}\n'
                 )
                 self.stderr = io.BytesIO()
                 self.returncode = None
@@ -533,6 +539,12 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
 
     def test_thread_summary_preserves_no_id_or_instruction_path(self):
         summary = _thread_summary({"result": {
+            "approvalPolicy": "never",
+            "approvalsReviewer": "user",
+            "cwd": "/run/candidate",
+            "model": "synthetic-model",
+            "modelProvider": "synthetic-provider",
+            "sandbox": {"type": "workspaceWrite"},
             "thread": {"id": "SYNTHETIC_PRIVATE_THREAD", "ephemeral": True},
             "instructionSources": ["/run/candidate/AGENTS.md"],
         }})
@@ -560,6 +572,13 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
         })
         self.assertNotIn("SYNTHETIC_PRIVATE", json.dumps(summary))
 
+    def test_thread_summary_rejects_incomplete_app_server_success_response(self):
+        with self.assertRaisesRegex(StartupDiagnosticError, "^thread-start-response-shape$"):
+            _thread_summary({"result": {
+                "thread": {"id": "synthetic", "ephemeral": True},
+                "instructionSources": [],
+            }})
+
     def test_instruction_sources_are_limited_to_declared_remote_mounts(self):
         self.assertTrue(_instruction_sources_allowed([
             "/run/candidate/AGENTS.md", "file:///run/codex/skills/feynman-thinking/SKILL.md",
@@ -573,6 +592,12 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
     def test_thread_summary_rejects_instruction_source_outside_remote_mounts(self):
         with self.assertRaisesRegex(StartupDiagnosticError, "^instruction-source-not-allowed$"):
             _thread_summary({"result": {
+                "approvalPolicy": "never",
+                "approvalsReviewer": "user",
+                "cwd": "/run/candidate",
+                "model": "synthetic-model",
+                "modelProvider": "synthetic-provider",
+                "sandbox": {"type": "workspaceWrite"},
                 "thread": {"id": "synthetic", "ephemeral": True},
                 "instructionSources": ["/run/home/AGENTS.md"],
             }})

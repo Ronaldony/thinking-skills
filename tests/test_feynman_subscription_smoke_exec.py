@@ -262,8 +262,11 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
                             self.stdin = io.BytesIO()
                             self.stdout = io.BytesIO(
                                 b'{"id":1,"result":{}}\n'
-                                b'{"id":2,"result":{"thread":{"id":"synthetic",'
-                                b'"ephemeral":true},"instructionSources":['
+                                b'{"id":2,"result":{"approvalPolicy":"never",'
+                                b'"approvalsReviewer":"user","cwd":"/run/candidate",'
+                                b'"model":"synthetic-model","modelProvider":"synthetic-provider",'
+                                b'"sandbox":{"type":"workspaceWrite"},'
+                                b'"thread":{"id":"synthetic","ephemeral":true},"instructionSources":['
                                 b'"/run/candidate/AGENTS.md"]}}\n')
                             self.stderr = io.BytesIO()
                             self.returncode = None

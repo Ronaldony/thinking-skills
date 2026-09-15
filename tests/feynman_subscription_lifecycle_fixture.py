@@ -53,6 +53,12 @@ def _thread_start(identifier: Any, mode: str) -> None:
         "jsonrpc": "2.0",
         "id": identifier,
         "result": {
+            "approvalPolicy": "never",
+            "approvalsReviewer": "user",
+            "cwd": "/run/candidate",
+            "model": "synthetic-model",
+            "modelProvider": "synthetic-provider",
+            "sandbox": {"type": "workspaceWrite"},
             "thread": {"id": "synthetic-ephemeral-thread", "ephemeral": True},
             "instructionSources": ["/run/candidate/AGENTS.md"],
         },

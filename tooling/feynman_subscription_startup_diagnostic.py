@@ -148,6 +148,11 @@ _SAFE_NOTIFICATION_METHODS = frozenset({
     "warning",
 })
 
+_THREAD_START_REQUIRED_RESULT_FIELDS = frozenset({
+    "approvalPolicy", "approvalsReviewer", "cwd", "model", "modelProvider",
+    "sandbox", "thread",
+})
+
 _ALLOWED_INSTRUCTION_SOURCE_ROOTS = (
     PurePosixPath("/run/candidate"),
     PurePosixPath("/run/codex"),
@@ -284,6 +289,16 @@ def _thread_summary(response: dict[str, Any]) -> dict[str, Any]:
         raise StartupDiagnosticError("thread-start-was-not-ephemeral")
     sources = result.get("instructionSources")
     if not isinstance(sources, list) or any(not isinstance(source, str) for source in sources):
+        raise StartupDiagnosticError("thread-start-response-shape")
+    if (
+        not _THREAD_START_REQUIRED_RESULT_FIELDS <= result.keys()
+        or not isinstance(result["approvalPolicy"], (str, dict))
+        or not isinstance(result["approvalsReviewer"], str)
+        or not isinstance(result["cwd"], str)
+        or not isinstance(result["model"], str)
+        or not isinstance(result["modelProvider"], str)
+        or not isinstance(result["sandbox"], dict)
+    ):
         raise StartupDiagnosticError("thread-start-response-shape")
     if not _instruction_sources_allowed(sources):
         raise StartupDiagnosticError("instruction-source-not-allowed")
