@@ -153,6 +153,12 @@ _THREAD_START_REQUIRED_RESULT_FIELDS = frozenset({
     "sandbox", "thread",
 })
 
+_THREAD_REQUIRED_FIELDS = frozenset({
+    "cliVersion", "createdAt", "cwd", "ephemeral", "id", "modelProvider",
+    "preview", "projectId", "sessionId", "source", "status", "turns",
+    "updatedAt",
+})
+
 _ALLOWED_INSTRUCTION_SOURCE_ROOTS = (
     PurePosixPath("/run/candidate"),
     PurePosixPath("/run/codex"),
@@ -287,6 +293,21 @@ def _thread_summary(response: dict[str, Any]) -> dict[str, Any]:
         raise StartupDiagnosticError("thread-start-response-shape")
     if thread.get("ephemeral") is not True:
         raise StartupDiagnosticError("thread-start-was-not-ephemeral")
+    if (
+        not _THREAD_REQUIRED_FIELDS <= thread.keys()
+        or any(
+            not isinstance(thread[field], str)
+            for field in (
+                "cliVersion", "createdAt", "cwd", "modelProvider", "sessionId",
+                "source", "status", "updatedAt",
+            )
+        )
+        or type(thread["ephemeral"]) is not bool
+        or type(thread["preview"]) is not bool
+        or (thread["projectId"] is not None and not isinstance(thread["projectId"], str))
+        or not isinstance(thread["turns"], list)
+    ):
+        raise StartupDiagnosticError("thread-start-response-shape")
     sources = result.get("instructionSources")
     if not isinstance(sources, list) or any(not isinstance(source, str) for source in sources):
         raise StartupDiagnosticError("thread-start-response-shape")

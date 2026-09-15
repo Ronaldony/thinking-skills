@@ -266,7 +266,13 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
                                 b'"approvalsReviewer":"user","cwd":"/run/candidate",'
                                 b'"model":"synthetic-model","modelProvider":"synthetic-provider",'
                                 b'"sandbox":{"type":"workspaceWrite"},'
-                                b'"thread":{"id":"synthetic","ephemeral":true},"instructionSources":['
+                                b'"thread":{"cliVersion":"synthetic-cli",'
+                                b'"createdAt":"2026-01-01T00:00:00Z","cwd":"/run/candidate",'
+                                b'"ephemeral":true,"id":"synthetic",'
+                                b'"modelProvider":"synthetic-provider","preview":false,'
+                                b'"projectId":null,"sessionId":"synthetic-session",'
+                                b'"source":"cli","status":"idle","turns":[],"updatedAt":"2026-01-01T00:00:00Z"},'
+                                b'"instructionSources":['
                                 b'"/run/candidate/AGENTS.md"]}}\n')
                             self.stderr = io.BytesIO()
                             self.returncode = None

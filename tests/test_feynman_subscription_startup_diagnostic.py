@@ -137,7 +137,13 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
                     b'"approvalsReviewer":"user","cwd":"/run/candidate",'
                     b'"model":"synthetic-model","modelProvider":"synthetic-provider",'
                     b'"sandbox":{"type":"workspaceWrite"},'
-                    b'"thread":{"id":"private","ephemeral":true},"instructionSources":[]}}\n'
+                    b'"thread":{"cliVersion":"synthetic-cli",'
+                    b'"createdAt":"2026-01-01T00:00:00Z","cwd":"/run/candidate",'
+                    b'"ephemeral":true,"id":"private",'
+                    b'"modelProvider":"synthetic-provider","preview":false,'
+                    b'"projectId":null,"sessionId":"synthetic-session",'
+                    b'"source":"cli","status":"idle","turns":[],"updatedAt":"2026-01-01T00:00:00Z"},'
+                    b'"instructionSources":[]}}\n'
                 )
                 self.stderr = io.BytesIO()
                 self.returncode = None
@@ -327,7 +333,13 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
                     b'"approvalsReviewer":"user","cwd":"/run/candidate",'
                     b'"model":"synthetic-model","modelProvider":"synthetic-provider",'
                     b'"sandbox":{"type":"workspaceWrite"},'
-                    b'"thread":{"id":"private","ephemeral":true},"instructionSources":[]}}\n'
+                    b'"thread":{"cliVersion":"synthetic-cli",'
+                    b'"createdAt":"2026-01-01T00:00:00Z","cwd":"/run/candidate",'
+                    b'"ephemeral":true,"id":"private",'
+                    b'"modelProvider":"synthetic-provider","preview":false,'
+                    b'"projectId":null,"sessionId":"synthetic-session",'
+                    b'"source":"cli","status":"idle","turns":[],"updatedAt":"2026-01-01T00:00:00Z"},'
+                    b'"instructionSources":[]}}\n'
                 )
                 self.stderr = io.BytesIO()
                 self.returncode = None
@@ -545,7 +557,21 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
             "model": "synthetic-model",
             "modelProvider": "synthetic-provider",
             "sandbox": {"type": "workspaceWrite"},
-            "thread": {"id": "SYNTHETIC_PRIVATE_THREAD", "ephemeral": True},
+            "thread": {
+                "cliVersion": "synthetic-cli",
+                "createdAt": "2026-01-01T00:00:00Z",
+                "cwd": "/run/candidate",
+                "ephemeral": True,
+                "id": "SYNTHETIC_PRIVATE_THREAD",
+                "modelProvider": "synthetic-provider",
+                "preview": False,
+                "projectId": None,
+                "sessionId": "synthetic-session",
+                "source": "cli",
+                "status": "idle",
+                "turns": [],
+                "updatedAt": "2026-01-01T00:00:00Z",
+            },
             "instructionSources": ["/run/candidate/AGENTS.md"],
         }})
         self.assertEqual(summary, {
@@ -579,6 +605,19 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
                 "instructionSources": [],
             }})
 
+    def test_thread_summary_rejects_incomplete_thread_object(self):
+        with self.assertRaisesRegex(StartupDiagnosticError, "^thread-start-response-shape$"):
+            _thread_summary({"result": {
+                "approvalPolicy": "never",
+                "approvalsReviewer": "user",
+                "cwd": "/run/candidate",
+                "model": "synthetic-model",
+                "modelProvider": "synthetic-provider",
+                "sandbox": {"type": "workspaceWrite"},
+                "thread": {"id": "synthetic", "ephemeral": True},
+                "instructionSources": [],
+            }})
+
     def test_instruction_sources_are_limited_to_declared_remote_mounts(self):
         self.assertTrue(_instruction_sources_allowed([
             "/run/candidate/AGENTS.md", "file:///run/codex/skills/feynman-thinking/SKILL.md",
@@ -598,7 +637,21 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
                 "model": "synthetic-model",
                 "modelProvider": "synthetic-provider",
                 "sandbox": {"type": "workspaceWrite"},
-                "thread": {"id": "synthetic", "ephemeral": True},
+                "thread": {
+                    "cliVersion": "synthetic-cli",
+                    "createdAt": "2026-01-01T00:00:00Z",
+                    "cwd": "/run/candidate",
+                    "ephemeral": True,
+                    "id": "synthetic",
+                    "modelProvider": "synthetic-provider",
+                    "preview": False,
+                    "projectId": None,
+                    "sessionId": "synthetic-session",
+                    "source": "cli",
+                    "status": "idle",
+                    "turns": [],
+                    "updatedAt": "2026-01-01T00:00:00Z",
+                },
                 "instructionSources": ["/run/home/AGENTS.md"],
             }})
 
