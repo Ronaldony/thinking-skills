@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -21,6 +22,44 @@ from tooling.feynman_rpc_path_proxy import (
 
 
 class RpcPathProxyTests(unittest.TestCase):
+    def test_proxy_joins_parent_reader_when_child_stdout_ends_first(self):
+        reader_started = threading.Event()
+        reader_finished = threading.Event()
+        release_reader = threading.Event()
+
+        def delayed_parent_lines(_stop):
+            reader_started.set()
+            try:
+                release_reader.wait(timeout=0.5)
+            finally:
+                reader_finished.set()
+            if False:
+                yield b""
+
+        try:
+            with tempfile.TemporaryDirectory() as raw:
+                root = Path(raw)
+                telemetry = root / "telemetry.json"
+                with patch.object(
+                    proxy_module, "_parent_stdin_lines", side_effect=delayed_parent_lines
+                ):
+                    exit_code = proxy_module.run_proxy(
+                        sys.executable,
+                        ["-c", "import time,sys; time.sleep(0.1); sys.exit(7)",
+                         "-v", f"{root}:/run/candidate:rw"],
+                        telemetry,
+                    )
+                self.assertTrue(reader_started.wait(timeout=1))
+                self.assertTrue(reader_finished.is_set())
+                self.assertEqual(exit_code, 7)
+                self.assertEqual(
+                    json.loads(telemetry.read_text(encoding="utf-8"))["child_exit_code"],
+                    7,
+                )
+        finally:
+            release_reader.set()
+            reader_finished.wait(timeout=2)
+
     def test_proxy_drains_healthy_child_after_parent_stdin_closes(self):
         fixture = ROOT / "tests" / "feynman_subscription_lifecycle_fixture.py"
         proxy = ROOT / "tooling" / "feynman_rpc_path_proxy.py"
@@ -225,6 +264,23 @@ class RpcPathProxyTests(unittest.TestCase):
             "id": 7,
         })
         self.assertNotIn("C:\\", payload.decode("utf-8"))
+
+    def test_mapping_error_does_not_echo_non_scalar_request_id(self):
+        mapper = RpcPathMapper.from_mounts([
+            {"source": r"C:\DevWorks\candidate", "destination": "/run/candidate", "access": "rw"},
+        ])
+        raw = json.dumps({
+            "jsonrpc": "2.0", "id": {"private": "SYNTHETIC_PRIVATE_ID"},
+            "method": "fs/getMetadata",
+            "params": {"path": r"C:\DevWorks\candidate\..\private.txt"},
+        }).encode("utf-8")
+        child, error, reason, field = _map_request_payload_with_reason(mapper, raw)
+        self.assertIsNone(child)
+        self.assertIsNotNone(error)
+        self.assertEqual(reason, "host-path-traversal")
+        self.assertEqual(field, "path")
+        self.assertNotIn("SYNTHETIC_PRIVATE_ID", error.decode("utf-8"))
+        self.assertNotIn("id", json.loads(error))
 
     def test_mapping_rejection_returns_to_client_not_child(self):
         mapper = RpcPathMapper.from_mounts([

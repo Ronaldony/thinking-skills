@@ -379,13 +379,21 @@ def _probe_policy_from_env() -> tuple[int | None, frozenset[str] | None, str | N
     }), allowed_path
 
 
+def _safe_request_id(value: Any) -> str | int | None:
+    """Keep only JSON-RPC scalar IDs in a fixed proxy error response."""
+    if type(value) is int or type(value) is str:
+        return value
+    return None
+
+
 def _fixed_error(request_id: Any = None) -> bytes:
     response: dict[str, Any] = {
         "jsonrpc": "2.0",
         "error": {"code": PROXY_ERROR_CODE, "message": "RPC path mapping rejected"},
     }
-    if request_id is not None:
-        response["id"] = request_id
+    safe_id = _safe_request_id(request_id)
+    if safe_id is not None:
+        response["id"] = safe_id
     return (json.dumps(response, separators=(",", ":")) + "\n").encode("utf-8")
 
 
@@ -744,7 +752,7 @@ def run_proxy(
         _stop_proxy_child(child, cleanup_deadline)
     if response_thread.is_alive():
         response_thread.join(timeout=max(0.1, (cleanup_deadline or time.monotonic()) - time.monotonic()))
-    if request_thread.is_alive() and response_thread.is_alive():
+    if request_thread.is_alive():
         request_thread.join(timeout=max(0.1, (cleanup_deadline or time.monotonic()) - time.monotonic()))
     exit_code = child.poll()
     if exit_code is None:
