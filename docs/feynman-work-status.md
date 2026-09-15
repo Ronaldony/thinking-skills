@@ -1,17 +1,20 @@
 # feynman-thinking 작업 상태
 
-최신 재개 지점: [LOG-111](feynman-work-log/LOG-111-remote-proxy-cleanup-and-error-privacy-20260915.md).
-이번 단계의 model-free 코드 hardening commit은
-`0825cf832706bdbf2c39a3658f013c2527eafcb0`이다. response worker가 먼저 끝나는
-조건에서 살아 있는 parent stdin reader를 bounded cleanup 안에서 join하도록
-고쳤고, proxy fixed error가 object/list JSON-RPC request ID를 반사하지 않도록
-exact int/str scalar 경계를 추가했다. 전체 회귀는 `505 tests OK, 11 skipped`,
-schema 19개 `errors=0`, ResourceWarning 없음이다.
+최신 재개 지점: [LOG-112](feynman-work-log/LOG-112-remote-proxy-stderr-counters-20260915.md).
+이번 단계의 model-free proxy hardening commit은
+`13b02cfd2e260363fc48651a30e60d6c19013d56`이다. production child stderr를
+`DEVNULL`로 버리지 않고 EOF까지 drain하면서 원문 없이 bytes/nonempty/truncated/
+read_error/drained scalar만 telemetry에 기록하도록 고쳤고, cleanup·startup gate·
+smoke validator·remote differential·schema를 함께 갱신했다. 새 shape는
+`drained=true`, `read_error=false`일 때만 complete evidence로 승격하며 legacy v3
+shape은 읽을 수 있다. 전체 회귀는 `507 tests OK, 11 skipped`, schema 19개
+`errors=0`, ResourceWarning 없음이다.
 LOG-109의 실제 구독 startup 1회는 `initialize` 후
 `thread/start -32603 / remote-environment-error`로 차단됐고 새 증거 없이
 재실행하지 않았다. 이번 단계 actual ChatGPT startup/model 실행은 0회다.
-`.tmp/`, PNG 2개, `LOG-099`와 로그인 홈은 보존 중이다. production proxy child
-stderr는 여전히 DEVNULL이므로 실제 startup 하위 원인은 미확정으로 유지한다.
+`.tmp/`, PNG 2개, `LOG-099`와 로그인 홈은 보존 중이다. bounded counters는
+추가됐지만 child stderr 원문과 App Server 내부 `thread/start` 원인은 여전히
+미확정으로 유지한다.
 
 이전 실행 기록: [LOG-107](feynman-work-log/LOG-107-final-docker-path-gate-receipt-20260914.md).
 그 이전 실행 기록: [LOG-106](feynman-work-log/LOG-106-docker-path-gate-commit-push-receipt-20260914.md).
