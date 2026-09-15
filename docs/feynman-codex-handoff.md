@@ -1,6 +1,6 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-113](feynman-work-log/LOG-113-docker-access-block-and-startup-response-shape-20260915.md).
+> 최신: [LOG-114](feynman-work-log/LOG-114-docker-engine-not-ready-after-backend-process-20260915.md).
 > 이번 단계의 model-free startup response hardening commit은 `bb2d618`이다. Codex
 > 0.154.0 static `ThreadStartResponse` required top-level fields를 fail-closed로
 > 검사하고 synthetic fixture/test를 갱신했다. 수정 전 incomplete success response가
@@ -10,9 +10,11 @@
 > `thread/start -32603 / remote-environment-error`로 차단됐고 새 증거 없이
 > 재실행하지 않았다. 이번 단계의 actual ChatGPT startup/model 실행은 0회다.
 > `.tmp/`, PNG 2개, `LOG-099`, evaluator 증거와 로그인 홈을 보존한다.
-> LOG-112의 새 Docker differential 재검증은 backend 부재로 `docker-access`에서
-> 중단되어 재시도하지 않았다. child stderr 원문은 의도적으로 보존하지 않으므로 실제
-> startup 하위 원인은 여전히 미확정이다. LOG-109 이전 문단은 역사 기록으로 유지한다.
+> LOG-112의 새 Docker differential 재검증은 backend process가 보였지만
+> `docker info/version`이 exit 1이어서 `docker-access`에서 중단됐다. 15초 bounded wait
+> 뒤에도 회복되지 않아 재시도하지 않았다. child stderr 원문은 의도적으로 보존하지
+> 않으므로 실제 startup 하위 원인은 여전히 미확정이다. LOG-109 이전 문단은 역사
+> 기록으로 유지한다.
 >
 > 이전 실행 기록: [LOG-107](feynman-work-log/LOG-107-final-docker-path-gate-receipt-20260914.md).
 >
