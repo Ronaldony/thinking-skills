@@ -169,7 +169,7 @@ commit은 현재 feature branch에만 일반 push하고, main/force push는 하�
 
 저장소: `C:\DevWorks\thinking-skills`
 브랜치: `feat/feynman-thinking-v0.5-draft`
-현재 기준 HEAD/origin: `04164bc58a5ca1cce1339b7f1823e83416034df7`
+현재 기준 HEAD/origin: `51ec15286487fd9bd7488319e39bb657c03ce522`
 
 먼저 현재 HEAD, tracked/untracked 변경, 적용 가능한 AGENTS.md, Codex 0.154.0 실행 경로를 확인해줘. 다음 자료를 순서대로 읽어줘.
 
