@@ -1,11 +1,12 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 최신 재개 지점은
-> `docs/feynman-work-log/LOG-114-docker-engine-not-ready-after-backend-process-20260915.md`다.
-> 이번 단계의 model-free startup response hardening commit은 `bb2d618`이다.
-> Codex 0.154.0 static `ThreadStartResponse` required top-level fields를 fail-closed로
-> 검사하고 synthetic fixture를 갱신했다. 수정 전 incomplete success response가 green으로
-> 통과하는 실패를 재현했다. targeted `109 tests OK`, 전체 `508 tests OK, 11 skipped`,
+> `docs/feynman-work-log/LOG-115-nested-thread-response-shape-20260915.md`다.
+> 이번 단계의 model-free startup response hardening commit은 `eb96b30`이다.
+> Codex 0.154.0 static `ThreadStartResponse` required top-level과 nested `thread`
+> fields를 fail-closed로 검사하고 synthetic fixture를 갱신했다. 수정 전 nested
+> incomplete success response가 green으로 통과하는 실패를 재현했다. targeted
+> `110 tests OK`, 전체 `509 tests OK, 11 skipped`,
 > schema 19개 errors=0, ResourceWarning 없음이다.
 > LOG-109의 실제 구독 startup 1회는 `initialize` 후
 > `thread/start -32603 / remote-environment-error`로 차단됐고 새 증거 없이

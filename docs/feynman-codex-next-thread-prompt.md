@@ -12,14 +12,14 @@ Feynman-thinking 작업을 안전하게 재개하기 위한 자료 목록과 붙
 - 원격: `Ronaldony/thinking-skills`
 - 작업 브랜치: `feat/feynman-thinking-v0.5-draft`
 - 최신 model-free startup response hardening 코드 commit:
-  `bb2d618`
+  `eb96b30`
 - 최신 상세 영수증:
-  `docs/feynman-work-log/LOG-114-docker-engine-not-ready-after-backend-process-20260915.md`
+  `docs/feynman-work-log/LOG-115-nested-thread-response-shape-20260915.md`
 - 이 단계의 문서 receipt와 feature branch push 결과는 git log/status로 다시 확인한다.
 - main 병합과 force push: 하지 않음
 - 적용되는 `AGENTS.md`: 이 작업 기준에서 발견되지 않음. 새 스레드에서 다시 확인한다.
 
-현재 코드 변경은 `13b02cf`에 기록되어 있다. 다음 항목은 기존 사용자 작업·증거이므로
+현재 코드 변경은 `eb96b30`에 기록되어 있다. 다음 항목은 기존 사용자 작업·증거이므로
 untracked 상태를 유지하고 stage하거나 삭제하지 않는다.
 
 - `C:\DevWorks\thinking-skills\.tmp\`
@@ -28,12 +28,13 @@ untracked 상태를 유지하고 stage하거나 삭제하지 않는다.
 - `C:\DevWorks\thinking-skills\docs\feynman-work-log\LOG-099-autonomous-work-strategy-20260914.md`
 - 기존 평가 전용 로그인 홈과 evaluator-owned 자료
 
-## LOG-114 최신 checkpoint
+## LOG-115 최신 checkpoint
 
-- Codex 0.1540 static `ThreadStartResponse` required top-level fields를 startup
-  diagnostic이 fail-closed로 검사하도록 최소 수정했다. 수정 전 incomplete synthetic
-  success response가 green으로 통과하는 실패를 재현하고 fixture/test를 갱신했다.
-- targeted `109 tests OK`, 전체 회귀 `508 tests OK, 11 skipped`, schema `19개
+- Codex 0.1540 static `ThreadStartResponse` required top-level과 nested `thread`
+  fields를 startup diagnostic이 fail-closed로 검사하도록 최소 수정했다. 수정 전
+  nested incomplete synthetic success response가 green으로 통과하는 실패를 재현하고
+  fixture/test를 갱신했다.
+- targeted `110 tests OK`, 전체 회귀 `509 tests OK, 11 skipped`, schema `19개
   errors=0`, ResourceWarning 없음이다.
 - Docker backend process는 responding 상태였지만 empty/default config의 `docker info`
   와 `docker version`이 모두 exit 1이었다. 15초 bounded wait 뒤에도 새 `-06`
@@ -82,7 +83,7 @@ untracked 상태를 유지하고 stage하거나 삭제하지 않는다.
    cleanup이 최종 실행에서 모두 통과했다.
 2. 진단 fixture를 실행한 최종 결과는
    `verdict=remote-child-differential-ready`, `failure_stage=null`이다.
-3. 전체 회귀는 `508 tests OK, 11 skipped`였고, `ResourceWarning`은 없었다. schema
+3. 전체 회귀는 `509 tests OK, 11 skipped`였고, `ResourceWarning`은 없었다. schema
    검증은 `19개, errors=0`이었다.
 4. `clientInfo`를 보낸 standalone child probe는 `-32602`를 반환했지만, 설치된
    child 계약에 맞는 `clientName` probe는 direct/proxy 모두 정상 initialize했다.
@@ -94,7 +95,7 @@ untracked 상태를 유지하고 stage하거나 삭제하지 않는다.
    remote-environment-error`로 실패했고, child는 exit 1·응답 없음·model 0·cleanup
    미확인 상태였다. 이 실행을 성공으로 해석하거나 새 증거 없이 반복하지 않는다.
 7. production path proxy는 child stderr를 EOF까지 drain하고 원문 없이 bounded
-   counters만 남긴다. 최신 Docker differential 재검증은 backend 부재로
+   counters만 남긴다. 최신 Docker differential 재검증은 Engine readiness 실패로
    `docker-access`에서 중단되어 새 counters의 실제 Docker report 검증은 대기 중이다.
 
 ## 재개 시 지켜야 할 경계
@@ -174,31 +175,32 @@ commit은 현재 feature branch에만 일반 push하고, main/force push는 하�
 브랜치: `feat/feynman-thinking-v0.5-draft`
 현재 기준 HEAD/origin: 새 스레드에서 `git rev-parse HEAD`와
 `git rev-parse origin/feat/feynman-thinking-v0.5-draft`로 다시 확인한다.
-마지막 구현 commit은 `bb2d618`이다.
+마지막 구현 commit은 `eb96b30`이다.
 
 먼저 현재 HEAD, tracked/untracked 변경, 적용 가능한 AGENTS.md, Codex 0.154.0 실행 경로를 확인해줘. 다음 자료를 순서대로 읽어줘.
 
 1. `docs/feynman-codex-resume-prompt.md`
 2. `docs/feynman-codex-handoff.md`
 3. `docs/feynman-work-status.md`
-4. `docs/feynman-work-log/LOG-114-docker-engine-not-ready-after-backend-process-20260915.md`
-5. `docs/feynman-work-log/LOG-113-docker-access-block-and-startup-response-shape-20260915.md`
-6. `docs/feynman-work-log/LOG-112-remote-proxy-stderr-counters-20260915.md`
-7. `docs/feynman-work-log/LOG-111-remote-proxy-cleanup-and-error-privacy-20260915.md`
-8. `docs/feynman-work-log/LOG-110-model-free-remote-child-differential-20260915.md`
-9. `LOG-109` startup diagnostic log
-10. `tooling/feynman_remote_child_diagnostic.py`
-11. `tooling/feynman_remote_exec_environment.py`
-12. `tooling/feynman_rpc_path_proxy.py`
-13. `tooling/feynman_subscription_startup_diagnostic.py`
-14. `tooling/feynman_subscription_smoke_exec.py`
-15. `evals/feynman-thinking/remote-child-differential.schema.json`
-16. 관련 회귀 테스트
+4. `docs/feynman-work-log/LOG-115-nested-thread-response-shape-20260915.md`
+5. `docs/feynman-work-log/LOG-114-docker-engine-not-ready-after-backend-process-20260915.md`
+6. `docs/feynman-work-log/LOG-113-docker-access-block-and-startup-response-shape-20260915.md`
+7. `docs/feynman-work-log/LOG-112-remote-proxy-stderr-counters-20260915.md`
+8. `docs/feynman-work-log/LOG-111-remote-proxy-cleanup-and-error-privacy-20260915.md`
+9. `docs/feynman-work-log/LOG-110-model-free-remote-child-differential-20260915.md`
+10. `LOG-109` startup diagnostic log
+11. `tooling/feynman_remote_child_diagnostic.py`
+12. `tooling/feynman_remote_exec_environment.py`
+13. `tooling/feynman_rpc_path_proxy.py`
+14. `tooling/feynman_subscription_startup_diagnostic.py`
+15. `tooling/feynman_subscription_smoke_exec.py`
+16. `evals/feynman-thinking/remote-child-differential.schema.json`
+17. 관련 회귀 테스트
 
 현재 사실:
 - model-free remote-child differential 최종 결과는 `remote-child-differential-ready`다.
 - Docker access/image/create/start, 네 native mount, direct/proxy child initialize, v3 telemetry/correlation, cleanup은 통과했다.
-- 전체 회귀는 `508 OK, 11 skipped`, schema는 `19개 errors=0`, ResourceWarning은 없다.
+- 전체 회귀는 `509 OK, 11 skipped`, schema는 `19개 errors=0`, ResourceWarning은 없다.
 - 과거 LOG-109의 보호된 실제 ChatGPT startup은 1회뿐이며 `initialize` 성공 뒤 `thread/start -32603 / remote-environment-error`, child exit1/no response/model0/cleanup 미확인이었다.
 - 새 fixture는 App Server의 실제 내부 initialize/environment envelope이나 `thread/start`를 검증하지 않는다.
 - production proxy는 child stderr를 EOF까지 drain하고 raw text 없이 bounded counters만
@@ -217,7 +219,7 @@ commit은 현재 feature branch에만 일반 push하고, main/force push는 하�
 - main merge, force push, broad Docker prune, Docker Desktop 전체 종료를 하지 말 것.
 
 작업 순서:
-1. 현재 코드와 LOG-109/110/111/112/113/114를 대조해 이미 해결된 항목은 회귀로만 확인한다.
+1. 현재 코드와 LOG-109/110/111/112/113/114/115를 대조해 이미 해결된 항목은 회귀로만 확인한다.
 2. App Server 실제 child argv/protocol 경계와 fixture의 차이, `clientName`/`clientInfo`,
    bounded stderr evidence, cleanup/evidence 결속을 model-free 방식으로 조사한다.
 3. 결함이 재현되면 결함 재현 → 최소 수정 → 수정 전 실패/수정 후 통과 회귀 → 관련 통합 경계 시험 → 상세 로그 순서로 처리한다.

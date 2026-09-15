@@ -1,12 +1,12 @@
 # feynman-thinking 작업 상태
 
-최신 재개 지점: [LOG-114](feynman-work-log/LOG-114-docker-engine-not-ready-after-backend-process-20260915.md).
+최신 재개 지점: [LOG-115](feynman-work-log/LOG-115-nested-thread-response-shape-20260915.md).
 이번 단계의 model-free startup response hardening commit은
-`bb2d618`이다. Codex 0.154.0 App Server schema의 `thread/start` 성공 응답 required
-top-level fields를 fail-closed로 검사하고, synthetic fixture를 schema-complete 최소
-응답으로 갱신했다. 수정 전 누락 response가 green으로 통과하는 실패를 재현했고,
-수정 후 targeted `109 tests OK`, 전체 `508 tests OK, 11 skipped`, schema 19개
-`errors=0`, ResourceWarning 없음이다.
+`eb96b30`이다. Codex 0.154.0 App Server schema의 `thread/start` 성공 응답
+top-level과 nested `thread` required fields를 fail-closed로 검사하고, synthetic
+fixture를 schema-complete 최소 응답으로 갱신했다. 수정 전 nested 필드 누락 response가
+green으로 통과하는 실패를 재현했고, 수정 후 targeted `110 tests OK`, 전체 `509 tests
+OK, 11 skipped`, schema 19개 `errors=0`, ResourceWarning 없음이다.
 Docker backend process는 responding 상태로 관찰됐지만 empty/default config의
 `docker info`와 `docker version`이 모두 exit 1이었다. 15초 bounded wait 뒤에도
 Docker Engine readiness가 회복되지 않아 새 `-06` differential은 `docker-access`에서
