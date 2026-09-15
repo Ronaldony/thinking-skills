@@ -1,20 +1,19 @@
 # feynman-thinking 작업 상태
 
-최신 재개 지점: [LOG-109](feynman-work-log/LOG-109-approved-subscription-startup-diagnostic-20260915.md).
-code 기준은 이 작업 시작 시 `f7e9efdd61ee67f9df98cd509f54d925bcb0bd31`이며,
-현재 문서 pointer 갱신으로 생기는 후속 documentation SHA와 구분한다. LOG-107은
-역사 기록으로 보존한다. 이번 단계에서 비밀 없는 immutable execution spec을
-추가하고 canonical executor가 control-plane/auth/model 경계마다 입력 drift를
-fail-closed하도록 연결했다. 실제 startup 함수를 호출하는 합성 경계 회귀와
-300초 model timeout 전달 회귀를 포함해 변경 영역 `133 tests OK, 2 skipped`,
-전체 `489 tests OK, 11 skipped`, schema 18개 `errors=0`, ResourceWarning 없음이다.
-현재 checkpoint는 `subscription-checkpoint-valid`, 실제 canonical structural
-preflight와 isolated model-free wiring preparation도 통과했다. 승인된 실제 startup
-diagnostic은 정확히 1회 실행했으며 `initialize`까지 통과했지만 `thread/start`가
-`-32603 / remote-environment-error`로 차단됐다. 모델 요청은 0회이며 report
-schema v3와 payload-free telemetry를 검증했다. `cleanup_verified=false`이므로
-startup 성공으로 승격하지 않는다. 실제 model smoke·baseline/evaluation은 아직
-없다. `.tmp/`, PNG 2개, `LOG-099`와 로그인 홈은 보존 중이다.
+최신 재개 지점: [LOG-110](feynman-work-log/LOG-110-model-free-remote-child-differential-20260915.md).
+code 기준은 이 단계 시작 시 `c7a0820b594bcb8820636319c6cc04a20c0c1788`이며,
+현재 변경은 아직 commit 전이다. LOG-109의 실제 구독 startup 1회는
+`initialize` 후 `thread/start -32603 / remote-environment-error`로 차단됐고,
+이번 단계에서는 재실행하지 않았다. 대신 새 model-free differential fixture가
+고정 image의 Docker access/image identity, 네 native mount, create/start,
+direct remote exec-server initialize, Windows path proxy initialize와 cleanup을
+모두 통과했다. 최종 report는 외부 TEMP에 보존했고 report schema v1과 proxy
+telemetry v3를 검증했다. 이는 App Server `thread/start` 성공이나 모델 실행
+성공이 아니다. 실제 auth/model/smoke/baseline/evaluation은 0회다.
+최종 회귀는 `503 tests OK, 11 skipped`, schema 19개 `errors=0`,
+ResourceWarning 없음이다. `.tmp/`, PNG 2개, `LOG-099`와 로그인 홈은 보존 중이다.
+production proxy child stderr는 여전히 DEVNULL이므로 실제 startup 하위 원인은
+미확정으로 유지한다.
 
 이전 실행 기록: [LOG-107](feynman-work-log/LOG-107-final-docker-path-gate-receipt-20260914.md).
 그 이전 실행 기록: [LOG-106](feynman-work-log/LOG-106-docker-path-gate-commit-push-receipt-20260914.md).

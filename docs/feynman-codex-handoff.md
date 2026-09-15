@@ -1,15 +1,18 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-109](feynman-work-log/LOG-109-approved-subscription-startup-diagnostic-20260915.md).
-> code 기준(작업 시작)은 `f7e9efdd61ee67f9df98cd509f54d925bcb0bd31`이다. 현재
-> 문서 갱신으로 생성되는 후속 documentation SHA와 code 기준 SHA를 혼동하지
-> 않는다. immutable execution spec과 실제 startup validator 연결 회귀를 추가했고
-> 변경 영역 `133 tests OK, 2 skipped`, 전체 `489 tests OK, 11 skipped`, schema 18개
-> errors=0, ResourceWarning 없음이다. checkpoint/structural preflight와 isolated
-> model-free wiring preparation은 통과했다. 승인된 실제 startup diagnostic은 1회
-> 실행했으며 initialize는 통과했지만 `thread/start -32603`으로 차단됐다. 모델 turn은
-> 0회다. `.tmp/`, PNG 2개, `LOG-099`, evaluator 증거와 로그인 홈은 보존 중이다.
-> LOG-107은 역사 기록으로 유지한다.
+> 최신: [LOG-110](feynman-work-log/LOG-110-model-free-remote-child-differential-20260915.md).
+> 이 단계 시작 HEAD는 `c7a0820b594bcb8820636319c6cc04a20c0c1788`이며 현재
+> code/schema/test/pointer 변경은 아직 commit 전이다. LOG-109의 실제 구독 startup
+> 1회는 `initialize` 후 `thread/start -32603 / remote-environment-error`로
+> 차단됐고 이번 단계에서는 재실행하지 않았다. 새 model-free fixture는 pinned
+> Docker image, 네 native mount, create/start, direct remote exec-server
+> `clientName` initialize, path proxy initialize, v3 telemetry/correlation,
+> cleanup을 모두 통과했다. 이는 App Server `thread/start` 성공이나 모델 실행
+> 성공이 아니다. 최종 회귀는 `503 tests OK, 11 skipped`, schema 19개 errors=0,
+> ResourceWarning 없음이다. 외부 TEMP report를 보존했고 `.tmp/`, PNG 2개,
+> `LOG-099`, evaluator 증거와 로그인 홈을 보존한다. production proxy child stderr는
+> 여전히 DEVNULL이므로 실제 startup 하위 원인은 미확정이다. LOG-109 이전 문단은
+> 역사 기록으로 유지한다.
 >
 > 이전 실행 기록: [LOG-107](feynman-work-log/LOG-107-final-docker-path-gate-receipt-20260914.md).
 >
