@@ -988,6 +988,55 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
     )
     full_runner_override = full_runner_wiring["full_runner_override"]
 
+    # Freeze the complete non-secret execution contract after model-free
+    # wiring preparation.  The artifact is evaluator-owned and is rechecked
+    # before control-plane/auth/model boundaries, so a stale report or a
+    # changed input cannot be promoted by the later stages.
+    try:
+        from .feynman_subscription_execution_spec import (
+            assert_execution_spec_current, build_execution_spec,
+            load_execution_spec, write_execution_spec,
+        )
+    except ImportError:
+        from feynman_subscription_execution_spec import (
+            assert_execution_spec_current, build_execution_spec,
+            load_execution_spec, write_execution_spec,
+        )
+    spec_path = output / "execution-spec.json"
+    execution_spec = build_execution_spec(
+        plan_path=plan_path, smoke_spec_path=smoke_spec_path,
+        evaluator_case_path=evaluator_case_path, runner_job_path=runner_job_path,
+        boundary_profile_path=boundary_profile_path,
+        remote_environment_path=remote_environment_path,
+        binding_path=full_runner_binding_path, codex_bin=Path(_resolve_executable(codex_bin)),
+        node_bin=full_runner_node_bin, adapter=full_runner_adapter,
+        docker_bin=full_runner_docker_bin, docker_config=full_runner_docker_config,
+        docker_image_id=full_runner_image_id, candidate_dir=candidate_dir,
+        evaluator_dir=evaluator_dir, control_home=control_home, output_dir=output,
+        job=job, preparation_fingerprint=full_runner_wiring["preparation_fingerprint"],
+        preflight=preflight,
+    )
+    write_execution_spec(spec_path, execution_spec)
+    execution_spec = load_execution_spec(spec_path)
+
+    def assert_frozen_inputs() -> None:
+        assert_execution_spec_current(
+            execution_spec,
+            plan_path=plan_path, smoke_spec_path=smoke_spec_path,
+            evaluator_case_path=evaluator_case_path, runner_job_path=runner_job_path,
+            boundary_profile_path=boundary_profile_path,
+            remote_environment_path=remote_environment_path,
+            binding_path=full_runner_binding_path,
+            codex_bin=Path(_resolve_executable(codex_bin)),
+            node_bin=full_runner_node_bin, adapter=full_runner_adapter,
+            docker_bin=full_runner_docker_bin, docker_config=full_runner_docker_config,
+            docker_image_id=full_runner_image_id, candidate_dir=candidate_dir,
+            evaluator_dir=evaluator_dir, control_home=control_home,
+            output_dir=output, job=job, preflight=preflight,
+        )
+
+    assert_frozen_inputs()
+
     # This must run before the auth gate and any model-facing command.  It
     # verifies that the actual protected control home can hand off to its
     # selected remote environment with the exact transient full-runner and
@@ -1010,6 +1059,7 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
         )
     if control_plane.get("verdict") != "subscription-control-plane-ready":
         raise ValueError("subscription control-plane preflight did not pass")
+    assert_frozen_inputs()
     # The model-facing executor must consume a fresh startup result for the
     # same job, binding, image, and control home.  A previous model-free report
     # cannot be replayed as evidence for this process.
@@ -1041,12 +1091,14 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
         raise ValueError("startup gate report does not match returned startup evidence")
     startup_telemetry = _regular(startup_telemetry_path, "startup gate telemetry")
     startup_report = _regular(startup_report_path, "startup gate report")
+    assert_frozen_inputs()
     auth = check_auth(control_home, codex_bin=codex_bin, timeout_seconds=min(timeout_seconds, 120))
     if auth.get("verdict") != "chatgpt-subscription-authenticated":
         raise ValueError("ChatGPT subscription auth gate did not pass")
 
     if versions.get("codex_cli") != auth.get("codex_cli"):
         raise ValueError("runner-job Codex version differs from authenticated control Codex")
+    assert_frozen_inputs()
 
     trace_path = output / "codex-trace.jsonl"
     final_path = output / "candidate-final.txt"
@@ -1126,6 +1178,12 @@ def execute_smoke_job(*, plan_path: Path, smoke_spec_path: Path, ordinal: int, e
                     "report_sha256": _sha(startup_report),
                     "telemetry_sha256": _sha(startup_telemetry),
                 },
+            },
+            "execution_spec": {
+                "verdict": execution_spec["verdict"],
+                "preparation_fingerprint": execution_spec["wiring"]["preparation_fingerprint"],
+                "artifact": "execution-spec.json",
+                "artifact_sha256": _sha(spec_path),
             },
             "conversation": {
                 "thread_id": trace["thread_id"],

@@ -1,14 +1,17 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 최신 재개 지점은
-> `docs/feynman-work-log/LOG-107-final-docker-path-gate-receipt-20260914.md`다.
-> Docker runtime probe가 `docker-runtime-ready`, direct/proxy path contract가
-> `rpc-path-contract-equivalent`로 통과했다. 최종 HEAD는 `18026ce`이며 feature
-> branch에 push됐다. 전체 unit은 `486 tests OK, 11 skipped`, schema 17개 errors=0,
-> ResourceWarning 없음이다. 실제 구독 auth/startup·Luna model smoke는 0회이며
-> `.tmp/`, PNG 2개, `LOG-099`는 보존 중이다.
+> `docs/feynman-work-log/LOG-108-next-01-03-execution-spec-and-boundary-preflight-20260915.md`다.
+> code 기준(작업 시작)은
+> `f7e9efdd61ee67f9df98cd509f54d925bcb0bd31`이며, 문서 갱신 commit과 별도다.
+> immutable execution spec, evaluator-owned spec artifact, startup validator 연결,
+> input drift fail-closed를 구현했다. 변경 영역은 `133 tests OK, 2 skipped`, 전체는
+> `489 tests OK, 11 skipped`, schema 18개 errors=0, ResourceWarning 없음이다.
+> checkpoint/structural preflight/isolated model-free wiring preparation은 통과했지만
+> 실제 구독 auth/startup·model smoke는 0회다. `.tmp/`, PNG 2개, `LOG-099`, 기존
+> evaluator 증거와 로그인 홈을 보존한다. LOG-107은 역사 기록으로만 읽는다.
 > 이전 실행 기록은
-> `docs/feynman-work-log/LOG-106-docker-path-gate-commit-push-receipt-20260914.md`다.
+> `docs/feynman-work-log/LOG-107-final-docker-path-gate-receipt-20260914.md`다.
 > 구현 상세는
 > `docs/feynman-work-log/LOG-103-required-fix-report-implementation-20260914.md`다.
 > 필수 FIX-01~07을 현재 코드와 대조해 evaluator-owned startup artifact,

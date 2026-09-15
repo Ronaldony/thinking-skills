@@ -81,6 +81,17 @@
       },
       "required": ["verdict", "model_generation_requests_sent", "preparation_fingerprint", "artifacts"]
     },
+    "execution_spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "verdict": {"const": "subscription-execution-spec-frozen"},
+        "preparation_fingerprint": {"$ref": "#/$defs/sha256"},
+        "artifact": {"const": "execution-spec.json"},
+        "artifact_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "required": ["verdict", "preparation_fingerprint", "artifact", "artifact_sha256"]
+    },
     "conversation": {
       "type": "object",
       "additionalProperties": false,
@@ -136,7 +147,7 @@
     "limitations": {"type": "array", "minItems": 4, "items": {"type": "string", "minLength": 1}},
     "scope": {"type": "string", "minLength": 1}
   },
-  "required": ["schema_version", "verdict", "run_id", "job", "versions", "authentication", "execution_controls", "startup_gate", "conversation", "candidate_tool_activity", "usage", "digests", "privacy", "limitations", "scope"],
+  "required": ["schema_version", "verdict", "run_id", "job", "versions", "authentication", "execution_controls", "startup_gate", "execution_spec", "conversation", "candidate_tool_activity", "usage", "digests", "privacy", "limitations", "scope"],
   "$defs": {
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
   }

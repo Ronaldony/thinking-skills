@@ -1,22 +1,22 @@
 # feynman-thinking 작업 상태
 
-최신 재개 지점: [LOG-107](feynman-work-log/LOG-107-final-docker-path-gate-receipt-20260914.md).
-Docker runtime probe가 `docker-runtime-ready`, direct/proxy path contract가
-`rpc-path-contract-equivalent`로 통과했다. 최종 HEAD는 `18026ce`이며 feature
-branch에 push됐다. 전체 unit은 `486 tests OK, 11 skipped`, schema 17개 errors=0,
-ResourceWarning 없음이다. 실제 구독 auth/startup·Luna model smoke는 0회이며,
-`.tmp/`, PNG 2개, `LOG-099`는 보존 중이다.
-필수 결함 리포트의 FIX-01~07을 현재 코드와 대조해 evaluator-owned startup artifact,
-deadline/cleanup, telemetry/evidence completeness, path false-equality, 준비/진단/본실행
-fingerprint 결속, 기본 unit의 Docker/Codex opt-in을 수정하고 합성 회귀를 통과시켰다.
-변경 영역은 `130 tests OK, 1 skipped`, 전체는 `479 tests OK, 11 skipped`, schema 17개
-errors=0, ResourceWarning 없음이다. skip은 호환성 성공으로 세지 않는다.
-실제 Docker lifecycle, ChatGPT 구독 auth/startup, Luna model smoke는 이번 묶음에서
-실행하지 않았다. Docker create/run blocker와 과거 `thread/start -32603`은 별도
-외부 차단으로 유지되며, 실제 startup은 최신 승인과 선행 조건 뒤에만 판단한다.
+최신 재개 지점: [LOG-108](feynman-work-log/LOG-108-next-01-03-execution-spec-and-boundary-preflight-20260915.md).
+code 기준은 이 작업 시작 시 `f7e9efdd61ee67f9df98cd509f54d925bcb0bd31`이며,
+현재 문서 pointer 갱신으로 생기는 후속 documentation SHA와 구분한다. LOG-107은
+역사 기록으로 보존한다. 이번 단계에서 비밀 없는 immutable execution spec을
+추가하고 canonical executor가 control-plane/auth/model 경계마다 입력 drift를
+fail-closed하도록 연결했다. 실제 startup 함수를 호출하는 합성 경계 회귀와
+300초 model timeout 전달 회귀를 포함해 변경 영역 `133 tests OK, 2 skipped`,
+전체 `489 tests OK, 11 skipped`, schema 18개 `errors=0`, ResourceWarning 없음이다.
+현재 checkpoint는 `subscription-checkpoint-valid`, 실제 canonical structural
+preflight와 isolated model-free wiring preparation도 통과했다. 실제 구독
+auth/startup/thread, model smoke, baseline/evaluation은 0회다. `.tmp/`, PNG 2개,
+`LOG-099`는 보존 중이다. Docker/path offline gate 통과와 실제 구독 startup
+호환성은 별도 증거이며, 과거 `thread/start -32603`도 별도 외부 계약 차단으로
+유지한다.
 
-이전 실행 기록: [LOG-106](feynman-work-log/LOG-106-docker-path-gate-commit-push-receipt-20260914.md).
-그 이전 실행 기록: [LOG-105](feynman-work-log/LOG-105-docker-runtime-and-path-contract-recovery-20260914.md).
+이전 실행 기록: [LOG-107](feynman-work-log/LOG-107-final-docker-path-gate-receipt-20260914.md).
+그 이전 실행 기록: [LOG-106](feynman-work-log/LOG-106-docker-path-gate-commit-push-receipt-20260914.md).
 그 이전 실행 기록: [LOG-104](feynman-work-log/LOG-104-required-fix-commit-push-receipt-20260914.md).
 이전 구현 기록: [LOG-103](feynman-work-log/LOG-103-required-fix-report-implementation-20260914.md).
 이전 최신 기록: [LOG-102](feynman-work-log/LOG-102-checkpoint-refresh-and-docker-lifecycle-blocker-20260914.md).

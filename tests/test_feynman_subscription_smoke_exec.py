@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 from contextlib import ExitStack
@@ -10,9 +11,12 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import jsonschema
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from tooling import feynman_subscription_smoke_exec as executor
+from tooling import feynman_subscription_startup_diagnostic as startup_module
 from tooling.feynman_rpc_path_proxy import _ProxyTelemetry
 
 CONFIG_TEXT = executor.CONFIG_TEXT
@@ -27,7 +31,10 @@ def fake_auth(control_home: Path, codex_bin: str = "codex", timeout_seconds: int
 
 def fake_preflight(**kwargs):
     PREFLIGHT_CALLS.append(kwargs)
-    return {"verdict": "ready-for-local-chatgpt-session-check"}
+    return {
+        "verdict": "ready-for-local-chatgpt-session-check",
+        "preflight": {"candidate_skill_preflight_valid": True},
+    }
 
 
 def sha(path: Path) -> str:
@@ -195,7 +202,9 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
         self.control_call = kwargs
         return {"verdict": "subscription-control-plane-ready"}
 
-    def _run(self, *, with_full_runner=True, startup_runner=None, **overrides):
+    def _run(self, *, with_full_runner=True, startup_runner=None,
+             control_runner=None, real_startup=False, prepared_wiring=None,
+             **overrides):
         kwargs = dict(plan_path=self.plan, smoke_spec_path=self.smoke_spec, ordinal=1, evaluator_case_path=self.eval_case,
                       runner_job_path=self.job, boundary_profile_path=self.profile, remote_environment_path=self.remote,
                       output_dir=self.evaluator / "exec-1", codex_bin=str(self.codex), timeout_seconds=60)
@@ -211,29 +220,105 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
         kwargs.update(overrides)
         with ExitStack() as stack:
             if with_full_runner:
+                prepared = prepared_wiring or {
+                    "full_runner_override": object(),
+                    "all_config_overrides": (),
+                    "skill_config_overrides": (),
+                    "command": executor.build_codex_exec_command(
+                        executable=str(self.codex), model="gpt-test",
+                        candidate_dir=self.candidate,
+                    ),
+                    "app_server": {},
+                    "preparation_fingerprint": "a" * 64,
+                }
                 stack.enter_context(patch.object(
                     executor, "prepare_full_runner_executor_wiring",
-                    return_value={
-                        "full_runner_override": object(),
-                        "all_config_overrides": (),
-                        "skill_config_overrides": (),
-                        "command": executor.build_codex_exec_command(
-                            executable=str(self.codex), model="gpt-test",
-                            candidate_dir=self.candidate,
-                        ),
-                        "app_server": {},
-                        "preparation_fingerprint": "a" * 64,
-                    },
+                    return_value=prepared,
                 ))
                 stack.enter_context(patch(
                     "tooling.feynman_subscription_control_plane_preflight.run",
-                    side_effect=self._fake_control,
+                    side_effect=control_runner or self._fake_control,
                 ))
-                stack.enter_context(patch(
-                    "tooling.feynman_subscription_startup_diagnostic.run",
-                    side_effect=startup_runner or self._fake_startup,
-                ))
+                if real_startup:
+                    stack.enter_context(patch.object(
+                        startup_module, "validate_checkpoint", return_value={}))
+                    stack.enter_context(patch.object(
+                        startup_module, "validate_files",
+                        return_value={"verdict": "remote-exec-environment-valid"}))
+                    stack.enter_context(patch.object(
+                        startup_module, "_validate_control_files",
+                        return_value=(self.control, self.remote)))
+
+                    telemetry = _ProxyTelemetry().snapshot()
+                    telemetry.update({
+                        "request_methods": {"initialize": 1, "thread/start": 1},
+                        "requests_seen": 2, "requests_forwarded": 2,
+                        "responses_seen": 2, "responses_forwarded": 2,
+                        "responses_matched": 2, "child_exit_code": 0,
+                    })
+
+                    class FakeAppServerProcess:
+                        def __init__(self, env):
+                            self.stdin = io.BytesIO()
+                            self.stdout = io.BytesIO(
+                                b'{"id":1,"result":{}}\n'
+                                b'{"id":2,"result":{"thread":{"id":"synthetic",'
+                                b'"ephemeral":true},"instructionSources":['
+                                b'"/run/candidate/AGENTS.md"]}}\n')
+                            self.stderr = io.BytesIO()
+                            self.returncode = None
+                            Path(env[startup_module.TELEMETRY_OVERRIDE_ENV]).write_text(
+                                json.dumps(telemetry), encoding="utf-8")
+
+                        def wait(self, timeout=None):
+                            self.returncode = 0
+                            return 0
+
+                        def poll(self):
+                            return self.returncode
+
+                    real_popen = startup_module.subprocess.Popen
+
+                    def fake_app_server_or_real_process(command, *args, **kwargs):
+                        if "app-server" in command:
+                            return FakeAppServerProcess(kwargs["env"])
+                        return real_popen(command, *args, **kwargs)
+
+                    stack.enter_context(patch.object(
+                        startup_module.subprocess, "Popen",
+                        side_effect=fake_app_server_or_real_process))
+                else:
+                    stack.enter_context(patch(
+                        "tooling.feynman_subscription_startup_diagnostic.run",
+                        side_effect=startup_runner or self._fake_startup,
+                    ))
             return executor.execute_smoke_job(**kwargs)
+
+    def _actual_prepared_wiring(self):
+        command = executor.build_codex_exec_command(
+            executable=str(self.codex.resolve()), model="gpt-test",
+            candidate_dir=self.candidate.resolve(),
+        )
+        fingerprint = executor._wiring_fingerprint(
+            resolved_codex=str(self.codex.resolve()), model="gpt-test",
+            candidate_dir=self.candidate.resolve(), runner_job_path=self.job.resolve(),
+            boundary_profile_path=self.profile.resolve(),
+            binding_path=self.full_runner_binding.resolve(),
+            node_bin=self.full_runner_node_bin.resolve(),
+            adapter=self.full_runner_adapter.resolve(),
+            docker_bin=self.full_runner_docker_bin.resolve(),
+            docker_config=self.full_runner_docker_config.resolve(),
+            docker_image_id="sha256:" + "a" * 64,
+            all_config_overrides=(), command=command,
+        )
+        return {
+            "full_runner_override": object(),
+            "all_config_overrides": (),
+            "skill_config_overrides": (),
+            "command": command,
+            "app_server": {},
+            "preparation_fingerprint": fingerprint,
+        }
 
     def test_startup_artifacts_are_evaluator_owned_and_persisted(self):
         result = self._run()
@@ -258,6 +343,49 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
             self.startup_call["prepared_wiring"]["preparation_fingerprint"],
             result["startup_gate"]["preparation_fingerprint"],
         )
+        spec_path = self.evaluator / "exec-1" / "execution-spec.json"
+        self.assertTrue(spec_path.is_file())
+        spec = json.loads(spec_path.read_text(encoding="utf-8"))
+        execution_spec_schema = json.loads(
+            (ROOT / "evals" / "feynman-thinking" /
+             "subscription-execution-spec.schema.json").read_text(encoding="utf-8")
+        )
+        jsonschema.Draft202012Validator(execution_spec_schema).validate(spec)
+        self.assertEqual(spec["verdict"], "subscription-execution-spec-frozen")
+        self.assertEqual(result["execution_spec"]["artifact"], "execution-spec.json")
+        self.assertEqual(result["execution_spec"]["artifact_sha256"], sha(spec_path))
+        result_schema = json.loads(
+            (ROOT / "evals" / "feynman-thinking" /
+             "subscription-smoke-exec-result.schema.json").read_text(encoding="utf-8")
+        )
+        jsonschema.Draft202012Validator(result_schema).validate(result)
+        self.assertNotIn(str(self.candidate), json.dumps(spec))
+        self.assertFalse(spec["paths"]["docker_config_contents_read"])
+
+    def test_smoke_calls_real_startup_and_validator_at_the_boundary(self):
+        prepared = self._actual_prepared_wiring()
+        result = self._run(real_startup=True, prepared_wiring=prepared)
+        report = self.evaluator / "exec-1" / "startup-gate" / "startup-report.json"
+        telemetry = self.evaluator / "exec-1" / "startup-gate" / "startup-rpc-telemetry.json"
+        self.assertTrue(report.is_file())
+        self.assertTrue(telemetry.is_file())
+        persisted = json.loads(report.read_text(encoding="utf-8"))
+        self.assertEqual(persisted["verdict"], "subscription-startup-thread-ready")
+        self.assertEqual(result["startup_gate"]["artifacts"]["report"], "startup-gate/startup-report.json")
+        self.assertEqual(result["execution_spec"]["preparation_fingerprint"], prepared["preparation_fingerprint"])
+        self.assertEqual(len(AUTH_CALLS), 1)
+
+    def test_model_timeout_is_explicitly_forwarded_without_changing_startup_budget(self):
+        calls = []
+        original_run = executor.subprocess.run
+
+        def capture(*args, **kwargs):
+            calls.append(kwargs.get("timeout"))
+            return original_run(*args, **kwargs)
+
+        with patch.object(executor.subprocess, "run", side_effect=capture):
+            self._run(timeout_seconds=300)
+        self.assertEqual(calls, [300])
 
     def test_startup_fingerprint_drift_blocks_before_auth_or_model(self):
         def drifted_startup(**kwargs):
@@ -267,6 +395,15 @@ print(json.dumps({{"type":"thread.started","thread_id":"thread-smoke-1"}}));prin
 
         with self.assertRaisesRegex(ValueError, "differs from model command"):
             self._run(startup_runner=drifted_startup)
+        self.assertEqual(AUTH_CALLS, [])
+
+    def test_execution_spec_drift_blocks_after_control_plane_before_auth(self):
+        def mutate_after_control(**kwargs):
+            self.candidate.joinpath("task.txt").write_text("DRIFTED\n", encoding="utf-8")
+            return self._fake_control(**kwargs)
+
+        with self.assertRaisesRegex(ValueError, "frozen execution spec drift"):
+            self._run(control_runner=mutate_after_control)
         self.assertEqual(AUTH_CALLS, [])
 
     def test_success_uses_scrubbed_env_and_frozen_controls(self):
@@ -600,6 +737,11 @@ class SubscriptionSmokeExecSchemaTests(unittest.TestCase):
         self.assertEqual(
             set(schema["properties"]["startup_gate"]["properties"]["artifacts"]["required"]),
             {"report", "telemetry", "report_sha256", "telemetry_sha256"},
+        )
+        self.assertIn("execution_spec", schema["required"])
+        self.assertEqual(
+            schema["properties"]["execution_spec"]["properties"]["artifact"]["const"],
+            "execution-spec.json",
         )
 
 

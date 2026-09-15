@@ -1,13 +1,16 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-107](feynman-work-log/LOG-107-final-docker-path-gate-receipt-20260914.md).
-> Docker runtime probe가 `docker-runtime-ready`, direct/proxy path contract가
-> `rpc-path-contract-equivalent`로 통과했다. 최종 HEAD는 `18026ce`이며 feature
-> branch에 push됐다. 전체 `486 tests OK, 11 skipped`, schema 17개 errors=0,
-> ResourceWarning 없음이다. 실제 구독 auth/startup·Luna model smoke는 0회이며
-> `.tmp/`, PNG 2개, `LOG-099`는 보존 중이다.
+> 최신: [LOG-108](feynman-work-log/LOG-108-next-01-03-execution-spec-and-boundary-preflight-20260915.md).
+> code 기준(작업 시작)은 `f7e9efdd61ee67f9df98cd509f54d925bcb0bd31`이다. 현재
+> 문서 갱신으로 생성되는 후속 documentation SHA와 code 기준 SHA를 혼동하지
+> 않는다. immutable execution spec과 실제 startup validator 연결 회귀를 추가했고
+> 변경 영역 `133 tests OK, 2 skipped`, 전체 `489 tests OK, 11 skipped`, schema 18개
+> errors=0, ResourceWarning 없음이다. checkpoint/structural preflight와 isolated
+> model-free wiring preparation은 통과했지만 실제 구독 auth/startup·model smoke는
+> 0회다. `.tmp/`, PNG 2개, `LOG-099`, evaluator 증거와 로그인 홈은 보존 중이다.
+> LOG-107은 역사 기록으로 유지한다.
 >
-> 이전 실행 기록: [LOG-106](feynman-work-log/LOG-106-docker-path-gate-commit-push-receipt-20260914.md).
+> 이전 실행 기록: [LOG-107](feynman-work-log/LOG-107-final-docker-path-gate-receipt-20260914.md).
 >
 > 구현 상세: [LOG-105](feynman-work-log/LOG-105-docker-runtime-and-path-contract-recovery-20260914.md).
 >
