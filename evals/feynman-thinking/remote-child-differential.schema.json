@@ -101,6 +101,11 @@
         "request_mapping_rejections": {"type": "integer", "minimum": 0},
         "response_mapping_rejections": {"type": "integer", "minimum": 0},
         "child_exit_code": {"type": ["integer", "null"]},
+        "child_stderr_bytes": {"type": "integer", "minimum": 0},
+        "child_stderr_nonempty": {"type": "boolean"},
+        "child_stderr_truncated": {"type": "boolean"},
+        "child_stderr_read_error": {"type": "boolean"},
+        "child_stderr_drained": {"type": "boolean"},
         "mapping_clean": {"type": "boolean"},
         "correlated": {"type": "boolean"}
       },
@@ -142,7 +147,7 @@
         "response": {"$ref": "#/$defs/response"},
         "cleanup": {"$ref": "#/$defs/cleanup"},
         "telemetry": {"$ref": "#/$defs/telemetry"},
-        "stderr_visibility": {"enum": ["bounded-in-memory", "proxy-child-stderr-discarded-by-current-proxy"]}
+        "stderr_visibility": {"enum": ["bounded-in-memory", "proxy-child-stderr-bounded-counters", "proxy-child-stderr-discarded-by-current-proxy"]}
       },
       "required": ["label", "passed", "skipped", "process", "response", "cleanup", "telemetry", "stderr_visibility"]
     },

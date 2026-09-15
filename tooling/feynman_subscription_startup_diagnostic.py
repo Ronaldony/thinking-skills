@@ -29,7 +29,8 @@ try:
     from .feynman_remote_exec_environment import validate_files
     from .feynman_rpc_path_proxy import (
         SAFE_REJECTION_FIELDS, SAFE_REJECTION_METHODS, SAFE_TELEMETRY_METHODS,
-        SAFE_TELEMETRY_REASONS, TELEMETRY_OVERRIDE_ENV,
+        SAFE_TELEMETRY_OPTIONAL_FIELDS, SAFE_TELEMETRY_REASONS,
+        TELEMETRY_OVERRIDE_ENV,
     )
     from .feynman_subscription_control_plane_preflight import (
         _failure_category, _notification, _read_json_lines, _request,
@@ -47,7 +48,8 @@ except ImportError:
     from feynman_remote_exec_environment import validate_files
     from feynman_rpc_path_proxy import (
         SAFE_REJECTION_FIELDS, SAFE_REJECTION_METHODS, SAFE_TELEMETRY_METHODS,
-        SAFE_TELEMETRY_REASONS, TELEMETRY_OVERRIDE_ENV,
+        SAFE_TELEMETRY_OPTIONAL_FIELDS, SAFE_TELEMETRY_REASONS,
+        TELEMETRY_OVERRIDE_ENV,
     )
     from feynman_subscription_control_plane_preflight import (
         _failure_category, _notification, _read_json_lines, _request,
@@ -335,7 +337,7 @@ def _safe_proxy_telemetry(path: Path) -> dict[str, Any]:
         raise StartupDiagnosticError("startup-proxy-telemetry-unreadable") from exc
     if not isinstance(value, dict) or value.get("schema_version") != 3:
         raise StartupDiagnosticError("startup-telemetry-shape")
-    allowed = {
+    required = {
         "schema_version", "request_methods", "response_error_codes",
         "requests_seen", "requests_forwarded", "request_mapping_rejections",
         "request_mapping_rejection_methods", "request_mapping_rejection_reasons",
@@ -349,8 +351,18 @@ def _safe_proxy_telemetry(path: Path) -> dict[str, Any]:
         "responses_matched", "responses_unmatched", "notifications_seen",
         "pending_request_ids",
     }
-    if set(value) != allowed:
+    fields = set(value)
+    if (not required <= fields <= required | SAFE_TELEMETRY_OPTIONAL_FIELDS
+            or (fields & SAFE_TELEMETRY_OPTIONAL_FIELDS
+                and not SAFE_TELEMETRY_OPTIONAL_FIELDS <= fields)):
         raise StartupDiagnosticError("startup-telemetry-unexpected-fields")
+    if SAFE_TELEMETRY_OPTIONAL_FIELDS <= fields:
+        if (type(value["child_stderr_bytes"]) is not int
+                or value["child_stderr_bytes"] < 0
+                or any(type(value[name]) is not bool for name in (
+                    "child_stderr_nonempty", "child_stderr_truncated",
+                    "child_stderr_read_error", "child_stderr_drained"))):
+            raise StartupDiagnosticError("startup-telemetry-stderr-shape")
     for key in (
         "request_methods", "response_error_codes",
         "request_mapping_rejection_methods", "request_mapping_rejection_reasons",
@@ -389,7 +401,7 @@ def _safe_proxy_telemetry(path: Path) -> dict[str, Any]:
             if reason not in SAFE_TELEMETRY_REASONS or not set(fields).issubset(SAFE_REJECTION_FIELDS):
                 raise StartupDiagnosticError("startup-telemetry-field-not-allowed")
     count_fields = {
-        key for key in allowed if key not in {
+        key for key in required if key not in {
             "schema_version", "request_methods", "response_error_codes",
             "request_mapping_rejection_methods", "request_mapping_rejection_reasons",
             "request_mapping_rejection_method_reasons",
@@ -441,8 +453,24 @@ def _proxy_telemetry_ready(value: dict[str, Any]) -> bool:
             "responses_matched", "responses_unmatched", "notifications_seen",
             "pending_request_ids",
         }
-        if not isinstance(value, dict) or set(value) != required or value.get("schema_version") != 3:
+        fields = set(value) if isinstance(value, dict) else set()
+        if (not isinstance(value, dict)
+                or not required <= fields <= required | SAFE_TELEMETRY_OPTIONAL_FIELDS
+                or (fields & SAFE_TELEMETRY_OPTIONAL_FIELDS
+                    and not SAFE_TELEMETRY_OPTIONAL_FIELDS <= fields)
+                or value.get("schema_version") != 3):
             return False
+        stderr_ready = True
+        if SAFE_TELEMETRY_OPTIONAL_FIELDS <= fields:
+            stderr_ready = (
+                type(value["child_stderr_bytes"]) is int
+                and value["child_stderr_bytes"] >= 0
+                and all(type(value[name]) is bool for name in (
+                    "child_stderr_nonempty", "child_stderr_truncated",
+                    "child_stderr_read_error", "child_stderr_drained"))
+                and value["child_stderr_drained"] is True
+                and value["child_stderr_read_error"] is False
+            )
         counters = (
             "requests_seen", "requests_forwarded", "request_mapping_rejections",
             "malformed_requests", "responses_seen", "responses_forwarded",
@@ -488,6 +516,7 @@ def _proxy_telemetry_ready(value: dict[str, Any]) -> bool:
             and value["request_mapping_rejections"] == 0
             and value["response_mapping_rejections"] == 0
             and value["child_exit_code"] == 0
+            and stderr_ready
         )
     except (KeyError, TypeError, AttributeError):
         # A partial or synthetic-looking mapping is incomplete evidence.

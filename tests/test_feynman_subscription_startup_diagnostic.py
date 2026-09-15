@@ -645,6 +645,28 @@ class SubscriptionStartupDiagnosticTests(unittest.TestCase):
         value["responses_unmatched"] = 1
         self.assertFalse(_proxy_telemetry_ready(value))
 
+    def test_proxy_telemetry_requires_drained_child_stderr_when_present(self):
+        value = {
+            **_ProxyTelemetry().snapshot(),
+            "request_methods": {"initialize": 1},
+            "requests_seen": 1, "requests_forwarded": 1,
+            "responses_seen": 1, "responses_forwarded": 1,
+            "responses_matched": 1, "responses_unmatched": 0,
+            "notifications_seen": 0, "malformed_responses": 0,
+            "pending_request_ids": 0, "request_write_failures": 0,
+            "request_id_duplicates": 0, "request_mapping_rejections": 0,
+            "response_mapping_rejections": 0, "child_exit_code": 0,
+            "child_stderr_bytes": 3, "child_stderr_nonempty": True,
+            "child_stderr_truncated": False, "child_stderr_read_error": False,
+            "child_stderr_drained": True,
+        }
+        self.assertTrue(_proxy_telemetry_ready(value))
+        value["child_stderr_drained"] = False
+        self.assertFalse(_proxy_telemetry_ready(value))
+        value["child_stderr_drained"] = True
+        value["child_stderr_read_error"] = True
+        self.assertFalse(_proxy_telemetry_ready(value))
+
     def test_empty_proxy_telemetry_is_not_ready(self):
         value = {
             **_ProxyTelemetry().snapshot(),

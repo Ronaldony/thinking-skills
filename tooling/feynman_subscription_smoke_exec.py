@@ -28,6 +28,7 @@ try:
         build_full_runner_override,
     )
     from .feynman_subscription_run_preflight import preflight_files
+    from .feynman_rpc_path_proxy import SAFE_TELEMETRY_OPTIONAL_FIELDS
 except ImportError:
     from feynman_subscription_auth_gate import CONFIG_TEXT, check as check_auth
     from feynman_full_runner_contract import (
@@ -37,6 +38,7 @@ except ImportError:
         build_full_runner_override,
     )
     from feynman_subscription_run_preflight import preflight_files
+    from feynman_rpc_path_proxy import SAFE_TELEMETRY_OPTIONAL_FIELDS
 
 EXPECTED_ANALYSIS_USE = "not-for-skill-performance-inference"
 EXPECTED_CASE_ID = "tools-10"
@@ -73,7 +75,7 @@ _STARTUP_CHECK_FIELDS = frozenset({
     "error_code", "error_category", "error_signals", "error_data_kind",
     "turn_requests_sent", "model_generation_requests_sent",
 })
-_STARTUP_TELEMETRY_FIELDS = frozenset({
+_STARTUP_TELEMETRY_REQUIRED_FIELDS = frozenset({
     "schema_version", "request_methods", "response_error_codes",
     "requests_seen", "requests_forwarded", "request_mapping_rejections",
     "request_mapping_rejection_methods", "request_mapping_rejection_reasons",
@@ -86,6 +88,9 @@ _STARTUP_TELEMETRY_FIELDS = frozenset({
     "responses_matched", "responses_unmatched", "notifications_seen",
     "pending_request_ids",
 })
+_STARTUP_TELEMETRY_FIELDS = (
+    _STARTUP_TELEMETRY_REQUIRED_FIELDS | SAFE_TELEMETRY_OPTIONAL_FIELDS
+)
 _STARTUP_TELEMETRY_COUNTER_FIELDS = frozenset({
     "request_methods", "response_error_codes",
     "request_mapping_rejection_methods", "request_mapping_rejection_reasons",
@@ -94,6 +99,7 @@ _STARTUP_TELEMETRY_COUNT_FIELDS = _STARTUP_TELEMETRY_FIELDS - {
     "schema_version", *_STARTUP_TELEMETRY_COUNTER_FIELDS,
     "request_mapping_rejection_method_reasons",
     "request_mapping_rejection_method_reason_fields", "child_exit_code",
+    *SAFE_TELEMETRY_OPTIONAL_FIELDS,
 }
 _STARTUP_PRIVACY_FIELDS = frozenset({
     "request_or_response_payload_preserved", "thread_id_preserved",
@@ -110,7 +116,11 @@ def _validate_startup_telemetry_snapshot(value: Any) -> dict[str, Any]:
     accounting invariants from the payload-free snapshot before allowing a
     model command to start.
     """
-    if not isinstance(value, dict) or set(value) != _STARTUP_TELEMETRY_FIELDS:
+    fields = set(value) if isinstance(value, dict) else set()
+    if (not isinstance(value, dict)
+            or not _STARTUP_TELEMETRY_REQUIRED_FIELDS <= fields <= _STARTUP_TELEMETRY_FIELDS
+            or (fields & SAFE_TELEMETRY_OPTIONAL_FIELDS
+                and not SAFE_TELEMETRY_OPTIONAL_FIELDS <= fields)):
         raise ValueError("subscription startup telemetry schema is invalid")
     if value.get("schema_version") != 3:
         raise ValueError("subscription startup telemetry schema version is unsupported")
@@ -200,6 +210,13 @@ def _validate_startup_telemetry_snapshot(value: Any) -> dict[str, Any]:
         raise ValueError("subscription startup telemetry count is invalid")
     if value["child_exit_code"] is not None and type(value["child_exit_code"]) is not int:
         raise ValueError("subscription startup telemetry child exit code is invalid")
+    if SAFE_TELEMETRY_OPTIONAL_FIELDS <= fields:
+        if (type(value["child_stderr_bytes"]) is not int
+                or value["child_stderr_bytes"] < 0
+                or any(type(value[name]) is not bool for name in (
+                    "child_stderr_nonempty", "child_stderr_truncated",
+                    "child_stderr_read_error", "child_stderr_drained"))):
+            raise ValueError("subscription startup telemetry stderr evidence is invalid")
 
     if sum(request_methods.values()) != value["requests_seen"]:
         raise ValueError("subscription startup telemetry request total is inconsistent")

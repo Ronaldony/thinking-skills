@@ -96,7 +96,12 @@
         "probe_read_limit_applied": {"$ref": "#/$defs/count"},
         "probe_response_rejections": {"$ref": "#/$defs/count"},
         "probe_rejected_read_max_bytes": {"$ref": "#/$defs/count"},
-        "child_exit_code": {"type": ["integer", "null"]}
+        "child_exit_code": {"type": ["integer", "null"]},
+        "child_stderr_bytes": {"$ref": "#/$defs/count"},
+        "child_stderr_nonempty": {"type": "boolean"},
+        "child_stderr_truncated": {"type": "boolean"},
+        "child_stderr_read_error": {"type": "boolean"},
+        "child_stderr_drained": {"type": "boolean"}
       },
       "required": ["schema_version", "request_methods", "response_error_codes", "requests_seen", "requests_forwarded", "request_write_failures", "request_id_duplicates", "request_mapping_rejections", "request_mapping_rejection_methods", "request_mapping_rejection_reasons", "request_mapping_rejection_method_reasons", "request_mapping_rejection_method_reason_fields", "malformed_requests", "responses_seen", "responses_forwarded", "responses_matched", "responses_unmatched", "notifications_seen", "pending_request_ids", "response_mapping_rejections", "malformed_responses", "probe_policy_rejections", "probe_read_limit_applied", "probe_response_rejections", "probe_rejected_read_max_bytes", "child_exit_code"]
     },

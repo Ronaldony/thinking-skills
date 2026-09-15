@@ -131,6 +131,12 @@ class _ProxyTelemetry:
         self._response_error_codes: Counter[str] = Counter()
         self._values: Counter[str] = Counter()
         self._child_exit_code: int | None = None
+        self._child_stderr_bytes = 0
+        self._child_stderr_nonempty = False
+        self._child_stderr_truncated = False
+        self._child_stderr_read_error = False
+        self._child_stderr_drained = False
+        self._child_stderr_observed = False
 
     @staticmethod
     def _safe_method(method: str | None) -> str:
@@ -214,6 +220,20 @@ class _ProxyTelemetry:
         with self._lock:
             self._child_exit_code = value
 
+    def child_stderr_progress(self, *, bytes_read: int = 0,
+                              truncated: bool = False,
+                              read_error: bool = False,
+                              drained: bool = False) -> None:
+        """Record bounded child-stderr facts without retaining its contents."""
+        with self._lock:
+            self._child_stderr_observed = True
+            if type(bytes_read) is int and bytes_read >= 0:
+                self._child_stderr_bytes += bytes_read
+                self._child_stderr_nonempty |= bytes_read > 0
+            self._child_stderr_truncated |= truncated is True
+            self._child_stderr_read_error |= read_error is True
+            self._child_stderr_drained |= drained is True
+
     def pending_request_ids(self, count: int) -> None:
         with self._lock:
             self._values["pending_request_ids"] = max(0, count)
@@ -221,7 +241,7 @@ class _ProxyTelemetry:
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             values = dict(self._values)
-            return {
+            result = {
                 "schema_version": 3,
                 "request_methods": dict(sorted(self._request_methods.items())),
                 "response_error_codes": dict(sorted(self._response_error_codes.items())),
@@ -260,6 +280,15 @@ class _ProxyTelemetry:
                 "probe_rejected_read_max_bytes": values.get("probe_rejected_read_max_bytes", 0),
                 "child_exit_code": self._child_exit_code,
             }
+            if self._child_stderr_observed:
+                result.update({
+                    "child_stderr_bytes": self._child_stderr_bytes,
+                    "child_stderr_nonempty": self._child_stderr_nonempty,
+                    "child_stderr_truncated": self._child_stderr_truncated,
+                    "child_stderr_read_error": self._child_stderr_read_error,
+                    "child_stderr_drained": self._child_stderr_drained,
+                })
+            return result
 
 
 def _json_object(raw: bytes) -> dict[str, Any] | None:
@@ -268,6 +297,21 @@ def _json_object(raw: bytes) -> dict[str, Any] | None:
     except (UnicodeDecodeError, json.JSONDecodeError):
         return None
     return value if isinstance(value, dict) else None
+
+
+def _drain_child_stderr(stream: Any, telemetry: _ProxyTelemetry) -> None:
+    """Drain child stderr to prevent backpressure; persist only fixed counters."""
+    read_error = False
+    try:
+        while True:
+            chunk = stream.read(65536)
+            if not chunk:
+                break
+            telemetry.child_stderr_progress(bytes_read=len(chunk))
+    except (OSError, TypeError, ValueError):
+        read_error = True
+    finally:
+        telemetry.child_stderr_progress(read_error=read_error, drained=True)
 
 
 def _parent_stdin_lines(stop: threading.Event):
@@ -448,6 +492,10 @@ SAFE_TELEMETRY_METHODS = frozenset({*_SAFE_REQUEST_METHODS, "unknown"})
 SAFE_REJECTION_METHODS = frozenset({*REQUEST_PATH_FIELDS, "unknown"})
 SAFE_TELEMETRY_REASONS = _SAFE_REJECTION_REASONS
 SAFE_REJECTION_FIELDS = _SAFE_REJECTION_FIELDS
+SAFE_TELEMETRY_OPTIONAL_FIELDS = frozenset({
+    "child_stderr_bytes", "child_stderr_nonempty", "child_stderr_truncated",
+    "child_stderr_read_error", "child_stderr_drained",
+})
 
 
 def _map_request_payload_with_reason(
@@ -617,11 +665,17 @@ def run_proxy(
         [docker, *docker_args],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
         bufsize=0,
     )
     assert child.stdin is not None
     assert child.stdout is not None
+    assert child.stderr is not None
+    stderr_thread = threading.Thread(
+        target=_drain_child_stderr, args=(child.stderr, telemetry),
+        name="rpc-proxy-child-stderr", daemon=True,
+    )
+    stderr_thread.start()
     telemetry_writer = None
     if telemetry_path is not None:
         telemetry_writer = threading.Thread(
@@ -754,6 +808,14 @@ def run_proxy(
         response_thread.join(timeout=max(0.1, (cleanup_deadline or time.monotonic()) - time.monotonic()))
     if request_thread.is_alive():
         request_thread.join(timeout=max(0.1, (cleanup_deadline or time.monotonic()) - time.monotonic()))
+    if stderr_thread.is_alive():
+        stderr_thread.join(timeout=max(0.1, (cleanup_deadline or time.monotonic()) - time.monotonic()))
+    if stderr_thread.is_alive():
+        try:
+            child.stderr.close()
+        except OSError:
+            pass
+        stderr_thread.join(timeout=max(0.1, (cleanup_deadline or time.monotonic()) - time.monotonic()))
     exit_code = child.poll()
     if exit_code is None:
         exit_code = 1

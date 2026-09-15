@@ -623,6 +623,11 @@ def _telemetry_summary(path: Path) -> dict[str, Any]:
         "request_mapping_rejections": 0,
         "response_mapping_rejections": 0,
         "child_exit_code": None,
+        "child_stderr_bytes": 0,
+        "child_stderr_nonempty": False,
+        "child_stderr_truncated": False,
+        "child_stderr_read_error": False,
+        "child_stderr_drained": False,
         "mapping_clean": False,
         "correlated": False,
     }
@@ -650,6 +655,15 @@ def _telemetry_summary(path: Path) -> dict[str, Any]:
         "complete": bool(_proxy_telemetry_ready(value)),
         "child_exit_code": value.get("child_exit_code") if type(value.get("child_exit_code")) is int else None,
     })
+    for key in ("child_stderr_bytes",):
+        if type(value.get(key)) is int and value[key] >= 0:
+            base[key] = value[key]
+    for key in (
+        "child_stderr_nonempty", "child_stderr_truncated",
+        "child_stderr_read_error", "child_stderr_drained",
+    ):
+        if type(value.get(key)) is bool:
+            base[key] = value[key]
     base["mapping_clean"] = (
         base["request_mapping_rejections"] == 0
         and base["response_mapping_rejections"] == 0
@@ -675,7 +689,7 @@ def _run_rpc_variant(*, label: str, docker: Path, config: Path,
             sys.executable, "-B", str(proxy), "--docker", str(docker),
             "--telemetry-file", str(telemetry_path), "--", *docker_args,
         ]
-        stderr_visibility = "proxy-child-stderr-discarded-by-current-proxy"
+        stderr_visibility = "proxy-child-stderr-bounded-counters"
     process, _ = _run_process(
         command, env=environment, timeout=timeout, input_data=INITIALIZE_REQUEST,
         on_stdout_line=lambda line: _observe_initialize_line(line, observation, response_event),
@@ -821,7 +835,7 @@ def run(*, docker: Path, docker_config: Path, proxy: Path,
         "response": _initialize_observation(),
         "cleanup": {"status": "not-run", "verified": False},
         "telemetry": None,
-        "stderr_visibility": "proxy-child-stderr-discarded-by-current-proxy",
+        "stderr_visibility": "proxy-child-stderr-bounded-counters",
     }
     if lifecycle_passed:
         direct = _run_rpc_variant(

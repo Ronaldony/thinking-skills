@@ -22,6 +22,31 @@ from tooling.feynman_rpc_path_proxy import (
 
 
 class RpcPathProxyTests(unittest.TestCase):
+    def test_proxy_drains_child_stderr_without_persisting_raw_text(self):
+        def empty_parent_lines(_stop):
+            if False:
+                yield b""
+
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            telemetry = root / "telemetry.json"
+            with patch.object(
+                proxy_module, "_parent_stdin_lines", side_effect=empty_parent_lines
+            ):
+                exit_code = proxy_module.run_proxy(
+                    sys.executable,
+                    ["-c", "import sys; sys.stderr.write('SYNTHETIC_PRIVATE_ERR' * 4096); sys.stderr.flush()",
+                     "-v", f"{root}:/run/candidate:rw"],
+                    telemetry,
+                )
+            self.assertEqual(exit_code, 0)
+            value = json.loads(telemetry.read_text(encoding="utf-8"))
+            self.assertGreater(value["child_stderr_bytes"], 0)
+            self.assertTrue(value["child_stderr_nonempty"])
+            self.assertTrue(value["child_stderr_drained"])
+            self.assertFalse(value["child_stderr_read_error"])
+            self.assertNotIn("SYNTHETIC_PRIVATE_ERR", telemetry.read_text(encoding="utf-8"))
+
     def test_proxy_joins_parent_reader_when_child_stdout_ends_first(self):
         reader_started = threading.Event()
         reader_finished = threading.Event()
