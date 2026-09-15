@@ -270,8 +270,14 @@ matched=0;owned_prefix_remaining=0;unexpected=0
 initialize/environment lifecycle을 payload 없이 분류하는 별도 진단을 검토한다.
 같은 실패 반복, 모델 fallback, mount 확대, Linux control-plane 전환은 하지 않는다.
 
-## commit / push
+## commit / push receipt
 
-이 로그 작성 시점에는 코드/schema/test/pointer가 아직 commit/push 전이다.
-기존 `.tmp/`, 사용자 PNG 2개, `LOG-099`는 stage하지 않는다. feature branch에만
-일반 commit/push하고 main merge/force push는 하지 않는다.
+- 구현 commit: `fb2e1d58477f44ba6de6dce49aa14fbc7fc7456c`
+  (`feat: add model-free remote child differential diagnostic`)
+- push: `origin/feat/feynman-thinking-v0.5-draft`로 일반 fast-forward 성공
+  (`c7a0820..fb2e1d5`)
+- main merge와 force push: 하지 않음
+- `.tmp/`, 사용자 PNG 2개, `LOG-099`: stage하지 않음
+- post-push working tree에는 위 보호 대상만 untracked로 남아 있음
+- 이 receipt와 최신 pointer 문서의 후속 documentation commit은 별도로
+  기록하며, feature branch 외 branch에는 쓰지 않는다.

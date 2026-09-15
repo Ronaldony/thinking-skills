@@ -1,8 +1,8 @@
 # feynman-thinking 작업 상태
 
 최신 재개 지점: [LOG-110](feynman-work-log/LOG-110-model-free-remote-child-differential-20260915.md).
-code 기준은 이 단계 시작 시 `c7a0820b594bcb8820636319c6cc04a20c0c1788`이며,
-현재 변경은 아직 commit 전이다. LOG-109의 실제 구독 startup 1회는
+이 단계의 구현 commit은 `fb2e1d58477f44ba6de6dce49aa14fbc7fc7456c`이며,
+feature branch에 일반 push까지 완료했다. LOG-109의 실제 구독 startup 1회는
 `initialize` 후 `thread/start -32603 / remote-environment-error`로 차단됐고,
 이번 단계에서는 재실행하지 않았다. 대신 새 model-free differential fixture가
 고정 image의 Docker access/image identity, 네 native mount, create/start,
