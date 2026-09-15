@@ -279,5 +279,7 @@ initialize/environment lifecycle을 payload 없이 분류하는 별도 진단을
 - main merge와 force push: 하지 않음
 - `.tmp/`, 사용자 PNG 2개, `LOG-099`: stage하지 않음
 - post-push working tree에는 위 보호 대상만 untracked로 남아 있음
-- 이 receipt와 최신 pointer 문서의 후속 documentation commit은 별도로
-  기록하며, feature branch 외 branch에는 쓰지 않는다.
+- 최신 pointer와 이 receipt의 문서 보정 commit: `b082b740ed65544330158ad2cafde5abf2692426`
+  (`docs: record remote child differential push receipt`), 같은 feature branch에
+  일반 push 성공
+- feature branch 외 branch에는 쓰지 않음
