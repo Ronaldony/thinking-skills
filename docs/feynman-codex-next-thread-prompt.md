@@ -11,10 +11,11 @@ Feynman-thinking 작업을 안전하게 재개하기 위한 자료 목록과 붙
 - 저장소: `C:\DevWorks\thinking-skills`
 - 원격: `Ronaldony/thinking-skills`
 - 작업 브랜치: `feat/feynman-thinking-v0.5-draft`
-- 현재 HEAD와 origin: `2489af5790ed310576bfaa4a54a2aaffa7e16748`
-- 구현 commit: `fb2e1d58477f44ba6de6dce49aa14fbc7fc7456c`
-- 문서 receipt commit: `b082b740ed65544330158ad2cafde5abf2692426`
-- 최신 로그 receipt 보정 commit: `2489af5790ed310576bfaa4a54a2aaffa7e16748`
+- 최신 model-free proxy hardening 코드 commit:
+  `0825cf832706bdbf2c39a3658f013c2527eafcb0`
+- 최신 상세 영수증:
+  `docs/feynman-work-log/LOG-111-remote-proxy-cleanup-and-error-privacy-20260915.md`
+- 이 단계의 문서 receipt와 feature branch push 결과는 git log/status로 다시 확인한다.
 - main 병합과 force push: 하지 않음
 - 적용되는 `AGENTS.md`: 이 작업 기준에서 발견되지 않음. 새 스레드에서 다시 확인한다.
 
@@ -27,6 +28,19 @@ untracked 상태를 유지하고 stage하거나 삭제하지 않는다.
 - `C:\DevWorks\thinking-skills\docs\feynman-work-log\LOG-099-autonomous-work-strategy-20260914.md`
 - 기존 평가 전용 로그인 홈과 evaluator-owned 자료
 
+## LOG-111 최신 checkpoint
+
+- parent stdin reader가 response worker보다 늦게 끝나는 child-exit 조건을 재현하고,
+  살아 있는 reader를 bounded cleanup 안에서 join하도록 최소 수정했다.
+- proxy fixed mapping error가 object/list request ID를 반사하지 않도록 exact int/str
+  scalar 경계를 추가했다.
+- 전체 회귀는 `505 tests OK, 11 skipped`, schema는 `19개 errors=0`,
+  ResourceWarning은 없다.
+- 이번 단계에는 actual ChatGPT startup/model 실행이 없었다. LOG-109의 실제
+  `thread/start -32603 / remote-environment-error` 원인은 미확정이며 새 증거 없이
+  재시도하지 않는다.
+- production proxy child stderr의 DEVNULL observability gap은 남아 있다.
+
 ## 새 스레드에서 먼저 읽을 자료
 
 다음 순서로 읽는다.
@@ -34,8 +48,9 @@ untracked 상태를 유지하고 stage하거나 삭제하지 않는다.
 1. `docs/feynman-codex-resume-prompt.md`
 2. `docs/feynman-codex-handoff.md`
 3. `docs/feynman-work-status.md`
-4. `docs/feynman-work-log/LOG-110-model-free-remote-child-differential-20260915.md`
-5. `docs/feynman-work-log/LOG-109-subscription-startup-diagnostic-20260914.md`
+4. `docs/feynman-work-log/LOG-111-remote-proxy-cleanup-and-error-privacy-20260915.md`
+5. `docs/feynman-work-log/LOG-110-model-free-remote-child-differential-20260915.md`
+6. `docs/feynman-work-log/LOG-109-subscription-startup-diagnostic-20260914.md`
    (실제 파일명이 다르면 `LOG-109`를 검색하되 내용을 추측하지 않는다.)
 6. `tooling/feynman_remote_child_diagnostic.py`
 7. `tooling/feynman_remote_exec_environment.py`
@@ -61,7 +76,7 @@ untracked 상태를 유지하고 stage하거나 삭제하지 않는다.
    cleanup이 최종 실행에서 모두 통과했다.
 2. 진단 fixture를 실행한 최종 결과는
    `verdict=remote-child-differential-ready`, `failure_stage=null`이다.
-3. 전체 회귀는 `503 tests OK, 11 skipped`였고, `ResourceWarning`은 없었다. schema
+3. 전체 회귀는 `505 tests OK, 11 skipped`였고, `ResourceWarning`은 없었다. schema
    검증은 `19개, errors=0`이었다.
 4. `clientInfo`를 보낸 standalone child probe는 `-32602`를 반환했지만, 설치된
    child 계약에 맞는 `clientName` probe는 direct/proxy 모두 정상 initialize했다.

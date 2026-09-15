@@ -1,18 +1,17 @@
 # 로컬 Codex에 붙여넣을 작업 재개 프롬프트
 
 > 최신 재개 지점은
-> `docs/feynman-work-log/LOG-110-model-free-remote-child-differential-20260915.md`다.
-> 이 단계 구현 commit은 `fb2e1d58477f44ba6de6dce49aa14fbc7fc7456c`이며 feature
-> branch에 일반 push까지 완료했다. LOG-109의 실제 구독 startup
-> 1회는 `initialize` 후 `thread/start -32603 / remote-environment-error`로
-> 차단됐고 이번 단계에서는 재실행하지 않았다. 새 model-free fixture는 pinned
-> Docker image, 네 native mount, create/start, direct 및 path proxy의 remote
-> exec-server `clientName` initialize, v3 telemetry/correlation, cleanup을 통과했다.
-> 이는 App Server `thread/start`나 모델 실행 성공을 증명하지 않는다. 최종 회귀는
-> `503 tests OK, 11 skipped`, schema 19개 errors=0, ResourceWarning 없음이다.
-> 외부 TEMP report와 기존 `.tmp/`, PNG 2개, `LOG-099`, evaluator 증거 및 로그인 홈을
-> 보존한다. production proxy child stderr는 DEVNULL이어서 실제 startup 하위 원인은
-> 미확정이다. LOG-109 이전 문단은 역사 기록이다.
+> `docs/feynman-work-log/LOG-111-remote-proxy-cleanup-and-error-privacy-20260915.md`다.
+> 이번 단계의 model-free 코드 hardening commit은
+> `0825cf832706bdbf2c39a3658f013c2527eafcb0`이다. parent stdin reader cleanup join
+> 결함과 non-scalar JSON-RPC request ID 반사 결함을 각각 실패 테스트로 재현한 뒤
+> 최소 수정했다. 전체 회귀는 `505 tests OK, 11 skipped`, schema 19개 errors=0,
+> ResourceWarning 없음이다.
+> LOG-109의 실제 구독 startup 1회는 `initialize` 후
+> `thread/start -32603 / remote-environment-error`로 차단됐고 새 증거 없이
+> 재실행하지 않았다. 이번 단계에도 actual ChatGPT startup/model 실행은 0회다.
+> production proxy child stderr는 여전히 DEVNULL이어서 실제 startup 하위 원인은
+> 미확정이다. `.tmp/`, PNG 2개, `LOG-099`, evaluator 증거와 로그인 홈은 보존한다.
 > 이전 실행 기록은
 > `docs/feynman-work-log/LOG-107-final-docker-path-gate-receipt-20260914.md`다.
 > 구현 상세는
