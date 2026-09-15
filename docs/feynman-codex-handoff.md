@@ -1,11 +1,15 @@
 # Feynman 작업 인계 — 로컬 Codex용
 
-> 최신: [LOG-115](feynman-work-log/LOG-115-nested-thread-response-shape-20260915.md).
+> 최신: [LOG-116](feynman-work-log/LOG-116-model-free-remote-child-green-20260916.md).
 > 이번 단계의 model-free startup response hardening commit은 `dbce0c7`이다. Codex
 > 0.154.0 static `ThreadStartResponse` required top-level과 nested `thread` fields를
 > fail-closed로 검사하고 synthetic fixture/test를 갱신했다. 수정 전 nested incomplete
 > success response가 green으로 통과하는 실패를 재현했다. 전체 회귀는
 > `510 tests OK, 11 skipped`, schema 19개 errors=0, ResourceWarning 없음이다.
+> Docker readiness 회복 후 새 `-08` model-free differential은
+> `remote-child-differential-ready`로 통과했다. Docker access/image/create/start, 네
+> native mount, direct/proxy initialize, telemetry correlation, cleanup과 report schema를
+> 확인했으며 actual ChatGPT startup/model 실행은 0회다.
 > LOG-109의 실제 구독 startup 1회는 `initialize` 후
 > `thread/start -32603 / remote-environment-error`로 차단됐고 새 증거 없이
 > 재실행하지 않았다. 이번 단계의 actual ChatGPT startup/model 실행은 0회다.

@@ -1,16 +1,19 @@
 # feynman-thinking 작업 상태
 
-최신 재개 지점: [LOG-115](feynman-work-log/LOG-115-nested-thread-response-shape-20260915.md).
-이번 단계의 model-free startup response hardening commit은
-`dbce0c7`이다. Codex 0.154.0 App Server schema의 `thread/start` 성공 응답
-top-level과 nested `thread` required fields를 fail-closed로 검사하고, synthetic
-fixture를 schema-complete 최소 응답으로 갱신했다. 수정 전 nested 필드 누락 response가
-green으로 통과하는 실패를 재현했고, 수정 후 targeted `111 tests OK`, 전체 `510 tests
-OK, 11 skipped`, schema 19개 `errors=0`, ResourceWarning 없음이다.
+최신 재개 지점: [LOG-116](feynman-work-log/LOG-116-model-free-remote-child-green-20260916.md).
+최신 코드 commit은 `dbce0c7`이다. Codex 0.154.0 App Server schema의 `thread/start`
+성공 응답 top-level과 nested `thread` required fields를 fail-closed로 검사하고,
+synthetic fixture를 schema-complete 최소 응답으로 갱신했다. 수정 전 nested 필드 누락
+response와 타입 불일치를 model-free로 재현·보정했고, targeted `111 tests OK`, 전체
+`510 tests OK, 11 skipped`, schema 19개 `errors=0`, ResourceWarning 없음이다.
 Docker backend process는 responding 상태로 관찰됐지만 empty/default config의
 `docker info`와 `docker version`이 모두 exit 1이었다. 15초 bounded wait 뒤에도
 Docker Engine readiness가 회복되지 않아 새 `-06` differential은 `docker-access`에서
 막혔고 image/container/initialize 단계는 실행되지 않았다. 추가 반복은 하지 않았다.
+이후 Docker readiness가 회복되어 새 `-08` differential은
+`remote-child-differential-ready`로 통과했다. Docker access/image/create/start, 네
+native mount, direct/proxy initialize, telemetry v3 correlation, cleanup과 report
+schema를 확인했으며 actual ChatGPT startup/model 실행은 0회다.
 LOG-109의 실제 구독 startup 1회는 `initialize` 후
 `thread/start -32603 / remote-environment-error`로 차단됐고 새 증거 없이
 재실행하지 않았다. 이번 단계 actual ChatGPT startup/model 실행은 0회다.
