@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Feynman subscription execution spec v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "verdict": {"const": "subscription-execution-spec-frozen"},
+    "job": {"type": "object", "additionalProperties": false, "required": ["run_id", "ordinal", "case_id", "condition_id", "repeat", "has_followup"], "properties": {"run_id": {"type": "string"}, "ordinal": {"type": "integer"}, "case_id": {"type": "string"}, "condition_id": {"type": "string"}, "repeat": {"type": "integer"}, "has_followup": {"type": "boolean"}}},
+    "versions": {"type": "object", "additionalProperties": false, "required": ["model", "codex_cli"], "properties": {"model": {"type": "string"}, "codex_cli": {"type": "string"}}},
+    "roles": {"type": "object", "additionalProperties": false, "required": ["eval_plan", "smoke_spec", "evaluator_case", "runner_job", "boundary_profile", "remote_environment", "candidate_task", "full_runner_binding", "codex_executable", "node_executable", "full_runner_adapter", "docker_executable"], "properties": {"eval_plan": {"$ref": "#/$defs/sha256"}, "smoke_spec": {"$ref": "#/$defs/sha256"}, "evaluator_case": {"$ref": "#/$defs/sha256"}, "runner_job": {"$ref": "#/$defs/sha256"}, "boundary_profile": {"$ref": "#/$defs/sha256"}, "remote_environment": {"$ref": "#/$defs/sha256"}, "candidate_task": {"$ref": "#/$defs/sha256"}, "full_runner_binding": {"$ref": "#/$defs/sha256"}, "codex_executable": {"$ref": "#/$defs/sha256"}, "node_executable": {"$ref": "#/$defs/sha256"}, "full_runner_adapter": {"$ref": "#/$defs/sha256"}, "docker_executable": {"$ref": "#/$defs/sha256"}}},
+    "paths": {"type": "object", "additionalProperties": false, "required": ["candidate_dir_sha256", "evaluator_dir_sha256", "control_home_sha256", "docker_config_sha256", "output_dir_sha256", "docker_config_contents_read"], "properties": {"candidate_dir_sha256": {"$ref": "#/$defs/sha256"}, "evaluator_dir_sha256": {"$ref": "#/$defs/sha256"}, "control_home_sha256": {"$ref": "#/$defs/sha256"}, "docker_config_sha256": {"$ref": "#/$defs/sha256"}, "output_dir_sha256": {"$ref": "#/$defs/sha256"}, "docker_config_contents_read": {"const": false}}},
+    "boundary": {"type": "object", "additionalProperties": false, "required": ["backend", "backend_version", "network_mode", "candidate_image_id", "full_runner_image_id"], "properties": {"backend": {"type": "string"}, "backend_version": {"type": "string"}, "network_mode": {"type": "string"}, "candidate_image_id": {"type": "string"}, "full_runner_image_id": {"$ref": "#/$defs/image"}}},
+    "isolation": {"type": "object", "additionalProperties": true, "required": ["candidate_project_codex_absent", "candidate_evaluator_disjoint", "candidate_control_home_disjoint", "evaluator_output_new_and_owned", "instruction_source_allowlist_required", "stale_startup_report_replay_allowed", "model_command_before_startup_gate_allowed", "preflight"]},
+    "skills": {"type": "object", "additionalProperties": false, "required": ["expected_candidate_skills", "condition_intent_checked"], "properties": {"expected_candidate_skills": {"type": "array", "items": {"type": "string"}}, "condition_intent_checked": {"type": "boolean"}}},
+    "wiring": {"type": "object", "additionalProperties": false, "required": ["preparation_fingerprint", "full_runner_image_id"], "properties": {"preparation_fingerprint": {"$ref": "#/$defs/sha256"}, "full_runner_image_id": {"$ref": "#/$defs/image"}}},
+    "authentication": {"type": "object", "additionalProperties": false, "required": ["mode", "control_plane_auth_source", "api_key_auth_allowed", "candidate_auth_exposed", "control_home_contents_read_by_spec", "credential_files_read_by_spec"], "properties": {"mode": {"const": "chatgpt-subscription"}, "control_plane_auth_source": {"const": "codex-session"}, "api_key_auth_allowed": {"const": false}, "candidate_auth_exposed": {"const": false}, "control_home_contents_read_by_spec": {"const": false}, "credential_files_read_by_spec": {"const": false}}},
+    "scope": {"type": "string", "minLength": 1}
+  },
+  "required": ["schema_version", "verdict", "job", "versions", "roles", "paths", "boundary", "isolation", "skills", "wiring", "authentication", "scope"],
+  "$defs": {"sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "image": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}
+}

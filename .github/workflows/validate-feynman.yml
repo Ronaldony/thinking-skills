@@ -1,0 +1,333 @@
+name: validate-feynman
+
+on:
+  push:
+    paths:
+      - 'skills/feynman-thinking/**'
+      - 'evals/feynman-thinking/**'
+      - 'tooling/**'
+      - 'audit/**'
+      - 'tests/**'
+      - '.github/workflows/validate-feynman.yml'
+  pull_request:
+    paths:
+      - 'skills/feynman-thinking/**'
+      - 'evals/feynman-thinking/**'
+      - 'tooling/**'
+      - 'audit/**'
+      - 'tests/**'
+      - '.github/workflows/validate-feynman.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  structural-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Validate public development cases and rubrics
+        run: python tooling/feynman_eval_data.py --base evals/feynman-thinking
+      - name: Exercise Docker external-boundary canary reference profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/feynman-docker-boundary
+          rm -rf "$ROOT"
+          mkdir -p \
+            "$ROOT/candidate" \
+            "$ROOT/evaluator" \
+            "$ROOT/harness" \
+            "$ROOT/candidate-home" \
+            "$ROOT/codex-home" \
+            "$ROOT/temp" \
+            "$ROOT/net"
+
+          SOURCE_CANARY="$GITHUB_WORKSPACE/.feynman-source-read-canary"
+          REAL_HOME_CANARY="$HOME/.feynman-real-home-read-canary"
+          FORBIDDEN_SOURCE="$GITHUB_WORKSPACE/.feynman-forbidden-write"
+          FORBIDDEN_HOME="$HOME/.feynman-forbidden-write"
+          FORBIDDEN_EVALUATOR="$ROOT/evaluator/forbidden-write.txt"
+          SERVER_PID=""
+
+          cleanup() {
+            if [ -n "$SERVER_PID" ]; then
+              kill "$SERVER_PID" 2>/dev/null || true
+            fi
+            rm -f "$SOURCE_CANARY" "$REAL_HOME_CANARY" "$FORBIDDEN_SOURCE" "$FORBIDDEN_HOME"
+          }
+          trap cleanup EXIT
+
+          printf %s candidate-marker > "$ROOT/candidate/read-canary.txt"
+          printf %s evaluator-marker > "$ROOT/evaluator/read-canary.txt"
+          printf %s source-marker > "$SOURCE_CANARY"
+          printf %s real-home-marker > "$REAL_HOME_CANARY"
+          rm -f "$ROOT/candidate/write-canary.txt" "$FORBIDDEN_EVALUATOR" "$FORBIDDEN_SOURCE" "$FORBIDDEN_HOME"
+          cp tooling/feynman_boundary_probe.py "$ROOT/harness/feynman_boundary_probe.py"
+
+          docker version >/dev/null
+          docker pull python:3.12-slim >/dev/null
+          HOST_IP="$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')"
+          test -n "$HOST_IP"
+          DOCKER_VERSION="$(docker version --format '{{.Server.Version}}')"
+          IMAGE_ID="$(docker image inspect python:3.12-slim --format '{{.Id}}')"
+          RUN_AS="$(id -u):$(id -g)"
+
+          python - "$ROOT/boundary-profile.json" "$DOCKER_VERSION" "$IMAGE_ID" "$RUN_AS" "$ROOT" <<'PY'
+          import json
+          import sys
+          output, docker_version, image_id, run_as, root = sys.argv[1:]
+          profile = {
+              "schema_version": 1,
+              "backend": "docker",
+              "backend_version": docker_version,
+              "image": "python:3.12-slim",
+              "image_id": image_id,
+              "network_mode": "none",
+              "read_only_root": True,
+              "no_new_privileges": True,
+              "capabilities": [],
+              "run_as": run_as,
+              "read_write_mounts": [
+                  f"{root}/candidate",
+                  f"{root}/candidate-home",
+                  f"{root}/codex-home",
+                  f"{root}/temp",
+              ],
+              "read_only_mounts": ["/probe/feynman_boundary_probe.py"],
+              "tmpfs_mounts": ["/tmp"],
+              "protected_roots_mounted": [],
+              "candidate_env_keys": [
+                  "CODEX_HOME", "HOME", "PATH", "PYTHONDONTWRITEBYTECODE", "TMPDIR"
+              ],
+              "scope": "GitHub Actions Docker reference canary profile; no model execution",
+          }
+          with open(output, "w", encoding="utf-8") as handle:
+              json.dump(profile, handle, ensure_ascii=False, indent=2, sort_keys=True)
+              handle.write("\n")
+          PY
+          python tooling/feynman_boundary_profile.py --profile "$ROOT/boundary-profile.json"
+          PROFILE_SHA="$(sha256sum "$ROOT/boundary-profile.json" | awk '{print $1}')"
+          test "${#PROFILE_SHA}" -eq 64
+
+          python - "$ROOT/network-port" <<'PY' &
+          import socket
+          import sys
+          path = sys.argv[1]
+          sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+          sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+          sock.bind(("0.0.0.0", 0))
+          sock.listen(16)
+          with open(path, "w", encoding="utf-8") as handle:
+              handle.write(str(sock.getsockname()[1]))
+              handle.flush()
+          while True:
+              conn, _ = sock.accept()
+              conn.close()
+          PY
+          SERVER_PID=$!
+          for _ in $(seq 1 50); do
+            [ -s "$ROOT/network-port" ] && break
+            sleep 0.1
+          done
+          test -s "$ROOT/network-port"
+          PORT="$(cat "$ROOT/network-port")"
+
+          python tooling/feynman_network_reference.py \
+            --host "$HOST_IP" \
+            --port "$PORT" \
+            --output "$ROOT/network-reference.json"
+
+          docker run --rm \
+            --network none \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --read-only \
+            --user "$RUN_AS" \
+            --tmpfs /tmp:rw,nosuid,nodev \
+            -v "$ROOT/candidate:$ROOT/candidate:rw" \
+            -v "$ROOT/candidate-home:$ROOT/candidate-home:rw" \
+            -v "$ROOT/codex-home:$ROOT/codex-home:rw" \
+            -v "$ROOT/temp:$ROOT/temp:rw" \
+            -v "$ROOT/harness/feynman_boundary_probe.py:/probe/feynman_boundary_probe.py:ro" \
+            python:3.12-slim \
+            env -i \
+              HOME="$ROOT/candidate-home" \
+              CODEX_HOME="$ROOT/codex-home" \
+              PATH=/usr/local/bin:/usr/bin:/bin \
+              TMPDIR="$ROOT/temp" \
+              PYTHONDONTWRITEBYTECODE=1 \
+              python /probe/feynman_boundary_probe.py \
+                --run-id docker-reference \
+                --boundary-profile-sha256 "$PROFILE_SHA" \
+                --candidate-read "$ROOT/candidate/read-canary.txt" \
+                --candidate-read-marker candidate-marker \
+                --evaluator-read "$ROOT/evaluator/read-canary.txt" \
+                --source-read "$SOURCE_CANARY" \
+                --real-home-read "$REAL_HOME_CANARY" \
+                --candidate-write "$ROOT/candidate/write-canary.txt" \
+                --candidate-write-marker candidate-write-marker \
+                --forbidden-write "$FORBIDDEN_EVALUATOR" \
+                --forbidden-write "$FORBIDDEN_SOURCE" \
+                --forbidden-write "$FORBIDDEN_HOME" \
+                --forbidden-write-marker should-not-write \
+                --network-host "$HOST_IP" \
+                --network-port "$PORT" \
+                --output "$ROOT/candidate/probe-artifact.json"
+
+          python tooling/feynman_boundary_probe_verify.py \
+            --artifact "$ROOT/candidate/probe-artifact.json" \
+            --expected-run-id docker-reference \
+            --boundary-profile-sha256 "$PROFILE_SHA" \
+            --probe-program "$ROOT/harness/feynman_boundary_probe.py" \
+            --candidate-read "$ROOT/candidate/read-canary.txt" \
+            --candidate-read-marker candidate-marker \
+            --evaluator-read "$ROOT/evaluator/read-canary.txt" \
+            --evaluator-read-marker evaluator-marker \
+            --source-read "$SOURCE_CANARY" \
+            --source-read-marker source-marker \
+            --real-home-read "$REAL_HOME_CANARY" \
+            --real-home-read-marker real-home-marker \
+            --candidate-write "$ROOT/candidate/write-canary.txt" \
+            --candidate-write-marker candidate-write-marker \
+            --forbidden-write "$FORBIDDEN_EVALUATOR" \
+            --forbidden-write "$FORBIDDEN_SOURCE" \
+            --forbidden-write "$FORBIDDEN_HOME" \
+            --network-reference "$ROOT/network-reference.json" \
+            --output "$ROOT/probe-report.json"
+
+          test ! -e "$FORBIDDEN_EVALUATOR"
+          test ! -e "$FORBIDDEN_SOURCE"
+          test ! -e "$FORBIDDEN_HOME"
+          grep -q '"verdict": "passed"' "$ROOT/probe-report.json"
+          python - "$ROOT/probe-report.json" "$ROOT/boundary-profile.json" <<'PY'
+          import hashlib
+          import json
+          import sys
+          report_path, profile_path = sys.argv[1:]
+          report_raw = open(report_path, "rb").read()
+          profile_raw = open(profile_path, "rb").read()
+          report = json.loads(report_raw)
+          profile_sha = hashlib.sha256(profile_raw).hexdigest()
+          assert report["verdict"] == "passed"
+          assert report["failed_probes"] == []
+          assert report["not_required_probes"] == []
+          assert report["boundary_profile_sha256"] == profile_sha
+          print(json.dumps({
+              "docker_reference_boundary": "passed",
+              "boundary_profile_sha256": profile_sha,
+              "probe_report_sha256": hashlib.sha256(report_raw).hexdigest(),
+              "scope": "reference Docker mount/network namespace canary only; no model execution",
+          }, indent=2))
+          PY
+      - name: Reproduce audited legacy decision paths
+        run: python audit/legacy_probes.py
+      - name: Build allowlisted runtime
+        run: python tooling/feynman_package.py --root . --output /tmp/feynman-preview
+      - name: Assert evaluator assets are absent from runtime
+        run: |
+          test -f /tmp/feynman-preview/feynman-thinking/SKILL.md
+          test ! -e /tmp/feynman-preview/feynman-thinking/evals
+          test ! -e /tmp/feynman-preview/feynman-thinking/.git
+          test -f /tmp/feynman-preview/runtime-manifest.json
+      - name: Prepare separated candidate and evaluator workspaces
+        run: |
+          python tooling/feynman_eval_workspace.py --root . --case tools-10 \
+            --candidate-dir /tmp/feynman-candidate --evaluator-dir /tmp/feynman-evaluator
+          test -f /tmp/feynman-candidate/.agents/skills/feynman-thinking/SKILL.md
+          test -f /tmp/feynman-candidate/candidate.py
+          test ! -e /tmp/feynman-candidate/case.json
+          test -f /tmp/feynman-evaluator/case.json
+          test -f /tmp/feynman-evaluator/review-schema.json
+          ! grep -R -q 'required_findings' /tmp/feynman-candidate
+      - name: Reject unexpected skill roots before evaluation
+        run: |
+          mkdir -p /tmp/feynman-home /tmp/feynman-codex-home
+          python tooling/feynman_eval_preflight.py \
+            --candidate-dir /tmp/feynman-candidate \
+            --expected-skill feynman-thinking \
+            --home /tmp/feynman-home \
+            --codex-home /tmp/feynman-codex-home
+      - name: Exercise reasoning-free evidence extraction
+        run: |
+          cat > /tmp/feynman-trace.jsonl <<'EOF'
+          {"type":"thread.started","thread_id":"synthetic-thread"}
+          {"type":"item.completed","item":{"id":"reason-1","type":"reasoning","text":"DO_NOT_COPY_REASONING"}}
+          {"type":"item.completed","item":{"id":"cmd-1","type":"command_execution","command":"python -m unittest","aggregated_output":"FAILED synthetic check","exit_code":1,"status":"failed"}}
+          {"type":"item.completed","item":{"id":"msg-1","type":"agent_message","text":"synthetic final"}}
+          EOF
+          python tooling/codex_exec_evidence.py /tmp/feynman-trace.jsonl --output /tmp/feynman-evidence
+          grep -q 'command_execution:cmd-1' /tmp/feynman-evidence/evidence-index.json
+          grep -q 'FAILED synthetic check' /tmp/feynman-evidence/evidence/0001-command.txt
+          grep -q 'final_sha256' /tmp/feynman-evidence/evidence-index.json
+          ! grep -R -q 'DO_NOT_COPY_REASONING' /tmp/feynman-evidence
+      - name: Exercise semantic review v2 linkage and structural gate
+        run: |
+          python tooling/feynman_review_bundle.py \
+            --evaluator-dir /tmp/feynman-evaluator \
+            --evidence-bundle /tmp/feynman-evidence \
+            --output /tmp/feynman-review-bundle
+          cat > /tmp/feynman-semantic-review.json <<'EOF'
+          {
+            "schema_version": 2,
+            "id": "tools-10",
+            "decision_correctness": "correct",
+            "decision_evidence": "Synthetic final identifies the failed check for interface validation.",
+            "findings": [
+              {"id": "F1", "status": "supported", "evidence": "command_execution:cmd-1 and stored command output"},
+              {"id": "F2", "status": "supported", "evidence": "synthetic candidate did not claim a successful test"}
+            ],
+            "behaviors": {"direct_check": 2, "honesty": 2},
+            "hard_failures": [],
+            "execution_integrity": "clean",
+            "execution_integrity_evidence": "The only execution claim maps to command_execution:cmd-1.",
+            "update_behavior": "not_applicable",
+            "executed_evidence_ids": ["command_execution:cmd-1"],
+            "summary": "Synthetic CI review for interface validation only.",
+            "confidence": "high"
+          }
+          EOF
+          python tooling/feynman_apply_review.py \
+            --review-bundle /tmp/feynman-review-bundle \
+            --review /tmp/feynman-semantic-review.json \
+            --output /tmp/feynman-gate.json
+          grep -q '"verdict": "passed"' /tmp/feynman-gate.json
+          grep -q '"hard_failure_ids": \[\]' /tmp/feynman-gate.json
+          grep -q '"decision_correctness": "correct"' /tmp/feynman-gate.json
+          grep -q '"execution_integrity": "clean"' /tmp/feynman-gate.json
+      - name: Fetch pinned legacy source for sanitized comparison validation
+        run: |
+          git init -q /tmp/feynman-legacy-source
+          git -C /tmp/feynman-legacy-source remote add origin https://github.com/Ronaldony/feynman-thinking.git
+          git -C /tmp/feynman-legacy-source fetch --depth 1 origin 1609b8b6909f9ab596c1ecf298fbec4a0c70d6b4
+          git -C /tmp/feynman-legacy-source checkout --detach -q FETCH_HEAD
+          test "$(git -C /tmp/feynman-legacy-source rev-parse HEAD)" = "1609b8b6909f9ab596c1ecf298fbec4a0c70d6b4"
+      - name: Build and install pinned legacy-clean runtime
+        run: |
+          python tooling/feynman_legacy_package.py \
+            --legacy-root /tmp/feynman-legacy-source \
+            --output /tmp/feynman-legacy-clean
+          test -f /tmp/feynman-legacy-clean/feynman-thinking/SKILL.md
+          test ! -e /tmp/feynman-legacy-clean/feynman-thinking/evals
+          test ! -e /tmp/feynman-legacy-clean/feynman-thinking/scripts
+          test ! -e /tmp/feynman-legacy-clean/feynman-thinking/references/evaluation.md
+          ! grep -q 'references/evaluation.md' /tmp/feynman-legacy-clean/feynman-thinking/SKILL.md
+          python tooling/feynman_condition_workspace.py \
+            --root . \
+            --case mechanism-01 \
+            --condition legacy-clean \
+            --candidate-dir /tmp/feynman-legacy-candidate \
+            --evaluator-dir /tmp/feynman-legacy-evaluator \
+            --legacy-root /tmp/feynman-legacy-source
+          mkdir -p /tmp/feynman-legacy-home /tmp/feynman-legacy-codex-home
+          python tooling/feynman_eval_preflight.py \
+            --candidate-dir /tmp/feynman-legacy-candidate \
+            --expected-skill feynman-thinking \
+            --home /tmp/feynman-legacy-home \
+            --codex-home /tmp/feynman-legacy-codex-home
+          grep -q '^\$feynman-thinking' /tmp/feynman-legacy-candidate/task.txt

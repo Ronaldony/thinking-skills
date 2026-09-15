@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Feynman external boundary profile manifest",
+  "type": "object",
+  "properties": {
+    "schema_version": {"const": 1},
+    "backend": {"type": "string", "minLength": 1},
+    "backend_version": {"type": "string", "minLength": 1},
+    "image": {"type": "string", "minLength": 1},
+    "image_id": {"type": "string", "minLength": 1},
+    "network_mode": {"type": "string", "minLength": 1},
+    "read_only_root": {"type": "boolean"},
+    "no_new_privileges": {"type": "boolean"},
+    "capabilities": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "run_as": {"type": "string", "minLength": 1},
+    "read_write_mounts": {"description": "Linux container destination paths; host sources are bound in runner-job.boundary.mounts.", "type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "read_only_mounts": {"description": "Linux container destination paths; host sources are bound in runner-job.boundary.mounts.", "type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "tmpfs_mounts": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "protected_roots_mounted": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "candidate_env_keys": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "scope": {"type": "string", "minLength": 1}
+  },
+  "required": [
+    "schema_version",
+    "backend",
+    "backend_version",
+    "image",
+    "image_id",
+    "network_mode",
+    "read_only_root",
+    "no_new_privileges",
+    "capabilities",
+    "run_as",
+    "read_write_mounts",
+    "read_only_mounts",
+    "tmpfs_mounts",
+    "protected_roots_mounted",
+    "candidate_env_keys",
+    "scope"
+  ],
+  "additionalProperties": false
+}

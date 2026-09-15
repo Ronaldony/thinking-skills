@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Feynman model-free remote child differential v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "verdict": {"enum": ["remote-child-differential-ready", "remote-child-differential-blocked"]},
+    "failure_stage": {"type": ["string", "null"], "pattern": "^[a-z0-9-]+$"},
+    "image_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "contract": {"$ref": "#/$defs/contract"},
+    "stages": {"$ref": "#/$defs/stages"},
+    "comparison": {"$ref": "#/$defs/comparison"},
+    "privacy": {"$ref": "#/$defs/privacy"},
+    "scope": {"type": "string", "minLength": 1}
+  },
+  "required": ["schema_version", "verdict", "failure_stage", "image_id", "contract", "stages", "comparison", "privacy", "scope"],
+  "allOf": [
+    {
+      "if": {"properties": {"verdict": {"const": "remote-child-differential-ready"}}, "required": ["verdict"]},
+      "then": {"properties": {"failure_stage": {"type": "null"}}}
+    },
+    {
+      "if": {"properties": {"verdict": {"const": "remote-child-differential-blocked"}}, "required": ["verdict"]},
+      "then": {"properties": {"failure_stage": {"type": "string"}}}
+    }
+  ],
+  "$defs": {
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "network_mode": {"const": "none"},
+        "include_local": {"const": false},
+        "mount_destinations": {"type": "array", "const": ["/run/candidate", "/run/home", "/run/codex", "/run/temp"]},
+        "candidate_env_keys": {"type": "array", "const": ["HOME", "CODEX_HOME", "PATH", "PYTHONDONTWRITEBYTECODE", "TMPDIR"]},
+        "initialize_contract": {"const": "remote-exec-server-clientName"},
+        "app_server_started": {"const": false},
+        "authentication_attempted": {"const": false},
+        "model_execution_attempted": {"const": false}
+      },
+      "required": ["network_mode", "include_local", "mount_destinations", "candidate_env_keys", "initialize_contract", "app_server_started", "authentication_attempted", "model_execution_attempted"]
+    },
+    "process": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "process_started": {"type": "boolean"},
+        "exit_code": {"type": ["integer", "null"]},
+        "timed_out": {"type": "boolean"},
+        "stdin_write_failed": {"type": "boolean"},
+        "stdout_bytes": {"type": "integer", "minimum": 0},
+        "stderr_bytes": {"type": "integer", "minimum": 0},
+        "stdout_drained": {"type": "boolean"},
+        "stderr_drained": {"type": "boolean"},
+        "stdout_read_error": {"type": "boolean"},
+        "stderr_read_error": {"type": "boolean"},
+        "stdout_truncated": {"type": "boolean"},
+        "stderr_truncated": {"type": "boolean"},
+        "stderr_nonempty": {"type": "boolean"},
+        "launch_error": {"type": ["string", "null"], "pattern": "^[a-z0-9-]+$"}
+      },
+      "required": ["process_started", "exit_code", "timed_out", "stdin_write_failed", "stdout_bytes", "stderr_bytes", "stdout_drained", "stderr_drained", "stdout_read_error", "stderr_read_error", "stdout_truncated", "stderr_truncated", "stderr_nonempty", "launch_error"]
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "expected_id_responses": {"type": "integer", "minimum": 0},
+        "initialize_successes": {"type": "integer", "minimum": 0},
+        "initialize_error_codes": {"type": "object", "propertyNames": {"pattern": "^-?[0-9]+$"}, "additionalProperties": {"type": "integer", "minimum": 0}},
+        "malformed_messages": {"type": "integer", "minimum": 0},
+        "non_json_lines": {"type": "integer", "minimum": 0},
+        "unexpected_id_responses": {"type": "integer", "minimum": 0},
+        "notifications_seen": {"type": "integer", "minimum": 0}
+      },
+      "required": ["expected_id_responses", "initialize_successes", "initialize_error_codes", "malformed_messages", "non_json_lines", "unexpected_id_responses", "notifications_seen"]
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {"status": {"type": "string", "pattern": "^[a-z0-9-]+$"}, "verified": {"type": "boolean"}},
+      "required": ["status", "verified"]
+    },
+    "telemetry": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "available": {"type": "boolean"},
+        "schema_version": {"type": ["integer", "null"]},
+        "schema_valid": {"type": "boolean"},
+        "complete": {"type": "boolean"},
+        "requests_seen": {"type": "integer", "minimum": 0},
+        "requests_forwarded": {"type": "integer", "minimum": 0},
+        "responses_seen": {"type": "integer", "minimum": 0},
+        "responses_forwarded": {"type": "integer", "minimum": 0},
+        "responses_matched": {"type": "integer", "minimum": 0},
+        "responses_unmatched": {"type": "integer", "minimum": 0},
+        "pending_request_ids": {"type": "integer", "minimum": 0},
+        "request_write_failures": {"type": "integer", "minimum": 0},
+        "request_mapping_rejections": {"type": "integer", "minimum": 0},
+        "response_mapping_rejections": {"type": "integer", "minimum": 0},
+        "child_exit_code": {"type": ["integer", "null"]},
+        "child_stderr_bytes": {"type": "integer", "minimum": 0},
+        "child_stderr_nonempty": {"type": "boolean"},
+        "child_stderr_truncated": {"type": "boolean"},
+        "child_stderr_read_error": {"type": "boolean"},
+        "child_stderr_drained": {"type": "boolean"},
+        "mapping_clean": {"type": "boolean"},
+        "correlated": {"type": "boolean"}
+      },
+      "required": ["available", "schema_version", "schema_valid", "complete", "requests_seen", "requests_forwarded", "responses_seen", "responses_forwarded", "responses_matched", "responses_unmatched", "pending_request_ids", "request_write_failures", "request_mapping_rejections", "response_mapping_rejections", "child_exit_code", "mapping_clean", "correlated"]
+    },
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {"passed": {"type": "boolean"}, "process": {"$ref": "#/$defs/process"}, "image_id_observed": {"type": "boolean"}},
+      "required": ["passed", "process"]
+    },
+    "lifecycle_stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "passed": {"type": "boolean"},
+        "name_available": {"type": "boolean"},
+        "name_check_status": {"enum": ["available", "occupied", "unavailable", "not-run"]},
+        "process": {"$ref": "#/$defs/process"},
+        "container": {"type": "object", "additionalProperties": false, "properties": {"available": {"type": "boolean"}, "owned": {"type": "boolean"}, "status": {"type": "string"}, "exit_code": {"type": ["integer", "null"]}}, "required": ["available", "owned", "status", "exit_code"]},
+        "cleanup": {"$ref": "#/$defs/cleanup"}
+      },
+      "required": ["passed", "name_available", "name_check_status", "process", "container", "cleanup"]
+    },
+    "start_stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {"passed": {"type": "boolean"}, "process": {"$ref": "#/$defs/process"}, "marker_observed": {"type": "boolean"}, "cleanup": {"$ref": "#/$defs/cleanup"}},
+      "required": ["passed", "process", "marker_observed", "cleanup"]
+    },
+    "rpc_stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "label": {"enum": ["direct", "proxy"]},
+        "passed": {"type": "boolean"},
+        "skipped": {"type": "boolean"},
+        "process": {"$ref": "#/$defs/process"},
+        "response": {"$ref": "#/$defs/response"},
+        "cleanup": {"$ref": "#/$defs/cleanup"},
+        "telemetry": {"$ref": "#/$defs/telemetry"},
+        "stderr_visibility": {"enum": ["bounded-in-memory", "proxy-child-stderr-bounded-counters", "proxy-child-stderr-discarded-by-current-proxy"]}
+      },
+      "required": ["label", "passed", "skipped", "process", "response", "cleanup", "telemetry", "stderr_visibility"]
+    },
+    "stages": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "docker-access": {"$ref": "#/$defs/stage"},
+        "image-inspect": {"$ref": "#/$defs/stage"},
+        "container-create": {"$ref": "#/$defs/lifecycle_stage"},
+        "container-start": {"$ref": "#/$defs/start_stage"},
+        "direct-exec-server-initialize": {"$ref": "#/$defs/rpc_stage"},
+        "proxy-exec-server-initialize": {"$ref": "#/$defs/rpc_stage"}
+      },
+      "required": ["docker-access", "image-inspect", "container-create", "container-start", "direct-exec-server-initialize", "proxy-exec-server-initialize"]
+    },
+    "comparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "docker_args_semantically_equal": {"type": "boolean"},
+        "mount_destinations_equal": {"type": "boolean"},
+        "initialize_contract": {"const": "remote-exec-server-clientName"},
+        "direct_initialize_success": {"type": "boolean"},
+        "proxy_initialize_success": {"type": "boolean"},
+        "initialize_result_equivalent": {"type": "boolean"},
+        "startup_equivalent": {"type": "boolean"}
+      },
+      "required": ["docker_args_semantically_equal", "mount_destinations_equal", "initialize_contract", "direct_initialize_success", "proxy_initialize_success", "initialize_result_equivalent", "startup_equivalent"]
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "request_payload_preserved": {"const": false},
+        "response_payload_preserved": {"const": false},
+        "host_paths_preserved": {"const": false},
+        "raw_stderr_preserved": {"const": false},
+        "credential_files_read": {"const": false},
+        "control_home_read": {"const": false}
+      },
+      "required": ["request_payload_preserved", "response_payload_preserved", "host_paths_preserved", "raw_stderr_preserved", "credential_files_read", "control_home_read"]
+    }
+  }
+}

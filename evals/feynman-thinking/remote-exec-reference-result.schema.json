@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Feynman mock remote-tool reference result",
+  "type": "object",
+  "properties": {
+    "schema_version": {"const": 2},
+    "verdict": {"const": "mock-remote-tool-reference-passed"},
+    "versions": {
+      "type": "object",
+      "properties": {
+        "control_codex": {"type": "string", "minLength": 1},
+        "tool_codex": {"type": "string", "minLength": 1}
+      },
+      "required": ["control_codex", "tool_codex"],
+      "additionalProperties": false
+    },
+    "digests": {
+      "type": "object",
+      "properties": {
+        "boundary_profile_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "runner_job_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "remote_environment_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "network_reference_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "mock_state_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "codex_trace_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "docker_inspect_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "patch_proof_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "candidate_proof_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "mock_server_program_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "required": [
+        "boundary_profile_sha256",
+        "runner_job_sha256",
+        "remote_environment_sha256",
+        "network_reference_sha256",
+        "mock_state_sha256",
+        "codex_trace_sha256",
+        "docker_inspect_sha256",
+        "patch_proof_sha256",
+        "candidate_proof_sha256",
+        "mock_server_program_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "assertions": {
+      "type": "object",
+      "properties": {
+        "model_requests": {"const": 3},
+        "apply_patch_round_trip": {"const": true},
+        "remote_patch_marker": {"const": true},
+        "exec_output_round_trip": {"const": true},
+        "workspace_marker": {"const": true},
+        "tool_network_blocked": {"const": true},
+        "auth_env_clean": {"const": true},
+        "candidate_proof_file": {"const": true},
+        "command_execution_observed": {"const": true},
+        "final_agent_message_observed": {"const": true},
+        "docker_inspect_matches_profile": {"const": true},
+        "control_plane_endpoint_reference_valid": {"const": true},
+        "local_execution_disabled": {"const": true}
+      },
+      "required": [
+        "model_requests",
+        "apply_patch_round_trip",
+        "remote_patch_marker",
+        "exec_output_round_trip",
+        "workspace_marker",
+        "tool_network_blocked",
+        "auth_env_clean",
+        "candidate_proof_file",
+        "command_execution_observed",
+        "final_agent_message_observed",
+        "docker_inspect_matches_profile",
+        "control_plane_endpoint_reference_valid",
+        "local_execution_disabled"
+      ],
+      "additionalProperties": false
+    },
+    "scope": {"type": "string", "minLength": 1}
+  },
+  "required": ["schema_version", "verdict", "versions", "digests", "assertions", "scope"],
+  "additionalProperties": false
+}

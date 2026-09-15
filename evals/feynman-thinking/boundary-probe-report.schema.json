@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Feynman external-boundary canary verification report",
+  "type": "object",
+  "properties": {
+    "schema_version": {"const": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "boundary_profile_sha256": {"$ref": "#/$defs/sha256"},
+    "path_namespace": {"enum": ["shared", "container"]},
+    "verdict": {"type": "string", "enum": ["passed", "failed"]},
+    "failed_probes": {"type": "array", "items": {"$ref": "#/$defs/probeId"}, "uniqueItems": true},
+    "not_required_probes": {"type": "array", "items": {"$ref": "#/$defs/probeId"}, "uniqueItems": true},
+    "source_artifact_sha256": {"$ref": "#/$defs/sha256"},
+    "probe_program_sha256": {"$ref": "#/$defs/sha256"},
+    "network_reference_sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+    "observed_env_keys": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "probes": {
+      "type": "object",
+      "properties": {
+        "candidate_read": {"$ref": "#/$defs/probe"},
+        "evaluator_read_denied": {"$ref": "#/$defs/probe"},
+        "source_read_denied": {"$ref": "#/$defs/probe"},
+        "real_home_read_denied": {"$ref": "#/$defs/probe"},
+        "candidate_write": {"$ref": "#/$defs/probe"},
+        "forbidden_write_denied": {"$ref": "#/$defs/probe"},
+        "secret_env_scan": {"$ref": "#/$defs/probe"},
+        "tool_network_denied": {"$ref": "#/$defs/probe"}
+      },
+      "required": [
+        "candidate_read",
+        "evaluator_read_denied",
+        "source_read_denied",
+        "real_home_read_denied",
+        "candidate_write",
+        "forbidden_write_denied",
+        "secret_env_scan",
+        "tool_network_denied"
+      ],
+      "additionalProperties": false
+    },
+    "scope": {"type": "string", "minLength": 1}
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "boundary_profile_sha256",
+    "verdict",
+    "failed_probes",
+    "not_required_probes",
+    "source_artifact_sha256",
+    "probe_program_sha256",
+    "network_reference_sha256",
+    "observed_env_keys",
+    "probes",
+    "scope"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "probeId": {
+      "type": "string",
+      "enum": [
+        "candidate_read",
+        "evaluator_read_denied",
+        "source_read_denied",
+        "real_home_read_denied",
+        "candidate_write",
+        "forbidden_write_denied",
+        "secret_env_scan",
+        "tool_network_denied"
+      ]
+    },
+    "probe": {
+      "type": "object",
+      "properties": {
+        "passed": {"type": "boolean"},
+        "artifact_sha256": {"$ref": "#/$defs/sha256"},
+        "method": {"type": "string", "minLength": 1}
+      },
+      "required": ["passed", "artifact_sha256", "method"],
+      "additionalProperties": false
+    }
+  }
+}

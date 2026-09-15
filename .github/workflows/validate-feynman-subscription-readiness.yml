@@ -1,0 +1,116 @@
+name: validate-feynman-subscription-readiness
+
+on:
+  push:
+    paths:
+      - 'tooling/feynman_runner_job*.py'
+      - 'tooling/feynman_runner_attestation.py'
+      - 'tooling/feynman_eval_result*.py'
+      - 'tooling/feynman_eval_aggregate*.py'
+      - 'tooling/feynman_subscription_*.py'
+      - 'evals/feynman-thinking/*subscription*'
+      - 'evals/feynman-thinking/runner-*.schema.json'
+      - 'evals/feynman-thinking/analysis-result.schema.json'
+      - 'tests/test_feynman_runner_*.py'
+      - 'tests/test_feynman_eval_results.py'
+      - 'tests/test_feynman_analysis_result_schema.py'
+      - 'tests/test_feynman_subscription_*.py'
+      - 'docs/feynman-subscription-local-smoke.md'
+      - '.github/workflows/validate-feynman-remote-exec-reference.yml'
+      - '.github/workflows/validate-feynman-remote-patch-reference.yml'
+      - '.github/workflows/validate-feynman-subscription-readiness.yml'
+  pull_request:
+    paths:
+      - 'tooling/feynman_runner_job*.py'
+      - 'tooling/feynman_runner_attestation.py'
+      - 'tooling/feynman_eval_result*.py'
+      - 'tooling/feynman_eval_aggregate*.py'
+      - 'tooling/feynman_subscription_*.py'
+      - 'evals/feynman-thinking/*subscription*'
+      - 'evals/feynman-thinking/runner-*.schema.json'
+      - 'evals/feynman-thinking/analysis-result.schema.json'
+      - 'tests/test_feynman_runner_*.py'
+      - 'tests/test_feynman_eval_results.py'
+      - 'tests/test_feynman_analysis_result_schema.py'
+      - 'tests/test_feynman_subscription_*.py'
+      - 'docs/feynman-subscription-local-smoke.md'
+      - '.github/workflows/validate-feynman-remote-exec-reference.yml'
+      - '.github/workflows/validate-feynman-remote-patch-reference.yml'
+      - '.github/workflows/validate-feynman-subscription-readiness.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  structural-readiness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run subscription contract tests
+        run: |
+          python -m unittest \
+            tests.test_feynman_runner_job \
+            tests.test_feynman_runner_job_validate \
+            tests.test_feynman_runner_attestation \
+            tests.test_feynman_runner_job_link \
+            tests.test_feynman_analysis_result_schema \
+            tests.test_feynman_eval_results \
+            tests.test_feynman_subscription_smoke_plan \
+            tests.test_feynman_subscription_run_preflight \
+            tests.test_feynman_subscription_auth_gate \
+            tests.test_feynman_subscription_smoke_exec -v
+
+      - name: Assert canonical subscription path contains no retired API credential contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            tooling/feynman_runner_job.py
+            tooling/feynman_runner_job_validate.py
+            tooling/feynman_runner_attestation.py
+            tooling/feynman_runner_job_link.py
+            tooling/feynman_eval_result_v4.py
+            tooling/feynman_eval_aggregate_v4.py
+            tooling/feynman_subscription_smoke_plan.py
+            tooling/feynman_subscription_run_preflight.py
+            tooling/feynman_subscription_auth_gate.py
+            tooling/feynman_subscription_smoke_exec.py
+            evals/feynman-thinking/runner-job.schema.json
+            evals/feynman-thinking/runner-attestation.schema.json
+            evals/feynman-thinking/runner-job-link.schema.json
+            evals/feynman-thinking/analysis-result.schema.json
+            evals/feynman-thinking/subscription-smoke-spec.json
+            evals/feynman-thinking/subscription-run-readiness.schema.json
+            evals/feynman-thinking/subscription-smoke-exec-result.schema.json
+          )
+          if grep -nE 'api\.openai\.com|control_plane_credential_env_key|control_plane_credential_source' "${files[@]}"; then
+            echo "retired API credential contract found in canonical subscription files" >&2
+            exit 1
+          fi
+
+      - name: Assert API-key execution is explicitly disabled
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '"api_key_auth_allowed": false' evals/feynman-thinking/subscription-smoke-spec.json
+          grep -q '"model_reasoning_effort_policy": "model-default"' evals/feynman-thinking/subscription-smoke-spec.json
+          grep -q '"const":false' evals/feynman-thinking/runner-job.schema.json
+
+      - name: Assert local mock workflows use mock-specific transport token naming
+        shell: bash
+        run: |
+          set -euo pipefail
+          mock_workflows=(
+            .github/workflows/validate-feynman-remote-exec-reference.yml
+            .github/workflows/validate-feynman-remote-patch-reference.yml
+          )
+          if grep -n 'OPENAI_API_KEY' "${mock_workflows[@]}"; then
+            echo "retired API-key name found in local mock transport workflow" >&2
+            exit 1
+          fi
+          grep -q 'MOCK_MODEL_TOKEN' .github/workflows/validate-feynman-remote-exec-reference.yml
+          grep -q 'MOCK_MODEL_TOKEN' .github/workflows/validate-feynman-remote-patch-reference.yml

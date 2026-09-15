@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "status": "preregistered-pilot-conditions-no-results",
+  "conditions": [
+    {
+      "id": "baseline",
+      "skill_source": "none",
+      "expected_skills": [],
+      "prompt_prefix": "",
+      "purpose": "추가 사고 지침이나 파인만 스킬이 없는 동일 모델 기준선"
+    },
+    {
+      "id": "generic",
+      "skill_source": "none",
+      "expected_skills": [],
+      "prompt_prefix": "다음 과제를 일반적인 비판적 사고 방식으로 수행하라. 주장과 근거를 구분하고, 직접 확인 가능한 계산이나 검사가 있으면 실제로 수행하며, 대안 설명과 불확실성을 검토하고, 증거에 따라 결론을 갱신하고, 가장 유용한 다음 행동을 제시하라. 특정 역사적 인물의 방법론이나 설치된 사고 스킬을 호출하지 마라.",
+      "purpose": "파인만 특이 절차가 아닌 강한 일반 비판적 사고 지침과 비교"
+    },
+    {
+      "id": "legacy-clean",
+      "skill_source": "external-pinned-legacy-v0.4",
+      "expected_skills": ["feynman-thinking"],
+      "prompt_prefix": "$feynman-thinking을 사용해 다음 과제를 수행하라.",
+      "required_source_commit": "1609b8b6909f9ab596c1ecf298fbec4a0c70d6b4",
+      "purpose": "v0.4.0 사고 명세 효과를 기존 평가 파일 노출 결함 없이 비교"
+    },
+    {
+      "id": "feynman-v05",
+      "skill_source": "current-runtime",
+      "expected_skills": ["feynman-thinking"],
+      "prompt_prefix": "$feynman-thinking을 사용해 다음 과제를 수행하라.",
+      "purpose": "재설계 v0.5.0-draft의 명시 호출 성능"
+    }
+  ],
+  "notes": [
+    "조건별 prompt prefix는 final 결과를 보기 전에 고정한다.",
+    "legacy-clean은 고정 커밋에서 evals/scripts/.git을 제외한 런타임만 설치한다.",
+    "토큰·시간·도구 예산은 가능한 한 동일하게 유지하고 실제 비용 차이는 결과에 함께 보고한다.",
+    "ablation 조건은 주효과 조건과 별도 분석하며 이 파일의 4조건 결과와 조용히 합치지 않는다."
+  ]
+}

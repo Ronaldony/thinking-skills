@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+.env
+.DS_Store
+
+# Evaluation outputs and temporary runtime packages
+evals/**/results/
+evals/**/blind-review/
+evals/**/review/
+.runtime-preview/
+runtime-manifest.json

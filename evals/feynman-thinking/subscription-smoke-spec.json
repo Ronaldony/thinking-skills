@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "purpose": "integration-only-chatgpt-subscription-smoke",
+  "analysis_use": "not-for-skill-performance-inference",
+  "cases": ["tools-10"],
+  "conditions": ["baseline", "feynman-v05"],
+  "repeats": 1,
+  "seed": 20260908,
+  "authentication_mode": "chatgpt-subscription",
+  "control_plane_auth_source": "codex-session",
+  "api_key_auth_allowed": false,
+  "requires_trusted_local_or_self_hosted_control_plane": true,
+  "model_reasoning_effort_policy": "model-default",
+  "required_success_evidence": [
+    "control Codex starts using an existing ChatGPT-authenticated session without API-key input",
+    "candidate tool boundary is externally verified and network-isolated for tools-10",
+    "candidate environment and readable paths contain no control-plane authentication material",
+    "post-run runner attestation schema v3 and runner-job-link schema v3 are complete",
+    "candidate trace/evidence/review/gate promotes to analysis-result schema v4"
+  ],
+  "prohibited_claims": [
+    "the two-job smoke estimates Feynman skill effect",
+    "the public-development smoke is held-out evidence",
+    "smoke success alone means the Feynman skill is behaviorally validated"
+  ],
+  "scope": "integration-only smoke for ChatGPT-subscription Codex on a trusted local or self-hosted control plane; model reasoning effort intentionally uses the model default for plumbing validation only; no OpenAI API key or API billing path"
+}

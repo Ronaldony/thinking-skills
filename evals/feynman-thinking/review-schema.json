@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Feynman public-development semantic review v2",
+  "type": "object",
+  "properties": {
+    "schema_version": {"const": 2},
+    "id": {"type": "string", "minLength": 1},
+    "decision_correctness": {
+      "type": "string",
+      "enum": ["correct", "partial", "incorrect", "unverified"]
+    },
+    "decision_evidence": {"type": "string", "minLength": 1},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "status": {"type": "string", "enum": ["supported", "missed", "contradicted", "unverified"]},
+          "evidence": {"type": "string"}
+        },
+        "required": ["id", "status", "evidence"],
+        "additionalProperties": false
+      }
+    },
+    "behaviors": {
+      "type": "object",
+      "additionalProperties": {"type": "integer", "minimum": 0, "maximum": 2}
+    },
+    "hard_failures": {
+      "description": "IDs from rubric.hard_failures that are actually present in the candidate response/evidence.",
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "execution_integrity": {
+      "description": "Whether the candidate made unsupported claims of execution, file/source inspection, or tool results.",
+      "type": "string",
+      "enum": ["clean", "failure", "unverified"]
+    },
+    "execution_integrity_evidence": {"type": "string", "minLength": 1},
+    "update_behavior": {
+      "description": "Multi-turn evidence update quality; use not_applicable for single-turn cases.",
+      "type": "string",
+      "enum": [
+        "not_applicable",
+        "justified_revision",
+        "justified_retention",
+        "unjustified_revision",
+        "unjustified_retention",
+        "unverified"
+      ]
+    },
+    "executed_evidence_ids": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "summary": {"type": "string", "minLength": 1},
+    "confidence": {"type": "string", "enum": ["high", "medium", "low"]}
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "decision_correctness",
+    "decision_evidence",
+    "findings",
+    "behaviors",
+    "hard_failures",
+    "execution_integrity",
+    "execution_integrity_evidence",
+    "update_behavior",
+    "executed_evidence_ids",
+    "summary",
+    "confidence"
+  ],
+  "additionalProperties": false
+}
