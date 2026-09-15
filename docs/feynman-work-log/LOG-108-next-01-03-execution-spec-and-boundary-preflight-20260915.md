@@ -269,12 +269,13 @@ Docker runtime/path contract의 기존 `docker-runtime-ready`와
 
 ## commit/push와 미완료 사항
 
-이 log를 작성하는 시점에는 code/docs 변경이 아직 commit/push되지 않았다.
-다음은 보호 대상이 아닌 변경 파일만 stage하여 feature branch에 normal
-commit/push하고, SHA와 push 결과를 별도 receipt로 남기는 것이다. main 병합과
-force push는 하지 않는다.
+이 log 작성 후 보호 대상이 아닌 9개 변경 파일만 feature branch에 commit했다.
+commit은 268f716 (feat: freeze subscription smoke execution spec)이며,
+f7e9efd..268f716 범위가 feature branch로 normal push 성공했다. main 병합과
+force push는 하지 않았다. 이 후속 문서 정정은 이미 push된 code commit의 현재
+상태를 정확히 남기기 위한 것이며, 새 실행이나 code behavior 변경을 포함하지 않는다.
 
-commit/push 후 사람 개입 경계는 그대로다. 최신 code/docs pointer, current
+commit/push 후에도 사람 개입 경계는 그대로다. 최신 code/docs pointer, current
 execution spec, full-runner input, intended evaluator-owned output path,
 preparation fingerprint를 검토한 뒤에만 다음을 승인할 수 있다.
 
